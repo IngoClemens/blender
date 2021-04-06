@@ -34,7 +34,8 @@ Usage:
 
 1. Select the light or object to place.
 2. Activate placeReflection from the object menu in the 3d view or by
-   searching for it with F3.
+   searching for it with F3. It's also available from the 3d view's tool
+   panel.
 3. LMB drag the mouse over the surface to define the object's reflection
    point.
 4. Use the scrollwheel on the mouse to set the distance of the object to
@@ -50,7 +51,7 @@ Usage:
 
 bl_info = {"name": "Place Reflection",
            "author": "Ingo Clemens",
-           "version": (0, 5, 0),
+           "version": (0, 6, 0),
            "blender": (2, 92, 0),
            "category": "Lighting",
            "location": "View3D > Object",
@@ -64,6 +65,7 @@ import bpy.utils.previews
 from bpy_extras import view3d_utils
 
 import math
+from mathutils import Vector
 import os
 
 
@@ -79,6 +81,10 @@ AIM_AXIS = "Z"
 USE_LOCATION = True
 # True, if the object's rotation is affected.
 USE_ROTATION = True
+# The speed factor when Shift is pressed when using the mouse wheel.
+SPEED_SLOW = 0.1
+# The speed factor when Ctrl is pressed when using the mouse wheel.
+SPEED_FAST = 10.0
 
 
 # ----------------------------------------------------------------------
@@ -313,8 +319,16 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         # Get the current distance to the object's intersection point at
         # the first drag and set this as the distance to use for the
         # entire cycle of the placement.
+        # If the object is in it's default position either at the world
+        # center of the cursor position use the distance of the view to
+        # the surface point.
         if self.dist is None:
-            self.dist = distance(self.dragPos, context.object.location)
+            cursorPos = context.scene.cursor.location
+            objPos = context.object.location
+            if objPos == Vector((0.0, 0.0, 0.0)) or objPos == cursorPos:
+                self.dist = distance(viewOrigin, self.dragPos)
+            else:
+                self.dist = distance(self.dragPos, context.object.location)
 
         # Apply the new position and rotation.
         self.applyPlacement(context.object)
@@ -328,9 +342,9 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         """
         speed = 0.05
         if self.shiftPressed:
-            speed *= 0.1
+            speed *= SPEED_SLOW
         elif self.ctrlPressed:
-            speed *= 10
+            speed *= SPEED_FAST
 
         if eventType == 'WHEELUPMOUSE':
             self.distFactor += speed
@@ -397,6 +411,52 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
 
 
 # ----------------------------------------------------------------------
+# Tool Panel
+# ----------------------------------------------------------------------
+
+class VIEW3D_PT_PlaceReflection(bpy.types.Panel):
+    """Creates a Panel in the Tool properties window.
+    """
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Tool"
+    bl_label = "Place Reflection"
+
+    @classmethod
+    def poll(cls, context):
+        """Returns, if the panel is visible.
+
+        :param context: The current context.
+        :type context: bpy.context
+
+        :return: True, if the panel should be visible.
+        :rtype: bool
+        """
+        return (context.object is not None)
+
+    def draw(self, context):
+        """Draw the panel and it's properties.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        # Access the global properties.
+        scene = context.scene
+        place_reflection = scene.place_reflection
+
+        layout = self.layout
+        layout.prop(place_reflection, "axis_value")
+        layout.prop(place_reflection, "location_value")
+        layout.prop(place_reflection, "rotation_value")
+
+        # Call the operator with the current settings.
+        op = layout.operator("view3d.place_reflection")
+        op.axis_value = place_reflection.axis_value
+        op.location_value = place_reflection.location_value
+        op.rotation_value = place_reflection.rotation_value
+
+
+# ----------------------------------------------------------------------
 # Math utilities
 # ----------------------------------------------------------------------
 
@@ -447,6 +507,7 @@ def menu_item(self, context):
     pcoll = preview_collections["icons"]
     icon = pcoll["tool_icon"]
 
+    self.layout.separator()
     self.layout.operator(OBJECT_OT_PlaceReflection.bl_idname,
                          text="Place Reflection",
                          icon_value=icon.icon_id)
@@ -461,7 +522,8 @@ preview_collections = {}
 
 # Collect all classes in a list for easier access.
 classes = [PlaceReflection_properties,
-           OBJECT_OT_PlaceReflection]
+           OBJECT_OT_PlaceReflection,
+           VIEW3D_PT_PlaceReflection]
 
 
 def register():
