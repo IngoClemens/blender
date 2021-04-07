@@ -47,6 +47,13 @@ Usage:
    or rotation through the redo panel at the bottom of the 3d view.
 
 ------------------------------------------------------------------------
+
+Changelog:
+
+0.6.0 - 2021-04-07
+      - First public release
+
+------------------------------------------------------------------------
 """
 
 bl_info = {"name": "Place Reflection",
@@ -55,9 +62,9 @@ bl_info = {"name": "Place Reflection",
            "blender": (2, 92, 0),
            "category": "Lighting",
            "location": "View3D > Object",
-           "description": "Place lights and reflected objects by dragging over a target surface",
+           "description": "Place lights and reflected objects by dragging over a surface",
            "warning": "",
-           "doc_url": "https://github.com/IngoClemens/blender/wiki/Place-Reflection",
+           "doc_url": "http://www.braverabbit.com/braverabbit/tools/place-reflection",
            "tracker_url": ""}
 
 import bpy
