@@ -64,7 +64,7 @@ bl_info = {"name": "Place Reflection",
            "location": "View3D > Object",
            "description": "Place lights and reflected objects by dragging over a surface",
            "warning": "",
-           "doc_url": "http://www.braverabbit.com/braverabbit/tools/place-reflection",
+           "doc_url": "http://www.braverabbit.com/place-reflection",
            "tracker_url": ""}
 
 import bpy
