@@ -8,3 +8,8 @@ Feel free to download and use any available.
 Perform a reflection-based placement of lights (or any other object) on a mesh by simply dragging the mouse over the mesh.
 
 [Documentation](https://github.com/IngoClemens/blender/wiki/Place-Reflection)
+
+## Tool Shelf
+Save scripts as buttons and organize them in groups for easy access.
+
+[Documentation](https://www.braverabbit.com/toolShelf)
