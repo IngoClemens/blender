@@ -50,6 +50,9 @@ Usage:
 
 Changelog:
 
+0.7.0 - 2021-04-15
+      - Added the light distance to the operator and redo panel.
+
 0.6.0 - 2021-04-07
       - First public release
 
@@ -58,13 +61,13 @@ Changelog:
 
 bl_info = {"name": "Place Reflection",
            "author": "Ingo Clemens",
-           "version": (0, 6, 0),
+           "version": (0, 7, 0),
            "blender": (2, 92, 0),
            "category": "Lighting",
            "location": "View3D > Object",
            "description": "Place lights and reflected objects by dragging over a surface",
            "warning": "",
-           "doc_url": "http://www.braverabbit.com/place-reflection",
+           "doc_url": "https://www.braverabbit.com/place-reflection",
            "tracker_url": ""}
 
 import bpy
@@ -88,6 +91,8 @@ AIM_AXIS = "Z"
 USE_LOCATION = True
 # True, if the object's rotation is affected.
 USE_ROTATION = True
+# The default distance of the object to place.
+DISTANCE = 0.0
 # The speed factor when Shift is pressed when using the mouse wheel.
 SPEED_SLOW = 0.1
 # The speed factor when Ctrl is pressed when using the mouse wheel.
@@ -123,6 +128,11 @@ class PlaceReflection_properties(bpy.types.PropertyGroup):
     rotation_value: bpy.props.BoolProperty(name="Rotation",
                                            description="Affect the rotation of the selected object",
                                            default=USE_ROTATION)
+    distance_value: bpy.props.FloatProperty(name="Distance",
+                                            description="The distance of the selected object to "
+                                                        "the surface. Set to 0 to use the current "
+                                                        "distance of the object",
+                                            default=DISTANCE)
 
 
 # ----------------------------------------------------------------------
@@ -147,13 +157,18 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
     rotation_value: bpy.props.BoolProperty(name="Rotation",
                                            description="Affect the rotation of the selected object",
                                            default=USE_ROTATION)
+    distance_value: bpy.props.FloatProperty(name="Distance",
+                                            description="The distance of the selected object to "
+                                                        "the surface. Set to 0 to use the current "
+                                                        "distance of the object",
+                                            default=DISTANCE)
 
     startPos = None
     startRot = None
     isDragging = False
     dragPos = None
-    dist = None
     reflVector = None
+    dist = 1.0
     distFactor = 1.0
     distIncrementFactor = 1.0
     shiftPressed = False
@@ -171,6 +186,8 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         :param context: The current context.
         :type context: bpy.context
         """
+        self.dist = self.distance_value
+        self.distFactor = 1.0
         self.applyPlacement(context.object)
         return {'FINISHED'}
 
@@ -323,19 +340,22 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         # Calculate the reflection vector.
         self.reflVector = reflection_vector(viewVector, normal)
 
-        # Get the current distance to the object's intersection point at
-        # the first drag and set this as the distance to use for the
-        # entire cycle of the placement.
-        # If the object is in it's default position either at the world
-        # center of the cursor position use the distance of the view to
-        # the surface point.
-        if self.dist is None:
+        # If the tool is entered with a distance vallue of 0.0 get the
+        # current distance to the object's intersection point at the
+        # first drag and set this as the distance to use for the entire
+        # cycle of the placement.
+        # In case the object is in it's default position either at the
+        # world center of the cursor position use the distance of the
+        # view to the surface point.
+        if self.distance_value is 0.0:
             cursorPos = context.scene.cursor.location
             objPos = context.object.location
             if objPos == Vector((0.0, 0.0, 0.0)) or objPos == cursorPos:
                 self.dist = distance(viewOrigin, self.dragPos)
             else:
                 self.dist = distance(self.dragPos, context.object.location)
+        else:
+            self.dist = self.distance_value
 
         # Apply the new position and rotation.
         self.applyPlacement(context.object)
@@ -383,7 +403,8 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         if self.reflVector is None:
             return
 
-        obj.location = self.reflVector * self.dist * self.distFactor + self.dragPos
+        self.distance_value = self.dist * self.distFactor
+        obj.location = self.reflVector * self.distance_value + self.dragPos
 
     def set_rotation(self, obj):
         """Set the resulting orientation of the selected object based on
@@ -439,7 +460,7 @@ class VIEW3D_PT_PlaceReflection(bpy.types.Panel):
         :return: True, if the panel should be visible.
         :rtype: bool
         """
-        return (context.object is not None)
+        return context.object is not None
 
     def draw(self, context):
         """Draw the panel and it's properties.
@@ -455,12 +476,14 @@ class VIEW3D_PT_PlaceReflection(bpy.types.Panel):
         layout.prop(place_reflection, "axis_value")
         layout.prop(place_reflection, "location_value")
         layout.prop(place_reflection, "rotation_value")
+        layout.prop(place_reflection, "distance_value")
 
         # Call the operator with the current settings.
         op = layout.operator("view3d.place_reflection")
         op.axis_value = place_reflection.axis_value
         op.location_value = place_reflection.location_value
         op.rotation_value = place_reflection.rotation_value
+        op.distance_value = place_reflection.distance_value
 
 
 # ----------------------------------------------------------------------
