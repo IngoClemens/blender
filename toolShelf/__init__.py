@@ -36,6 +36,9 @@ editor.
 
 Changelog:
 
+0.2.0 - 2021-04-29
+      - Added an option to define a button as an add-on toggle.
+
 0.1.0 - 2021-04-22
       - First public release
 
@@ -44,7 +47,7 @@ Changelog:
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 1, 0),
+           "version": (0, 2, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -55,7 +58,9 @@ bl_info = {"name": "Tool Shelf",
 
 import bpy
 import bpy.utils.previews
+import addon_utils
 
+import inspect
 import io
 import json
 import logging
@@ -104,6 +109,8 @@ ALPHANUM = re.compile("[\W]", re.UNICODE)
 
 ANN_MODE = "Switch the editing mode"
 ANN_NEW_GROUP = "Add a new group instead of a new command"
+ANN_TOGGLE_ADDON = "Create a button to enable or disable an add-on"
+ANN_ADDON = "The add-on to create a toggle button for"
 ANN_NAME = ("The name of the group or button command.\n"
             "It needs to be unique in lowercase across all groups")
 ANN_COMMAND = ("The command string for the button.\n"
@@ -115,6 +122,16 @@ ANN_ICON = ("The name of the icon file with 32x32 pixel or a default Blender ico
 ANN_GROUP = ("The group to add the command to.\n"
              "A new group it will be created after the last or after the selected group item")
 ANN_TOOL = "The tool command to edit"
+
+# ----------------------------------------------------------------------
+# List of add-ons not suitable for a toggle button.
+# ----------------------------------------------------------------------
+
+ADD_ON_BLACKLIST = ["animation_animall", "blender_id", "blenderkit", "curve_assign_shapekey",
+                    "curve_tools", "greasepencil_tools", "io_export_paper_model", "io_mesh_atomic",
+                    "magic_uv", "materials_library_vx", "mesh_auto_mirror", "mesh_bsurfaces",
+                    "mesh_tools", "object_boolean_tools", "object_collection_manager",
+                    "space_view3d_3d_navigation", "space_view3d_pie_menus"]
 
 # ----------------------------------------------------------------------
 # 1. Read the configuration.
@@ -247,6 +264,46 @@ CONFIG_DATA = readConfig()
 # button.
 # ----------------------------------------------------------------------
 
+# This method gets read through inspect and is added for each add-on
+# toggle button.
+def toggleAddOn(name):
+    import addon_utils
+    enabled, loaded = addon_utils.check(name)
+    if not loaded:
+        addon_utils.enable(name)
+    else:
+        addon_utils.disable(name)
+
+
+def isAddOnToggle(command):
+    """Return if the command toggles an add-on.
+
+    :param command: The button command.
+    :type command: str
+
+    :return: True, if the command toggles an add-on.
+    :rtype: bool
+    """
+    return command.startswith("toggleAddOn")
+
+
+def getAddOns():
+    """Return a list with all installed add-ons.
+
+    :return: A list dictionaries containing all add-on names and
+             categories.
+    :rtype: list(dict())
+    """
+    items = []
+    for mod in addon_utils.modules():
+        info = {"name": mod.__name__,
+                "label": mod.bl_info["name"],
+                "category": mod.bl_info["category"]}
+        items.append(info)
+
+    return items
+
+
 def idName(name):
     """Return a valid idname for the operator in lowercase and with
     underscores.
@@ -264,7 +321,7 @@ def idName(name):
     :return: The idname string for the operator.
     :rtype: str
     """
-    return re.sub(ALPHANUM, '', name.lower().replace(" ", "_"))
+    return "tool_shelf_{}".format(re.sub(ALPHANUM, "", name.lower().replace(" ", "_")))
 
 
 def getIdName(data):
@@ -289,7 +346,7 @@ def getOperatorClassName(data):
     :return: The idname string for the operator.
     :rtype: str
     """
-    name = re.sub(ALPHANUM, '', data["name"].title())
+    name = "Tool_Shelf_{}".format(re.sub(ALPHANUM, '', data["name"].title()))
     return "OBJECT_OT_{}".format(name)
 
 
@@ -305,7 +362,12 @@ def buildOperatorClass(data):
     # Build the execute method for the operator up front so that it can
     # be referenced when the class gets build.
     execute = ["def execute(self, context):"]
-    execute.append("{}".format(data["command"].replace("\n", "\n    ")))
+    if isAddOnToggle(data["command"]):
+        execute.append("{}".format(inspect.getsource(toggleAddOn).replace("\n", "\n    ")))
+        execute.append(data["command"])
+    else:
+        execute.append("{}".format(data["command"].replace("\n", "\n    ")))
+
     execute.append("return {'FINISHED'}")
 
     # Register the method within the module.
@@ -342,10 +404,18 @@ def readConfiguration(configData):
         # Process each button/command in the current group.
         for cmd in group["commands"]:
             CMD_CLASSES.append(buildOperatorClass(cmd))
+
+            addOnName = ""
+            # If the complete command is given strip
+            # everything away but the add-on name.
+            if isAddOnToggle(cmd["command"]):
+                addOnName = cmd["command"][13:-2]
+
             # Collect the operator data in a dictionary which is used then
             # setting up the buttons.
             toolData.append({"id": getIdName(cmd),
-                             "icon": cmd["icon"]})
+                             "icon": cmd["icon"],
+                             "addOn": addOnName})
             # If the command includes an icon, add it to the list of icons
             # to be added to the preview collection.
             if cmd["icon"]:
@@ -429,6 +499,7 @@ def groupChanged(self, context):
         tool_shelf.cmd_value = ""
         tool_shelf.tip_value = ""
         tool_shelf.image_value = ""
+    tool_shelf.addon_value = False
 
 
 def toolChanged(self, context):
@@ -450,11 +521,39 @@ def toolChanged(self, context):
             tool_shelf.cmd_value = command["command"]
             tool_shelf.tip_value = command["tooltip"]
             tool_shelf.image_value = command["icon"]
+            tool_shelf.addon_value = isAddOnToggle(command["command"])
         else:
             tool_shelf.name_value = tool_shelf.group_value
             tool_shelf.cmd_value = ""
             tool_shelf.tip_value = ""
             tool_shelf.image_value = ""
+            tool_shelf.addon_value = False
+
+
+def addOnChanged(self, context):
+    """Callback for when the add-on enum property selection changes.
+    Populates the fields in add mode with the selected add-on name.
+
+    :param context: The current context.
+    :type context: bpy.context
+    """
+    tool_shelf = context.scene.tool_shelf
+
+    tool_shelf.name_value = ""
+    tool_shelf.cmd_value = ""
+    tool_shelf.tip_value = ""
+    # To retrieve the add-on name for the name field get the list of
+    # tuples for all installed add-ons and check which one matches the
+    # current selection. Since the label is the second element in the
+    # tuple and cannot be queried directly the search must go by module
+    # name which is also the value of the enum item.
+    if tool_shelf.addon_list_value != 'NONE':
+        items = getAddOnItems()
+        for item in items:
+            if item is not None and item[0] == tool_shelf.addon_list_value:
+                tool_shelf.name_value = item[1]
+                break
+        tool_shelf.cmd_value = tool_shelf.addon_list_value
 
 
 def groupItems(self, context):
@@ -509,6 +608,47 @@ def modeItems(self, context):
             ('VIEW', "", "Display a button command in the text editor", 'FILE', 4))
 
 
+def getAddOnItems():
+    """Return a list of installed add-ons for the add-on enum property.
+    The list contains a tuple for each entry with the value, label and
+    tooltip.
+
+    This method is exists standalone to be able to get the add-on data
+    independent from the enum property callback.
+
+    :return: A list with tuples representing the enum property items.
+    :rtype: list(tuple(str, str, str))
+    """
+    addOns = [('NONE', "––– Select –––", "")]
+    lastCategory = ""
+    # Go through all installed add-ons and only add the ones which are
+    # not on the blacklist of incompatible add-ons.
+    for item in getAddOns():
+        if item["name"] not in ADD_ON_BLACKLIST:
+            # Add a separator whenever a new category starts.
+            # Alternatively it would have been better to be able to add
+            # a category divider in form of ––– Category ––– but for
+            # some reason this results in unicode characters showing up
+            # as list items.
+            if item["category"] != lastCategory:
+                addOns.append((None))
+                lastCategory = item["category"]
+            addOns.append((item["name"], item["label"], ""))
+    return addOns
+
+
+def addOnItems(self, context):
+    """Callback for populating the enum property with the add-on names.
+
+    :param context: The current context.
+    :type context: bpy.context
+
+    :return: A list with tuples representing the enum property items.
+    :rtype: list(tuple(str, str, str))
+    """
+    return getAddOnItems()
+
+
 class Tool_Shelf_Properties(bpy.types.PropertyGroup):
     """Property group class to make the properties globally available.
     """
@@ -521,6 +661,9 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
     new_group_value: bpy.props.BoolProperty(name="New Group",
                                             description=ANN_NEW_GROUP,
                                             default=newGroup)
+    addon_value: bpy.props.BoolProperty(name="Add-on Toggle",
+                                        description=ANN_TOGGLE_ADDON,
+                                        default=False)
     name_value: bpy.props.StringProperty(name="Name",
                                          description=ANN_NAME,
                                          default="")
@@ -542,6 +685,10 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
                                          description=ANN_TOOL,
                                          items=toolItems,
                                          update=toolChanged)
+    addon_list_value: bpy.props.EnumProperty(name="Add-on",
+                                             description=ANN_ADDON,
+                                             items=addOnItems,
+                                             update=addOnChanged)
 
 
 # ----------------------------------------------------------------------
@@ -630,6 +777,10 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
                 else:
                     col.prop(tool_shelf, "button_value")
                     label = "Edit"
+                col.prop(tool_shelf, "addon_value")
+
+                if mode == 'ADD' and tool_shelf.addon_value:
+                    col.prop(tool_shelf, "addon_list_value")
 
                 # Begin a new section.
                 col = self.layout.column(align=True)
@@ -638,7 +789,8 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
                 if mode == 'ADD' or (mode == 'EDIT' and tool_shelf.button_value != 'NONE'):
                     col.prop(tool_shelf, "cmd_value")
                     col.prop(tool_shelf, "tip_value")
-                    col.prop(tool_shelf, "image_value")
+                    if not tool_shelf.addon_value:
+                        col.prop(tool_shelf, "image_value")
         else:
             col.prop(tool_shelf, "group_value")
             col.prop(tool_shelf, "button_value")
@@ -656,6 +808,7 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         op = self.layout.operator("view3d.tool_shelf", text=label)
         op.mode_value = tool_shelf.mode_value
         op.new_group_value = tool_shelf.new_group_value
+        op.addon_value = tool_shelf.addon_value
         op.name_value = tool_shelf.name_value
         op.cmd_value = tool_shelf.cmd_value
         op.tip_value = tool_shelf.tip_value
@@ -686,9 +839,20 @@ def buildPanelClass(name, data, index):
     # referenced when the class gets build.
     draw = ["def draw(self, context):"]
     for button in data:
-        # If no icon is defined only add a simple button.
+        # If no icon is defined either add a simple button or check if
+        # it's an add-on toggle.
         if not len(button["icon"]):
-            draw.append("self.layout.operator('{}')".format(button["id"]))
+            if not len(button["addOn"]):
+                draw.append("self.layout.operator('{}')".format(button["id"]))
+            # In case of an add-on toggle button the icon depends on the
+            # loaded state of the add-on
+            else:
+                draw.append("import addon_utils")
+                draw.append("checkBox = 'CHECKBOX_DEHLT'")
+                draw.append('enabled, loaded = addon_utils.check("{}")'.format(button["addOn"]))
+                draw.append("if loaded:")
+                draw.append("    checkBox = 'CHECKBOX_HLT'")
+                draw.append("self.layout.operator('{}', icon='{{}}'.format(checkBox))".format(button["id"]))
         else:
             if button["icon"].startswith("'"):
                 draw.append("self.layout.operator('{}', icon={})".format(button["id"], button["icon"]))
@@ -748,6 +912,9 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     new_group_value: bpy.props.BoolProperty(name="New Group",
                                             description=ANN_NEW_GROUP,
                                             default=False)
+    addon_value: bpy.props.BoolProperty(name="Add-on Toggle",
+                                        description=ANN_TOGGLE_ADDON,
+                                        default=False)
     name_value: bpy.props.StringProperty(name="Name",
                                          description=ANN_NAME,
                                          default="")
@@ -771,6 +938,9 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     button_value: bpy.props.EnumProperty(name="Tool",
                                          description=ANN_TOOL,
                                          items=toolItems)
+    addon_list_value: bpy.props.EnumProperty(name="Add-on",
+                                             description=ANN_ADDON,
+                                             items=addOnItems)
 
 
     # ------------------------------------------------------------------
@@ -871,12 +1041,35 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                                                  "{}".format(ICONS_PATH))
                         return {'CANCELLED'}
 
+                    # Check if the add-on exists.
+                    if self.addon_value:
+                        addOnName = self.cmd_value
+                        # If the complete command is given strip
+                        # everything away but the add-on name.
+                        if isAddOnToggle(addOnName):
+                            addOnName = addOnName[13:-2]
+                        if addOnName not in [item["name"] for item in getAddOns()]:
+                            self.report({'WARNING'}, "An add-on with this name doesn't exist: "
+                                                     "{}".format(addOnName))
+                            return {'CANCELLED'}
+
+                        if addOnName in ADD_ON_BLACKLIST:
+                            self.report({'WARNING'}, "The add-on is incompatible and has to be "
+                                                     "enabled/disabled from the preferences: "
+                                                     "{}".format(addOnName))
+                            return {'CANCELLED'}
+
                     # Backup the current configuration.
                     backupConfig(CONFIG_DATA)
 
                     # Add a new command to the configuration and save it.
                     buttonCommand = ""
                     if mode == 'ADD' or (mode == 'EDIT' and self.cmd_value.strip() != "*"):
+                        # Check if the toggle command has been entered
+                        # or should be constructed.
+                        if self.addon_value:
+                            if not isAddOnToggle(self.cmd_value):
+                                self.cmd_value = 'toggleAddOn("{}")'.format(self.cmd_value)
                         buttonCommand = processCommand(self.cmd_value)
                         if buttonCommand is None:
                             self.report({'WARNING'}, "No text editor open to get the button command")
@@ -916,6 +1109,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
             # Reload the panel.
             bpy.ops.script.reload()
 
+            context.scene.tool_shelf.addon_value = False
             context.scene.tool_shelf.name_value = ""
             context.scene.tool_shelf.cmd_value = ""
             context.scene.tool_shelf.tip_value = ""
