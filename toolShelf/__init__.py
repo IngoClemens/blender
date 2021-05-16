@@ -36,6 +36,11 @@ editor.
 
 Changelog:
 
+0.3.0 - 2021-05-09
+      - Added the option to combine multiple buttons as a set.
+      - Tool names can be repeated across all groups.
+      - Import of groups and tools from another configuration file.
+
 0.2.0 - 2021-04-29
       - Added an option to define a button as an add-on toggle.
 
@@ -47,7 +52,7 @@ Changelog:
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 2, 0),
+           "version": (0, 3, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -84,6 +89,9 @@ BACKUP_COUNT = 5
 CONFIG_DATA = {}
 # The backup dictionary for the configuration when reordering items.
 CONFIG_DATA_BACKUP = {}
+# The class instance to access the dictionary containing the button data
+# to import from.
+CONFIG_DATA_IMPORT = None
 # The list of all classes representing the buttons.
 CMD_CLASSES = []
 # The dictionary with all button data per group.
@@ -107,21 +115,27 @@ ALPHANUM = re.compile("[\W]", re.UNICODE)
 # Descriptions and tooltips
 # ----------------------------------------------------------------------
 
-ANN_MODE = "Switch the editing mode"
-ANN_NEW_GROUP = "Add a new group instead of a new command"
-ANN_TOGGLE_ADDON = "Create a button to enable or disable an add-on"
 ANN_ADDON = "The add-on to create a toggle button for"
-ANN_NAME = ("The name of the group or button command.\n"
-            "It needs to be unique in lowercase across all groups")
 ANN_COMMAND = ("The command string for the button.\n"
                "For simple commands the bpy import is added automatically.\n"
                "Leave empty to get the content from the text editor")
-ANN_TOOLTIP = "The tooltip for the button"
+ANN_IMPORT_FILE = ("The configuration file to import groups or "
+                   "tools from")
+ANN_IMPORT_ITEM = "The group or tool to import"
+ANN_GROUP = ("The group to add the tool to.\n"
+             "A new group it will be created after the last or after the selected group item")
 ANN_ICON = ("The name of the icon file with 32x32 pixel or a default Blender icon identifier "
             "enclosed in single quotes")
-ANN_GROUP = ("The group to add the command to.\n"
-             "A new group it will be created after the last or after the selected group item")
+ANN_MODE = "Switch the editing mode"
+ANN_NAME = ("The name of the group or tool.\n"
+            "It needs to be unique in lowercase across all groups")
+ANN_NEW_GROUP = "Add a new group instead of a new tool"
+ANN_NEW_SET = "Add a new tool set"
+ANN_SET_COLUMNS = "The number of buttons in a row"
+ANN_SET_NAME = "The name of the button set"
+ANN_TOGGLE_ADDON = "Create a button to enable or disable an add-on"
 ANN_TOOL = "The tool command to edit"
+ANN_TOOLTIP = "The tooltip for the button"
 
 # ----------------------------------------------------------------------
 # List of add-ons not suitable for a toggle button.
@@ -321,40 +335,57 @@ def idName(name):
     :return: The idname string for the operator.
     :rtype: str
     """
-    return "tool_shelf_{}".format(re.sub(ALPHANUM, "", name.lower().replace(" ", "_")))
+    name = name.lower().replace(" ", "_").replace("+", "pos").replace("-", "neg")
+    return "tool_shelf_{}".format(re.sub(ALPHANUM, "", name))
 
 
-def getIdName(data):
+def getIdName(data, group):
     """Return the bl_idname for the given operator which gets combined
-    from the UI area, i.e. view3d, and the lowercase name of the tool.
+    from the UI area, i.e. view3d, the group and the lowercase name of
+    the tool.
+
+    Including the group in the idname makes it possible to have the same
+    tool name in different groups which increases naming flexibility.
 
     :param data: The dictionary which describes the command.
     :type data: dict
+    :param group: The name of the group the command belongs to.
+    :type group: str
 
     :return: The idname string for the operator.
     :rtype: str
     """
-    return "{}.{}".format(CONFIG_DATA["base"], idName(data["name"]))
+    name = "_".join((group, data["name"]))
+    # If the command belongs to a set add the set name as a prefix to
+    # make the idname unique. This allows to keep the button label
+    # short, which can be useful in case of a set.
+    if "set" in data:
+        name = "_".join((group, data["set"], name))
+    return "{}.{}".format(CONFIG_DATA["base"], idName(name))
 
 
-def getOperatorClassName(data):
+def getOperatorClassName(data, group):
     """Return the class name for the given operator.
 
     :param data: The dictionary which describes the command.
     :type data: dict
+    :param group: The name of the group the command belongs to.
+    :type group: str
 
     :return: The idname string for the operator.
     :rtype: str
     """
-    name = "Tool_Shelf_{}".format(re.sub(ALPHANUM, '', data["name"].title()))
+    name = "Tool_Shelf_{}_{}".format(group.title(), re.sub(ALPHANUM, '', data["name"].title()))
     return "OBJECT_OT_{}".format(name)
 
 
-def buildOperatorClass(data):
+def buildOperatorClass(data, group):
     """Construct and register an operator class for the given command.
 
     :param data: The dictionary which describes the command.
     :type data: dict
+    :param group: The name of the group the command belongs to.
+    :type group: str
 
     :return: The operator class.
     :rtype: class
@@ -375,9 +406,9 @@ def buildOperatorClass(data):
     exec("\n    ".join(execute), module.__dict__)
 
     # Create the class.
-    toolClass = type(getOperatorClassName(data),
+    toolClass = type(getOperatorClassName(data, group),
                      (bpy.types.Operator, ),
-                     {"bl_idname": getIdName(data),
+                     {"bl_idname": getIdName(data, group),
                       "bl_label": data["name"],
                       "bl_description": data["tooltip"],
                       "execute": module.execute})
@@ -396,30 +427,46 @@ def readConfiguration(configData):
     if "groups" not in configData:
         return
 
-    # For each defined group in the configuration file build the classes for
-    # all contained buttons and set up a dictionary for every button
+    # For each defined group in the configuration file build the classes
+    # for all contained buttons and set up a dictionary for every button
     # containing the operator idname and the related icon.
     for group in configData["groups"]:
         toolData = []
         # Process each button/command in the current group.
         for cmd in group["commands"]:
-            CMD_CLASSES.append(buildOperatorClass(cmd))
+            # Get either the single command for the button or in case of
+            # a set the list of contained commands.
+            commandSet = [cmd] if not "set" in cmd else cmd["commands"]
+            toolItem = []
+            for cmdItem in commandSet:
+                CMD_CLASSES.append(buildOperatorClass(cmdItem, group["name"]))
 
-            addOnName = ""
-            # If the complete command is given strip
-            # everything away but the add-on name.
-            if isAddOnToggle(cmd["command"]):
-                addOnName = cmd["command"][13:-2]
+                addOnName = ""
+                # If the complete toggleAddOn("NAME") command is given
+                # strip everything away but the add-on name.
+                if isAddOnToggle(cmdItem["command"]):
+                    addOnName = cmdItem["command"][13:-2]
 
-            # Collect the operator data in a dictionary which is used then
-            # setting up the buttons.
-            toolData.append({"id": getIdName(cmd),
-                             "icon": cmd["icon"],
-                             "addOn": addOnName})
-            # If the command includes an icon, add it to the list of icons
-            # to be added to the preview collection.
-            if cmd["icon"]:
-                ICONS.append(cmd["icon"])
+                # If the command includes an icon, add it to the list
+                # of icons to be added to the preview collection.
+                if cmdItem["icon"]:
+                    ICONS.append(cmdItem["icon"])
+
+                # Collect the operator data in a dictionary which is
+                # used to set up the buttons.
+                itemDict = {"id": getIdName(cmdItem, group["name"]),
+                            "icon": cmdItem["icon"],
+                            "addOn": addOnName}
+                if "set" in cmdItem:
+                    itemDict["set"] = cmdItem["set"]
+                    itemDict["column"] = cmdItem["column"]
+                    itemDict["row"] = cmdItem["row"]
+                toolItem.append(itemDict)
+
+            if len(toolItem) == 1:
+                toolData.extend(toolItem)
+            else:
+                toolData.append(toolItem)
 
         # Store the collected data per group along with the group name.
         GROUPS.append({"name": group["name"], "toolData": toolData})
@@ -459,14 +506,14 @@ def registerIcons(icons, filePath):
     """
     # Setup the preview collection for giving access to the icon.
     pcoll = bpy.utils.previews.new()
-    # Parse every icon which is associated with a button and test if it's a
-    # valid file. Add it to the preview collection.
+    # Parse every icon which is associated with a button and test if
+    # it's a valid file. Add it to the preview collection.
     for icon in icons:
         if len(icon) and not icon.startswith("'"):
             imagePath = os.path.join(filePath, icon)
             if os.path.exists(imagePath):
-                # Try to add the icon to the preview collection in case the
-                # image already exists.
+                # Try to add the icon to the preview collection in case
+                # the image already exists.
                 try:
                     pcoll.load(iconIdName(icon), imagePath, 'IMAGE', True)
                 except:
@@ -512,22 +559,40 @@ def toolChanged(self, context):
     """
     tool_shelf = context.scene.tool_shelf
 
+    IS_SET = False
+
     if tool_shelf.mode_value == 'EDIT':
-        groupIndex = currentGroupIndex(tool_shelf.group_value)
-        toolIndex = currentToolIndex(tool_shelf.button_value, groupIndex)
+        groupIndex = getGroupIndex(CONFIG_DATA, tool_shelf.group_value)
+        toolIndex = getToolIndex(CONFIG_DATA, tool_shelf.button_value, groupIndex)
         if toolIndex is not None:
             command = CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]
-            tool_shelf.name_value = command["name"]
-            tool_shelf.cmd_value = command["command"]
-            tool_shelf.tip_value = command["tooltip"]
-            tool_shelf.image_value = command["icon"]
-            tool_shelf.addon_value = isAddOnToggle(command["command"])
+            # Single tool
+            if "name" in command:
+                tool_shelf.name_value = command["name"]
+                tool_shelf.cmd_value = command["command"]
+                tool_shelf.tip_value = command["tooltip"]
+                tool_shelf.image_value = command["icon"]
+                tool_shelf.addon_value = isAddOnToggle(command["command"])
+                tool_shelf.set_value = ""
+                tool_shelf.column_value = 2
+            # Tool set
+            else:
+                tool_shelf.name_value = ";".join([c["name"] for c in command["commands"]])
+                tool_shelf.cmd_value = ";".join([c["command"] for c in command["commands"]])
+                tool_shelf.tip_value = ";".join([c["tooltip"] for c in command["commands"]])
+                tool_shelf.image_value = ";".join([c["icon"] for c in command["commands"]])
+                tool_shelf.addon_value = False
+                tool_shelf.set_value = command["set"]
+                tool_shelf.column_value = command["columns"]
+        # Group
         else:
             tool_shelf.name_value = tool_shelf.group_value
             tool_shelf.cmd_value = ""
             tool_shelf.tip_value = ""
             tool_shelf.image_value = ""
             tool_shelf.addon_value = False
+            tool_shelf.set_value = ""
+            tool_shelf.column_value = 2
 
 
 def addOnChanged(self, context):
@@ -554,6 +619,20 @@ def addOnChanged(self, context):
                 tool_shelf.name_value = item[1]
                 break
         tool_shelf.cmd_value = tool_shelf.addon_list_value
+
+
+def importFileChanged(self, context):
+    """Callback for when the import file path property changes.
+    Reads the content of the selected configuration file and populates
+    the import enum propery with the contained commands.
+
+    :param context: The current context.
+    :type context: bpy.context
+    """
+    tool_shelf = context.scene.tool_shelf
+    CONFIG_DATA_IMPORT.config = jsonRead(tool_shelf.file_value)
+    if not len(CONFIG_DATA_IMPORT.config):
+        tool_shelf.import_value = 'NONE'
 
 
 def groupItems(self, context):
@@ -583,10 +662,13 @@ def toolItems(self, context):
     tool_shelf = context.scene.tool_shelf
 
     if tool_shelf.group_value != 'NONE':
-        groupIndex = currentGroupIndex(tool_shelf.group_value)
+        groupIndex = getGroupIndex(CONFIG_DATA, tool_shelf.group_value)
         commands = CONFIG_DATA["groups"][groupIndex]["commands"]
         for item in commands:
-            tools.append((item["name"], item["name"], ""))
+            if "set" not in item:
+                tools.append((item["name"], item["name"], ""))
+            else:
+                tools.append((item["set"], item["set"], ""))
 
     return tools
 
@@ -600,12 +682,13 @@ def modeItems(self, context):
     :return: A tuple with the enum items.
     :rtype: tuple()
     """
-    return (('ADD', "", "Add a new group or button command", 'ADD', 0),
+    return (('ADD', "", "Add a new group or tool", 'ADD', 0),
             ('REMOVE', "", "Delete an existing group or button", 'REMOVE', 1),
             ('EDIT', "", "Overwrite the command of an existing button.\nUse the asterisk * "
              "symbol to keep existing settings", 'GREASEPENCIL', 2),
             ('REORDER', "", "Reorder groups and buttons", 'LINENUMBERS_ON', 3),
-            ('VIEW', "", "Display a button command in the text editor", 'FILE', 4))
+            ('VIEW', "", "Display a button command in the text editor", 'FILE', 4),
+            ('IMPORT', "", "Import a group or tool from a configuration file", 'IMPORT', 5))
 
 
 def getAddOnItems():
@@ -649,6 +732,57 @@ def addOnItems(self, context):
     return getAddOnItems()
 
 
+def importItems(self, context):
+    """Callback for populating the enum property with the tool names
+    based on the selected configuration file for the import.
+
+    :param context: The current context.
+    :type context: bpy.context
+    """
+    tools = [('NONE', "––– Select –––", "")]
+
+    tool_shelf = context.scene.tool_shelf
+
+    # If the path to the configuration file is valid get it's data.
+    # This is necessary because when the script gets reloaded in
+    # mid-action while an item in the list is selected an error gets
+    # reported that the last list selection cannot be found anymore.
+    # Therefore it's best to keep the list updated.
+    CONFIG_DATA_IMPORT.config = jsonRead(tool_shelf.file_value)
+
+    # Cancel if no groups have been defined.
+    if "groups" not in CONFIG_DATA_IMPORT.config:
+        return tools
+
+    # Build the enum items from the config file.
+    # To visually separate groups and tools the latter are indented by
+    # two white spaces.
+    # In order to be able to find the tool to import and it's containing
+    # group the item identifier contains the group and tool name
+    # separated by three underscores.
+    for group in CONFIG_DATA_IMPORT.config["groups"]:
+        tools.append((group["name"], group["name"], ""))
+        for cmd in group["commands"]:
+            toolName = cmd["name"] if not "set" in cmd else cmd["set"]
+            tools.append(("{}___{}".format(group["name"], toolName), "  {}".format(toolName), ""))
+
+    return tools
+
+
+class ImportData(object):
+    """Class for handling the data of the import configuration because
+    using a public dictionary doesn't work in this case because even
+    though the file has been read correctly and the dictionary is valid
+    importItems() still gets an empty dictionary.
+    """
+    def __init__(self):
+        """Define the configuration variable"""
+        self.config = {}
+
+
+CONFIG_DATA_IMPORT = ImportData()
+
+
 class Tool_Shelf_Properties(bpy.types.PropertyGroup):
     """Property group class to make the properties globally available.
     """
@@ -664,6 +798,17 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
     addon_value: bpy.props.BoolProperty(name="Add-on Toggle",
                                         description=ANN_TOGGLE_ADDON,
                                         default=False)
+    new_set_value: bpy.props.BoolProperty(name="New Set",
+                                          description=ANN_NEW_SET,
+                                          default=False)
+    set_value: bpy.props.StringProperty(name="Set Name",
+                                        description=ANN_SET_NAME,
+                                        default="")
+    column_value: bpy.props.IntProperty(name="Column Count",
+                                        description=ANN_SET_COLUMNS,
+                                        min=1,
+                                        max=10,
+                                        default=2)
     name_value: bpy.props.StringProperty(name="Name",
                                          description=ANN_NAME,
                                          default="")
@@ -675,8 +820,7 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
                                         default="")
     image_value: bpy.props.StringProperty(name="Icon",
                                           description=ANN_ICON,
-                                          default="",
-                                          subtype='FILE_NAME')
+                                          default="")
     group_value: bpy.props.EnumProperty(name="Group",
                                         description=ANN_GROUP,
                                         items=groupItems,
@@ -689,6 +833,13 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
                                              description=ANN_ADDON,
                                              items=addOnItems,
                                              update=addOnChanged)
+    file_value: bpy.props.StringProperty(name="Import",
+                                         description=ANN_IMPORT_FILE,
+                                         subtype='FILE_PATH',
+                                         update=importFileChanged)
+    import_value: bpy.props.EnumProperty(name="Command",
+                                         description=ANN_IMPORT_ITEM,
+                                         items=importItems)
 
 
 # ----------------------------------------------------------------------
@@ -750,6 +901,10 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         # Get the display mode.
         mode = tool_shelf.mode_value
         label = "Add Tool"
+        nameLabel = "Name"
+        commandLabel = "Command"
+        tooltipLabel = "Tooltip"
+        iconLabel = "Icon"
 
         # Set the global display style of the properties.
         self.layout.use_property_split = True
@@ -777,20 +932,43 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
                 else:
                     col.prop(tool_shelf, "button_value")
                     label = "Edit"
-                col.prop(tool_shelf, "addon_value")
 
-                if mode == 'ADD' and tool_shelf.addon_value:
-                    col.prop(tool_shelf, "addon_list_value")
+                if mode == 'ADD':
+                    col.prop(tool_shelf, "new_set_value")
+                    if tool_shelf.new_set_value:
+                        col.prop(tool_shelf, "set_value")
+                        col.prop(tool_shelf, "column_value")
+                        nameLabel = "Labels"
+                        commandLabel = "Commands"
+                        tooltipLabel = "Tooltips"
+                        iconLabel = "Icons"
+                    else:
+                        col.prop(tool_shelf, "addon_value")
+                        if mode == 'ADD' and tool_shelf.addon_value:
+                            col.prop(tool_shelf, "addon_list_value")
+                elif len(tool_shelf.set_value):
+                    col.prop(tool_shelf, "set_value")
+                    col.prop(tool_shelf, "column_value")
+                    nameLabel = "Labels"
+                    commandLabel = "Commands"
+                    tooltipLabel = "Tooltips"
+                    iconLabel = "Icons"
 
                 # Begin a new section.
                 col = self.layout.column(align=True)
 
-                col.prop(tool_shelf, "name_value")
+                col.prop(tool_shelf, "name_value", text=nameLabel)
                 if mode == 'ADD' or (mode == 'EDIT' and tool_shelf.button_value != 'NONE'):
-                    col.prop(tool_shelf, "cmd_value")
-                    col.prop(tool_shelf, "tip_value")
+                    col.prop(tool_shelf, "cmd_value", text=commandLabel)
+                    col.prop(tool_shelf, "tip_value", text=tooltipLabel)
                     if not tool_shelf.addon_value:
-                        col.prop(tool_shelf, "image_value")
+                        col.prop(tool_shelf, "image_value", text=iconLabel)
+        elif mode == 'IMPORT':
+            col.prop(tool_shelf, "file_value")
+            if tool_shelf.file_value:
+                col.prop(tool_shelf, "import_value")
+                col.prop(tool_shelf, "group_value")
+            label = "Import"
         else:
             col.prop(tool_shelf, "group_value")
             col.prop(tool_shelf, "button_value")
@@ -808,6 +986,9 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         op = self.layout.operator("view3d.tool_shelf", text=label)
         op.mode_value = tool_shelf.mode_value
         op.new_group_value = tool_shelf.new_group_value
+        op.new_set_value = tool_shelf.new_set_value
+        op.set_value = tool_shelf.set_value
+        op.column_value = tool_shelf.column_value
         op.addon_value = tool_shelf.addon_value
         op.name_value = tool_shelf.name_value
         op.cmd_value = tool_shelf.cmd_value
@@ -815,6 +996,8 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         op.image_value = tool_shelf.image_value
         op.group_value = tool_shelf.group_value
         op.button_value = tool_shelf.button_value
+        op.file_value = tool_shelf.file_value
+        op.import_value = tool_shelf.import_value
 
 
 def buildPanelClass(name, data, index):
@@ -838,29 +1021,58 @@ def buildPanelClass(name, data, index):
     # Build the draw method for the panel up front so that it can be
     # referenced when the class gets build.
     draw = ["def draw(self, context):"]
-    for button in data:
-        # If no icon is defined either add a simple button or check if
-        # it's an add-on toggle.
-        if not len(button["icon"]):
-            if not len(button["addOn"]):
-                draw.append("self.layout.operator('{}')".format(button["id"]))
-            # In case of an add-on toggle button the icon depends on the
-            # loaded state of the add-on
-            else:
-                draw.append("import addon_utils")
-                draw.append("checkBox = 'CHECKBOX_DEHLT'")
-                draw.append('enabled, loaded = addon_utils.check("{}")'.format(button["addOn"]))
-                draw.append("if loaded:")
-                draw.append("    checkBox = 'CHECKBOX_HLT'")
-                draw.append("self.layout.operator('{}', icon='{{}}'.format(checkBox))".format(button["id"]))
+    for item in data:
+        parent = "self.layout"
+        # For single buttons the item is a dictionary.
+        # If the item is a tool set it's a list of dictionaries.
+        if isinstance(item, dict):
+            buttons = [item]
         else:
-            if button["icon"].startswith("'"):
-                draw.append("self.layout.operator('{}', icon={})".format(button["id"], button["icon"]))
+            buttons = item[:]
+            draw.append("self.layout.label(text='{}')".format(buttons[0]["set"]))
+            draw.append("row = self.layout.row()")
+            parent = "row"
+
+        lastRow = 0
+
+        for button in buttons:
+
+            # In case of a tool set add a new row to the layout when the
+            # defined row number increases.
+            if "row" in button and button["row"] > lastRow:
+                draw.append("row = self.layout.row()")
+                lastRow = button["row"]
+
+            # ----------------------------------------------------------
+            # No icon or add-on button.
+            # ----------------------------------------------------------
+            if not len(button["icon"]):
+                # Add a simple button with no icon.
+                if not len(button["addOn"]):
+                    draw.append("{}.operator('{}')".format(parent, button["id"]))
+                # In case of an add-on toggle button the icon depends on the
+                # loaded state of the add-on
+                else:
+                    draw.append("import addon_utils")
+                    draw.append("checkBox = 'CHECKBOX_DEHLT'")
+                    draw.append('enabled, loaded = addon_utils.check("{}")'.format(button["addOn"]))
+                    draw.append("if loaded:")
+                    draw.append("    checkBox = 'CHECKBOX_HLT'")
+                    draw.append("{}.operator('{}', icon='{{}}'.format(checkBox))".format(parent, button["id"]))
+            # ----------------------------------------------------------
+            # Icon button.
+            # ----------------------------------------------------------
             else:
-                # Get the icon id related to the image from the preview
-                # collection.
-                icon_id = pcoll[iconIdName(button["icon"])].icon_id
-                draw.append("self.layout.operator('{}', icon_value={})".format(button["id"], icon_id))
+                # Default icon
+                if button["icon"].startswith("'"):
+                    draw.append("{}.operator('{}', icon={})".format(parent, button["id"], button["icon"]))
+                # Custom icon
+                else:
+                    # Get the icon id related to the image from the
+                    # preview collection.
+                    icon_id = pcoll[iconIdName(button["icon"])].icon_id
+                    draw.append("{}.operator('{}', icon_value={})".format(parent, button["id"], icon_id))
+
     # If no buttons are defined, which is the case when a new group has
     # just been added, add pass to the method to make it valid.
     if not len(data):
@@ -904,7 +1116,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     """
     bl_idname = "view3d.tool_shelf"
     bl_label = "Tool Shelf"
-    bl_description = ""
+    bl_description = "Execute the current mode"
 
     mode_value: bpy.props.EnumProperty(name="Mode",
                                        description=ANN_MODE,
@@ -915,6 +1127,17 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     addon_value: bpy.props.BoolProperty(name="Add-on Toggle",
                                         description=ANN_TOGGLE_ADDON,
                                         default=False)
+    new_set_value: bpy.props.BoolProperty(name="New Set",
+                                          description=ANN_NEW_SET,
+                                          default=False)
+    set_value: bpy.props.StringProperty(name="Set Name",
+                                        description=ANN_SET_NAME,
+                                        default="")
+    column_value: bpy.props.IntProperty(name="Column Count",
+                                        description=ANN_SET_COLUMNS,
+                                        min=1,
+                                        max=10,
+                                        default=2)
     name_value: bpy.props.StringProperty(name="Name",
                                          description=ANN_NAME,
                                          default="")
@@ -926,8 +1149,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                                         default="")
     image_value: bpy.props.StringProperty(name="Icon",
                                           description=ANN_ICON,
-                                          default="",
-                                          subtype='FILE_NAME')
+                                          default="")
     # It's not advised to use the update callbacks when defining the
     # operator properties because they are being constantly evaluated.
     # When using update callbacks it's best to only define these when
@@ -941,6 +1163,13 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     addon_list_value: bpy.props.EnumProperty(name="Add-on",
                                              description=ANN_ADDON,
                                              items=addOnItems)
+    file_value: bpy.props.StringProperty(name="Import",
+                                         description=ANN_IMPORT_FILE,
+                                         default="",
+                                         subtype='FILE_PATH')
+    import_value: bpy.props.EnumProperty(name="Command",
+                                         description=ANN_IMPORT_ITEM,
+                                         items=importItems)
 
 
     # ------------------------------------------------------------------
@@ -988,7 +1217,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                 # currently selected group.
                 else:
                     if self.group_value != 'NONE':
-                        insertIndex = currentGroupIndex(self.group_value)+1
+                        insertIndex = getGroupIndex(CONFIG_DATA, self.group_value)+1
                         CONFIG_DATA["groups"].insert(insertIndex, group)
                     else:
                         CONFIG_DATA["groups"].append(group)
@@ -1018,28 +1247,29 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                     backupConfig(CONFIG_DATA)
 
                     # Rename the group.
-                    groupIndex = currentGroupIndex(self.group_value)
+                    groupIndex = getGroupIndex(CONFIG_DATA, self.group_value)
                     CONFIG_DATA["groups"][groupIndex]["name"] = self.name_value
 
                 # ------------------------------------------------------
                 # Edit the button command.
                 # ------------------------------------------------------
                 else:
-                    # Check, if a button with the name already exists.
+                    # Check, if a button with the name already exists in
+                    # the group.
                     if mode == 'ADD':
-                        for group in CONFIG_DATA["groups"]:
-                            for cmd in group["commands"]:
-                                if idName(cmd["name"]) == idName(self.name_value):
-                                    self.report({'WARNING'}, "The command name already exists in "
-                                                             "group: {}".format(group["name"]))
-                                    return {'CANCELLED'}
+                        groupIndex = getGroupIndex(CONFIG_DATA, self.group_value)
+                        toolIndex = getToolIndex(CONFIG_DATA, self.name_value, groupIndex)
+                        if toolIndex is not None:
+                            self.report({'WARNING'}, "The tool name already exists in the group")
+                            return {'CANCELLED'}
 
                     # Check, if the image exists in the icons folder.
-                    if (not self.image_value.startswith("'") and
-                            not os.path.exists(os.path.join(ICONS_PATH, self.image_value))):
-                        self.report({'WARNING'}, "The image doesn't exist in the path: "
-                                                 "{}".format(ICONS_PATH))
-                        return {'CANCELLED'}
+                    for image in self.image_value.split(";"):
+                        if (not image.startswith("'") and
+                                not os.path.exists(os.path.join(ICONS_PATH, image))):
+                            self.report({'WARNING'}, "The image doesn't exist in the path: "
+                                                     "{}".format(os.path.join(ICONS_PATH, image)))
+                            return {'CANCELLED'}
 
                     # Check if the add-on exists.
                     if self.addon_value:
@@ -1062,7 +1292,8 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                     # Backup the current configuration.
                     backupConfig(CONFIG_DATA)
 
-                    # Add a new command to the configuration and save it.
+                    # Add a new command to the configuration and save
+                    # it.
                     buttonCommand = ""
                     if mode == 'ADD' or (mode == 'EDIT' and self.cmd_value.strip() != "*"):
                         # Check if the toggle command has been entered
@@ -1072,36 +1303,71 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                                 self.cmd_value = 'toggleAddOn("{}")'.format(self.cmd_value)
                         buttonCommand = processCommand(self.cmd_value)
                         if buttonCommand is None:
-                            self.report({'WARNING'}, "No text editor open to get the button command")
+                            self.report({'WARNING'}, "No text editor open to get the tool command")
                             return {'CANCELLED'}
 
-                    groupIndex = currentGroupIndex(self.group_value)
+                    groupIndex = getGroupIndex(CONFIG_DATA, self.group_value)
 
                     # Create a new command from the given data.
                     if mode == 'ADD':
-                        cmd = {"name": self.name_value,
-                               "icon": self.image_value,
-                               "command": buttonCommand,
-                               "tooltip": self.tip_value if len(self.tip_value) else self.name_value}
+                        if not self.new_set_value:
+                            cmd = {"name": self.name_value,
+                                   "icon": self.image_value,
+                                   "command": buttonCommand,
+                                   "tooltip": self.tip_value if len(self.tip_value) else self.name_value}
+                        else:
+                            setItems = splitSetCommandString(self.set_value,
+                                                             self.column_value,
+                                                             self.name_value,
+                                                             buttonCommand,
+                                                             self.tip_value,
+                                                             self.image_value)
+                            if setItems is None:
+                                self.report({'WARNING'}, "The number of tool labels and commands "
+                                                         "does not match")
+                                return {'CANCELLED'}
+
+                            cmd = {"set": self.set_value,
+                                   "columns": self.column_value,
+                                   "commands": setItems}
+
                         # Add the command at the end of the list or
                         # after the currently selected tool.
                         if self.button_value != 'NONE':
-                            insertIndex = currentToolIndex(self.button_value, groupIndex)+1
+                            insertIndex = getToolIndex(CONFIG_DATA, self.button_value, groupIndex)+1
                             CONFIG_DATA["groups"][groupIndex]["commands"].insert(insertIndex, cmd)
                         else:
                             CONFIG_DATA["groups"][groupIndex]["commands"].append(cmd)
+
                     # Update the existing command with the given data.
                     else:
-                        toolIndex = currentToolIndex(self.button_value, groupIndex)
-                        if len(self.name_value) and self.name_value.strip() != "*":
-                            CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["name"] = self.name_value
-                        if len(self.image_value) and self.image_value.strip() != "*":
-                            CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["icon"] = self.image_value
-                        if self.cmd_value.strip() != "*":
-                            CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["command"] = buttonCommand
-                        if len(self.tip_value) and self.tip_value.strip() != "*":
-                            toolTip = self.tip_value if len(self.tip_value) else self.name_value
-                            CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["tooltip"] = toolTip
+                        toolIndex = getToolIndex(CONFIG_DATA, self.button_value, groupIndex)
+                        if not len(self.set_value):
+                            if len(self.name_value) and self.name_value.strip() != "*":
+                                CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["name"] = self.name_value
+                            if len(self.image_value) and self.image_value.strip() != "*":
+                                CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["icon"] = self.image_value
+                            if self.cmd_value.strip() != "*":
+                                CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["command"] = buttonCommand
+                            if len(self.tip_value) and self.tip_value.strip() != "*":
+                                toolTip = self.tip_value if len(self.tip_value) else self.name_value
+                                CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["tooltip"] = toolTip
+                        else:
+                            setItems = splitSetCommandString(self.set_value,
+                                                             self.column_value,
+                                                             self.name_value,
+                                                             buttonCommand,
+                                                             self.tip_value,
+                                                             self.image_value)
+                            if setItems is None:
+                                self.report({'WARNING'}, "The number of tool labels and commands "
+                                                         "does not match")
+                                return {'CANCELLED'}
+
+                            cmd = {"set": self.set_value,
+                                   "columns": self.column_value,
+                                   "commands": setItems}
+                            CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex] = cmd
 
                 # Save the configuration.
                 jsonWrite(CONFIG_PATH, CONFIG_DATA)
@@ -1109,6 +1375,9 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
             # Reload the panel.
             bpy.ops.script.reload()
 
+            context.scene.tool_shelf.new_set_value = False
+            context.scene.tool_shelf.set_value = ""
+            context.scene.tool_shelf.column_value = 2
             context.scene.tool_shelf.addon_value = False
             context.scene.tool_shelf.name_value = ""
             context.scene.tool_shelf.cmd_value = ""
@@ -1131,7 +1400,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
             # Delete the selected group.
             # ----------------------------------------------------------
             if self.button_value == 'NONE':
-                CONFIG_DATA["groups"].pop(currentGroupIndex(self.group_value))
+                CONFIG_DATA["groups"].pop(getGroupIndex(CONFIG_DATA, self.group_value))
                 # Reset the enum values to prevent errors because
                 # the removed item is not found anymore.
                 self.group_value = 'NONE'
@@ -1141,8 +1410,8 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
             # Delete the selected button.
             # ----------------------------------------------------------
             else:
-                groupIndex = currentGroupIndex(self.group_value)
-                toolIndex = currentToolIndex(self.button_value, groupIndex)
+                groupIndex = getGroupIndex(CONFIG_DATA, self.group_value)
+                toolIndex = getToolIndex(CONFIG_DATA, self.button_value, groupIndex)
                 if toolIndex is not None:
                     CONFIG_DATA["groups"][groupIndex]["commands"].pop(toolIndex)
                     # Reset the enum values to prevent errors because
@@ -1189,20 +1458,98 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                 return {'CANCELLED'}
 
             # Create a new document with the name of the command.
-            textName = idName(self.button_value)
+            textName = idName("_".join((self.group_value, self.button_value)))
             bpy.data.texts.new(textName)
             # Set the text to display in the editor.
             textArea.text = bpy.data.texts[textName]
 
             # Go through all groups and search which command matches the
             # current selection.
-            groupIndex = currentGroupIndex(self.group_value)
-            toolIndex = currentToolIndex(self.button_value, groupIndex)
+            groupIndex = getGroupIndex(CONFIG_DATA, self.group_value)
+            toolIndex = getToolIndex(CONFIG_DATA, self.button_value, groupIndex)
             # Get the command from the configuration and write it to the
             # text file.
             if toolIndex is not None:
-                command = CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["command"]
-                bpy.data.texts[currentTextIndex()].write(command)
+                command = CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]
+                if "name" in command:
+                    cmdString = CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["command"]
+                else:
+                    cmdString = ";".join([c["command"] for c in command["commands"]])
+                bpy.data.texts[currentTextIndex()].write(cmdString)
+
+        # --------------------------------------------------------------
+        # Import mode
+        # --------------------------------------------------------------
+        elif mode == 'IMPORT':
+            # Make sure the file exists.
+            if not os.path.exists(self.file_value):
+                self.report({'WARNING'}, "Select a valid configuration file")
+                return {'CANCELLED'}
+            # Make sure that a group or tool is selected.
+            if self.import_value == 'NONE':
+                self.report({'WARNING'}, "Select a group or tool to import")
+                return {'CANCELLED'}
+
+            # ----------------------------------------------------------
+            # Import a group.
+            # ----------------------------------------------------------
+            if "___" not in self.import_value:
+                groupName = self.import_value
+
+                # Check if the group already exists.
+                groupIndex = getGroupIndex(CONFIG_DATA, groupName)
+                if groupIndex is not None:
+                    self.report({'WARNING'}, "A group with this name already exists")
+                    return {'CANCELLED'}
+
+                # Backup the current configuration.
+                backupConfig(CONFIG_DATA_BACKUP)
+
+                groupIndex = getGroupIndex(CONFIG_DATA_IMPORT.config, groupName)
+                CONFIG_DATA["groups"].append(CONFIG_DATA_IMPORT.config["groups"][groupIndex])
+
+                # Save the configuration.
+                jsonWrite(CONFIG_PATH, CONFIG_DATA)
+
+                context.scene.tool_shelf.import_value = 'NONE'
+
+                # Reload the panel.
+                bpy.ops.script.reload()
+
+            # ----------------------------------------------------------
+            # Import a tool.
+            # ----------------------------------------------------------
+            else:
+                # Make sure a group is selected.
+                if self.group_value == 'NONE':
+                    self.report({'WARNING'}, "No group selected")
+                    return {'CANCELLED'}
+
+                # Get the group and tool name from the selected element.
+                groupName, toolName = self.import_value.split("___")
+
+                groupIndex = getGroupIndex(CONFIG_DATA, self.group_value)
+                toolIndex = getToolIndex(CONFIG_DATA, toolName, groupIndex)
+                if toolIndex is not None:
+                    self.report({'WARNING'}, "The tool name already exists in the group")
+                    return {'CANCELLED'}
+
+                # Backup the current configuration.
+                backupConfig(CONFIG_DATA_BACKUP)
+
+                # Get the group and tool name from the selected element.
+                importGroupIndex = getGroupIndex(CONFIG_DATA_IMPORT.config, groupName)
+                importToolIndex = getToolIndex(CONFIG_DATA_IMPORT.config, toolName, importGroupIndex)
+                CONFIG_DATA["groups"][groupIndex]["commands"].append(CONFIG_DATA_IMPORT.config["groups"][importGroupIndex]["commands"][importToolIndex])
+
+                # Save the configuration.
+                jsonWrite(CONFIG_PATH, CONFIG_DATA)
+
+                context.scene.tool_shelf.group_value = 'NONE'
+                context.scene.tool_shelf.import_value = 'NONE'
+
+                # Reload the panel.
+                bpy.ops.script.reload()
 
         return {'FINISHED'}
 
@@ -1235,7 +1582,7 @@ class TOOLSHELF_OT_MoveItemUp(bpy.types.Operator):
 
         reorder(name=name,
                 isGroup=isGroup,
-                groupIndex=currentGroupIndex(tool_shelf.group_value),
+                groupIndex=getGroupIndex(CONFIG_DATA, tool_shelf.group_value),
                 up=True)
         if isGroup:
             tool_shelf.group_value = name
@@ -1269,7 +1616,7 @@ class TOOLSHELF_OT_MoveItemDown(bpy.types.Operator):
 
         reorder(name=name,
                 isGroup=isGroup,
-                groupIndex=currentGroupIndex(tool_shelf.group_value),
+                groupIndex=groupIndex(CONFIG_DATA, tool_shelf.group_value),
                 up=False)
         if isGroup:
             tool_shelf.group_value = name
@@ -1283,24 +1630,28 @@ class TOOLSHELF_OT_MoveItemDown(bpy.types.Operator):
 # Helper methods
 # ----------------------------------------------------------------------
 
-def currentGroupIndex(name):
+def getGroupIndex(data, name):
     """Get the index of the currently selected group.
 
+    :param data: The configuration dictionary to get the group from.
+    :type data: dict
     :param name: The name of the selected group.
     :type name: str
 
     :return: The index of the group.
-    :rtype: int
+    :rtype: int or None
     """
-    for i in range(len(CONFIG_DATA["groups"])):
-        if CONFIG_DATA["groups"][i]["name"] == name:
+    for i in range(len(data["groups"])):
+        if data["groups"][i]["name"] == name:
             return i
 
 
-def currentToolIndex(name, groupIndex):
+def getToolIndex(data, name, groupIndex):
     """Get the index of the currently selected tool.
     Return None, if the tool cannot be found in the given group.
 
+    :param data: The configuration dictionary to get the group from.
+    :type data: dict
     :param name: The name of the selected tool.
     :type name: str
     :param groupIndex: The index of the group the tool belongs to.
@@ -1309,9 +1660,11 @@ def currentToolIndex(name, groupIndex):
     :return: The index of the tool.
     :rtype: int or None
     """
-    commands = CONFIG_DATA["groups"][groupIndex]["commands"]
+    commands = data["groups"][groupIndex]["commands"]
     for i in range(len(commands)):
-        if commands[i]["name"] == name:
+        if "name" in commands[i] and commands[i]["name"] == name:
+            return i
+        elif "set" in commands[i] and commands[i]["set"] == name:
             return i
 
 
@@ -1328,11 +1681,12 @@ def processCommand(cmd):
     :rtype: str or None
     """
     if len(cmd):
-        # Add the bpy import if the given command requires it.
-        if "bpy." in cmd and "import bpy" not in cmd:
-            return "import bpy; {}".format(cmd)
-        else:
-            return cmd
+        cmdItems = cmd.split(";")
+        for i in range(len(cmdItems)):
+            # Add the bpy import if the given command requires it.
+            if "bpy." in cmdItems[i] and "import bpy" not in cmdItems[i]:
+                cmdItems[i] = "import bpy\n{}".format(cmdItems[i])
+        return ";".join(cmdItems)
     # If no command is provided get the content of the current text
     # editor or it's selection.
     else:
@@ -1358,6 +1712,70 @@ def processCommand(cmd):
             for i in range(start, end):
                 content.append(bpy.data.texts[textIndex].lines[i].body.replace("\t", "    "))
         return "\n".join(content)
+
+
+def splitSetCommandString(setName, columns, labels, commands, tips, icons):
+    """Split the given set command data into separate commands and
+    return them as a list.
+
+    :param setName: The name of the set.
+    :type setName: str
+    :param columns: The number of buttons in a row.
+    :type columns: int
+    :param labels: The semicolon-separated string for all button labels.
+    :type labels: str
+    :param commands: The semicolon-separated string for all commands.
+    :type commands: str
+    :param tips: The semicolon-separated string for all tooltips.
+    :type tips: str
+    :param icons: The semicolon-separated string for all icons.
+    :type icons: str
+
+    :return: The list of command dictionaries or None if the number of
+             labels and commands don't match.
+    :rtype: list(dict) or None
+    """
+    labelItems = labels.split(";")
+    commandItems = commands.split(";")
+    tipItems = tips.split(";")
+    iconItems = icons.split(";")
+
+    # The number of button labels and commands has to match.
+    if len(labelItems) != len(commandItems):
+        return
+
+    # If tooltip items are missing add the labels as tooltips.
+    if not len(tipItems):
+        tipItems = labelItems[:]
+    if len(tipItems) < len(labelItems):
+        for i in range(len(tipItems), len(labelItems)):
+            tipItems.append(labelItems[i])
+
+    # If icons are missing add empty entries.
+    if not len(iconItems):
+        iconItems = [""] * len(labelItems)-1
+    if len(iconItems) < len(labelItems):
+        for i in range(len(iconItems), len(labelItems)):
+            iconItems.append("")
+
+    cmdList = []
+    columnIndex = 0
+    rowIndex = 0
+    for i in range(len(commandItems)):
+        cmd = {"set": setName,
+               "column": columnIndex,
+               "row": rowIndex,
+               "name": labelItems[i],
+               "icon": iconItems[i],
+               "command": commandItems[i],
+               "tooltip": tipItems[i]}
+        columnIndex += 1
+        if columnIndex == columns:
+            columnIndex = 0
+            rowIndex += 1
+        cmdList.append(cmd)
+
+    return cmdList
 
 
 def currentTextArea():
@@ -1495,7 +1913,7 @@ def reorder(name="", isGroup=True, groupIndex=0, up=True):
             CONFIG_DATA["groups"].pop(groupIndex)
             CONFIG_DATA["groups"].insert(groupIndex+direction, groupData)
     else:
-        toolIndex = currentToolIndex(name, groupIndex)
+        toolIndex = getToolIndex(CONFIG_DATA, name, groupIndex)
         if (up and toolIndex > 0) or (not up and toolIndex < len(CONFIG_DATA["groups"][groupIndex]["commands"])-1):
             toolData = CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]
             CONFIG_DATA["groups"][groupIndex]["commands"].pop(toolIndex)
