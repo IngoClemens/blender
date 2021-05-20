@@ -36,6 +36,13 @@ editor.
 
 Changelog:
 
+0.5.0 - 2021-05-20
+      - Added the option to use unicode characters instead of a label
+        for a button.
+      - Added the option to only show the button icon.
+      - String properties can be defined by entering string in the value
+        field.
+
 0.4.0 - 2021-05-16
       - Added the option to add properties to a tool or tool set.
 
@@ -55,7 +62,7 @@ Changelog:
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 4, 0),
+           "version": (0, 5, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -130,7 +137,8 @@ ANN_IMPORT_ITEM = "The group or tool to import"
 ANN_GROUP = ("The group to add the tool to.\n"
              "A new group it will be created after the last or after the selected group item")
 ANN_ICON = ("The name of the icon file with 32x32 pixel or a default Blender icon identifier "
-            "enclosed in single quotes")
+            "enclosed in single quotes or a unicode character")
+ANN_ICON_ONLY = "Only show the icon instead of the button label"
 ANN_MODE = "Switch the editing mode"
 ANN_NAME = ("The name of the group or tool.\n"
             "It needs to be unique in lowercase across all groups")
@@ -277,7 +285,81 @@ def addVersions(data):
     return data
 
 
-CONFIG_DATA = readConfig()
+def backupConfig(data):
+    """Backup the given configuration.
+
+    :param data: The configuration dictionary to backup.
+    :type data: dict
+    """
+    backupFileName = "config_{}.json".format(nextBackupIndex())
+    backupFilePath = os.path.join(BACKUP_PATH, backupFileName)
+    jsonWrite(backupFilePath, data)
+
+
+def nextBackupIndex():
+    """Return the next index for the configuration backup. If the folder
+    doesn't exist, create it.
+    Get the index of the last file and compare it to the number of
+    backup files.
+
+    :return: The next index for the backup configuration.
+    :rtype: int
+    """
+    fileList = os.listdir(createDir(BACKUP_PATH))
+    if not len(fileList) or not fileList[-1].endswith(".json"):
+        return 1
+
+    lastIndex = int(fileList[-1].split(".")[0].split("_")[-1])
+    newIndex = (lastIndex+1) % BACKUP_COUNT
+
+    return newIndex
+
+
+def updateConfig(data):
+    """Update older configurations with mandatory settings.
+
+    :param data: The configuration data.
+    :type data: dict
+
+    :return: The updated configuration data.
+    :rtype: dict
+    """
+    # Cancel if no groups have been defined.
+    if "groups" not in data:
+        return data
+
+    config = dict(data)
+
+    updateItems = [("iconOnly", False)]
+
+    update = False
+    for i in range(len(config["groups"])):
+        group = config["groups"][i]
+        for j in range(len(group["commands"])):
+            command = group["commands"][j]
+            if "set" in command:
+                for k in range(len(command["commands"])):
+                    setCommand = command["commands"][k]
+                    for item in updateItems:
+                        if item[0] not in setCommand:
+                            config["groups"][i]["commands"][j]["commands"][k][item[0]] = item[1]
+                            update = True
+            else:
+                for item in updateItems:
+                    if item[0] not in command:
+                        config["groups"][i]["commands"][j][item[0]] = item[1]
+                        update = True
+
+    if update:
+        # Backup the current configuration.
+        backupConfig(data)
+        # Save the configuration.
+        jsonWrite(CONFIG_PATH, config)
+
+    return config
+
+
+CONFIG_DATA = updateConfig(readConfig())
 
 
 # ----------------------------------------------------------------------
@@ -427,6 +509,8 @@ def stringToValue(string):
         return string == "True"
     elif len(string.split(".")) > 1:
         return float(string)
+    elif string.lower() == "string":
+        return "string"
     else:
         return int(string)
 
@@ -474,6 +558,11 @@ def createProperty(data, group):
             propString = "IntProperty"
         elif isinstance(value, float):
             propString = "FloatProperty"
+        elif value == "string":
+            propString = "StringProperty"
+            valueString = ""
+            minString = ""
+            maxString = ""
 
         if len(propString):
             properties.append('{}: bpy.props.{}(name="{}"{}{}{})'.format(names[i],
@@ -664,6 +753,7 @@ def readConfiguration(configData):
                 # used to set up the buttons.
                 itemDict = {"id": getIdName(cmdItem, group["name"]),
                             "icon": cmdItem["icon"],
+                            "iconOnly": cmdItem["iconOnly"],
                             "addOn": addOnName,
                             "property": commandProp}
                 if "set" in cmdItem:
@@ -719,7 +809,7 @@ def registerIcons(icons, filePath):
     # Parse every icon which is associated with a button and test if
     # it's a valid file. Add it to the preview collection.
     for icon in icons:
-        if len(icon) and not icon.startswith("'"):
+        if len(icon) and not icon.startswith("'") and icon.split(".")[-1] == "png":
             imagePath = os.path.join(filePath, icon)
             if os.path.exists(imagePath):
                 # Try to add the icon to the preview collection in case
@@ -740,6 +830,28 @@ ICON_COLLECTION["icons"] = registerIcons(ICONS, ICONS_PATH)
 # Globally define all properties for adding new buttons and commands.
 # ----------------------------------------------------------------------
 
+def clearFields(context):
+    """Clear all fields.
+
+    :param context: The current context.
+    :type context: bpy.context
+    """
+    tool_shelf = context.scene.tool_shelf
+
+    tool_shelf.name_value = ""
+    tool_shelf.cmd_value = ""
+    tool_shelf.tip_value = ""
+    tool_shelf.image_value = ""
+    tool_shelf.image_only_value = False
+    tool_shelf.new_set_value = False
+    tool_shelf.addon_value = False
+    tool_shelf.set_value = ""
+    tool_shelf.column_value = 2
+    tool_shelf.property_value = False
+    tool_shelf.property_name_value = ""
+    tool_shelf.property_value_value = ""
+
+
 def groupChanged(self, context):
     """Callback for when the group enum property selection changes.
 
@@ -750,15 +862,12 @@ def groupChanged(self, context):
 
     # Reset the tool selection.
     tool_shelf.button_value = 'NONE'
+    clearFields(context)
     # Clear all fields in edit mode.
     if tool_shelf.mode_value == 'EDIT':
-        tool_shelf.name_value = tool_shelf.group_value
-        tool_shelf.cmd_value = ""
-        tool_shelf.tip_value = ""
-        tool_shelf.image_value = ""
-        tool_shelf.property_name_value = ""
-        tool_shelf.property_value_value = ""
-    tool_shelf.addon_value = False
+        groupIndex = getGroupIndex(CONFIG_DATA, tool_shelf.group_value)
+        if groupIndex is not None:
+            tool_shelf.name_value = tool_shelf.group_value
 
 
 def toolChanged(self, context):
@@ -772,7 +881,12 @@ def toolChanged(self, context):
     tool_shelf = context.scene.tool_shelf
 
     if tool_shelf.mode_value == 'EDIT':
+        clearFields(context)
+
         groupIndex = getGroupIndex(CONFIG_DATA, tool_shelf.group_value)
+        if groupIndex is None:
+            return
+
         toolIndex = getToolIndex(CONFIG_DATA, tool_shelf.button_value, groupIndex)
         if toolIndex is not None:
             command = CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]
@@ -783,9 +897,8 @@ def toolChanged(self, context):
                 tool_shelf.cmd_value = command["command"]
                 tool_shelf.tip_value = command["tooltip"]
                 tool_shelf.image_value = command["icon"]
+                tool_shelf.image_only_value = command["iconOnly"]
                 tool_shelf.addon_value = isAddOnToggle(command["command"])
-                tool_shelf.set_value = ""
-                tool_shelf.column_value = 2
                 useProp = False
                 propName = ""
                 propValue = ""
@@ -798,11 +911,12 @@ def toolChanged(self, context):
                 tool_shelf.property_value_value = propValue
             # Tool set
             else:
+                tool_shelf.new_set_value = True
                 tool_shelf.name_value = ";".join([c["name"] for c in command["commands"]])
                 tool_shelf.cmd_value = ";".join([c["command"] for c in command["commands"]])
-                tool_shelf.tip_value = ";".join([c["tooltip"] for c in command["commands"]])
+                tool_shelf.tip_value = command["commands"][0]["tooltip"]
                 tool_shelf.image_value = ";".join([c["icon"] for c in command["commands"]])
-                tool_shelf.addon_value = False
+                tool_shelf.image_only_value = command["commands"][0]["iconOnly"]
                 tool_shelf.set_value = command["set"]
                 tool_shelf.column_value = command["columns"]
                 useProp = False
@@ -818,15 +932,6 @@ def toolChanged(self, context):
         # Group
         else:
             tool_shelf.name_value = tool_shelf.group_value
-            tool_shelf.cmd_value = ""
-            tool_shelf.tip_value = ""
-            tool_shelf.image_value = ""
-            tool_shelf.addon_value = False
-            tool_shelf.set_value = ""
-            tool_shelf.column_value = 2
-            tool_shelf.property_value = False
-            tool_shelf.property_name_value = ""
-            tool_shelf.property_value_value = ""
 
 
 def addOnChanged(self, context):
@@ -948,7 +1053,7 @@ def getAddOnItems():
             # some reason this results in unicode characters showing up
             # as list items.
             if item["category"] != lastCategory:
-                addOns.append((None))
+                addOns.append(None)
                 lastCategory = item["category"]
             addOns.append((item["name"], item["label"], ""))
     return addOns
@@ -1038,7 +1143,7 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
     set_value: bpy.props.StringProperty(name="Set Name",
                                         description=ANN_SET_NAME,
                                         default="")
-    column_value: bpy.props.IntProperty(name="Column Count",
+    column_value: bpy.props.IntProperty(name="Row Buttons",
                                         description=ANN_SET_COLUMNS,
                                         min=1,
                                         max=10,
@@ -1055,9 +1160,9 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
     image_value: bpy.props.StringProperty(name="Icon",
                                           description=ANN_ICON,
                                           default="")
-    name_value: bpy.props.StringProperty(name="Name",
-                                         description=ANN_NAME,
-                                         default="")
+    image_only_value: bpy.props.BoolProperty(name="Icon Only",
+                                             description=ANN_ICON_ONLY,
+                                             default=False)
     property_value: bpy.props.BoolProperty(name="Property",
                                            description=ANN_PROPERTY,
                                            default=False)
@@ -1154,7 +1259,6 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         label = "Add Tool"
         nameLabel = "Name"
         commandLabel = "Command"
-        tooltipLabel = "Tooltip"
         iconLabel = "Icon"
 
         # Set the global display style of the properties.
@@ -1184,26 +1288,21 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
                     col.prop(tool_shelf, "button_value")
                     label = "Edit"
 
-                if mode == 'ADD':
-                    col.prop(tool_shelf, "new_set_value")
-                    if tool_shelf.new_set_value:
-                        col.prop(tool_shelf, "set_value")
-                        col.prop(tool_shelf, "column_value")
-                        nameLabel = "Labels"
-                        commandLabel = "Commands"
-                        tooltipLabel = "Tooltips"
-                        iconLabel = "Icons"
-                    else:
-                        col.prop(tool_shelf, "addon_value")
-                        if mode == 'ADD' and tool_shelf.addon_value:
-                            col.prop(tool_shelf, "addon_list_value")
-                elif len(tool_shelf.set_value):
+                if tool_shelf.button_value != 'NONE':
+                    setLabel = "New Set"
+                    if mode == 'EDIT':
+                        setLabel = "Edit Set"
+                    col.prop(tool_shelf, "new_set_value", text=setLabel)
+                if tool_shelf.new_set_value:
                     col.prop(tool_shelf, "set_value")
                     col.prop(tool_shelf, "column_value")
                     nameLabel = "Labels"
                     commandLabel = "Commands"
-                    tooltipLabel = "Tooltips"
                     iconLabel = "Icons"
+                elif mode == 'ADD':
+                    col.prop(tool_shelf, "addon_value")
+                    if mode == 'ADD' and tool_shelf.addon_value:
+                        col.prop(tool_shelf, "addon_list_value")
 
                 # Begin a new section.
                 col = self.layout.column(align=True)
@@ -1211,9 +1310,10 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
                 col.prop(tool_shelf, "name_value", text=nameLabel)
                 if mode == 'ADD' or (mode == 'EDIT' and tool_shelf.button_value != 'NONE'):
                     col.prop(tool_shelf, "cmd_value", text=commandLabel)
-                    col.prop(tool_shelf, "tip_value", text=tooltipLabel)
+                    col.prop(tool_shelf, "tip_value")
                     if not tool_shelf.addon_value:
                         col.prop(tool_shelf, "image_value", text=iconLabel)
+                        col.prop(tool_shelf, "image_only_value")
                         col.prop(tool_shelf, "property_value")
                         if tool_shelf.property_value:
                             col.prop(tool_shelf, "property_name_value")
@@ -1249,6 +1349,7 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         op.cmd_value = tool_shelf.cmd_value
         op.tip_value = tool_shelf.tip_value
         op.image_value = tool_shelf.image_value
+        op.image_only_value = tool_shelf.image_only_value
         op.group_value = tool_shelf.group_value
         op.button_value = tool_shelf.button_value
         op.file_value = tool_shelf.file_value
@@ -1308,6 +1409,10 @@ def buildPanelClass(name, data, index):
                 draw.append("row = col.row(align=True)")
                 lastRow = button["row"]
 
+            # Check, if the icon is a default icon, an image or a
+            # unicode string.
+            labelSymbol, button["icon"] = filterIcon(button["icon"])
+
             # ----------------------------------------------------------
             # No icon or add-on button.
             # ----------------------------------------------------------
@@ -1334,9 +1439,17 @@ def buildPanelClass(name, data, index):
                         draw.append("row = col.row(align=True)")
                     propertyAdded = True
 
+                    draw.append("{} = {}.column()".format(parent, parent))
+                    draw.append("{} = {}.row(align=True)".format(parent, parent))
+
                 # Add a simple button with no icon.
                 if not len(button["addOn"]):
-                    draw.append("{}.operator('{}')".format(parent, button["id"]))
+                    label = ""
+                    if len(labelSymbol):
+                        label = ", text='{}'".format(labelSymbol)
+                    elif button["iconOnly"]:
+                        label = ", text=''"
+                    draw.append("{}.operator('{}'{})".format(parent, button["id"], label))
                 # In case of an add-on toggle button the icon depends on the
                 # loaded state of the add-on
                 else:
@@ -1371,15 +1484,25 @@ def buildPanelClass(name, data, index):
                         draw.append("row = self.layout.row(align=True)")
                     propertyAdded = True
 
+                label = ""
+                if button["iconOnly"]:
+                    label = ", text=''"
+
                 # Default icon
                 if button["icon"].startswith("'"):
-                    draw.append("{}.operator('{}', icon={})".format(parent, button["id"], button["icon"]))
+                    draw.append("{}.operator('{}'{}, icon={})".format(parent,
+                                                                      button["id"],
+                                                                      label,
+                                                                      button["icon"]))
                 # Custom icon
                 else:
                     # Get the icon id related to the image from the
                     # preview collection.
                     icon_id = pcoll[iconIdName(button["icon"])].icon_id
-                    draw.append("{}.operator('{}', icon_value={})".format(parent, button["id"], icon_id))
+                    draw.append("{}.operator('{}', icon_value={})".format(parent,
+                                                                          button["id"],
+                                                                          label,
+                                                                          icon_id))
 
     # If no buttons are defined, which is the case when a new group has
     # just been added, add pass to the method to make it valid.
@@ -1413,6 +1536,30 @@ def buildGroupPanels():
                                            i))
 
 
+def filterIcon(icon):
+    """Check, if the icon is a default icon, an image or a unicode
+    character.
+
+    In case of a unicode character no image is returned so that the
+    button gets drawn without an icon but rather using the unicode
+    character as a label.
+
+    :param icon: The image string contained in the dictionary for a
+                 button.
+    :type icon: str
+
+    :return: A tuple with the button label in case of a unicode
+             character and the image for the button icon.
+    :rtype: tuple(str, str)
+    """
+    if len(icon):
+        if icon.startswith("'") or icon.split(".")[-1] == "png":
+            return "", icon
+        else:
+            return icon, ""
+    return "", ""
+
+
 buildGroupPanels()
 
 
@@ -1442,7 +1589,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     set_value: bpy.props.StringProperty(name="Set Name",
                                         description=ANN_SET_NAME,
                                         default="")
-    column_value: bpy.props.IntProperty(name="Column Count",
+    column_value: bpy.props.IntProperty(name="Row Buttons",
                                         description=ANN_SET_COLUMNS,
                                         min=1,
                                         max=10,
@@ -1450,15 +1597,6 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     name_value: bpy.props.StringProperty(name="Name",
                                          description=ANN_NAME,
                                          default="")
-    property_value: bpy.props.BoolProperty(name="Property",
-                                           description=ANN_PROPERTY,
-                                           default=False)
-    property_name_value: bpy.props.StringProperty(name="Name",
-                                                  description=ANN_PROPERTY_NAME,
-                                                  default="")
-    property_value_value: bpy.props.StringProperty(name="Value",
-                                                   description=ANN_PROPERTY_VALUE,
-                                                   default="")
     cmd_value: bpy.props.StringProperty(name="Command",
                                         description=ANN_COMMAND,
                                         default="")
@@ -1468,6 +1606,18 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     image_value: bpy.props.StringProperty(name="Icon",
                                           description=ANN_ICON,
                                           default="")
+    image_only_value: bpy.props.BoolProperty(name="Icon Only",
+                                             description=ANN_ICON_ONLY,
+                                             default=False)
+    property_value: bpy.props.BoolProperty(name="Property",
+                                           description=ANN_PROPERTY,
+                                           default=False)
+    property_name_value: bpy.props.StringProperty(name="Name",
+                                                  description=ANN_PROPERTY_NAME,
+                                                  default="")
+    property_value_value: bpy.props.StringProperty(name="Value",
+                                                   description=ANN_PROPERTY_VALUE,
+                                                   default="")
     # It's not advised to use the update callbacks when defining the
     # operator properties because they are being constantly evaluated.
     # When using update callbacks it's best to only define these when
@@ -1583,7 +1733,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
 
                     # Check, if the image exists in the icons folder.
                     for image in self.image_value.split(";"):
-                        if (not image.startswith("'") and
+                        if (not image.startswith("'") and image.split(".")[-1] == "png" and
                                 not os.path.exists(os.path.join(ICONS_PATH, image))):
                             self.report({'WARNING'}, "The image doesn't exist in the path: "
                                                      "{}".format(os.path.join(ICONS_PATH, image)))
@@ -1643,17 +1793,24 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                         if not self.new_set_value:
                             cmd = {"name": self.name_value,
                                    "icon": self.image_value,
+                                   "iconOnly": self.image_only_value,
                                    "command": buttonCommand,
-                                   "tooltip": self.tip_value if len(self.tip_value) else self.name_value,
-                                   "valueName": self.property_name_value,
-                                   "value": self.property_value_value}
+                                   "tooltip": self.tip_value if len(self.tip_value) else self.name_value}
+                            # Only add the property if the option is
+                            # enabled. It's possible that the fields
+                            # contain data even if the user decided to
+                            # disable this option again.
+                            if self.property_value:
+                                cmd["valueName"] = self.property_name_value
+                                cmd["value"] = self.property_value_value
                         else:
                             setItems = splitSetCommandString(self.set_value,
                                                              self.column_value,
                                                              self.name_value,
                                                              buttonCommand,
                                                              self.tip_value,
-                                                             self.image_value)
+                                                             self.image_value,
+                                                             self.image_only_value)
                             if setItems is None:
                                 self.report({'WARNING'}, "The number of tool labels and commands "
                                                          "does not match")
@@ -1661,14 +1818,19 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
 
                             cmd = {"set": self.set_value,
                                    "columns": self.column_value,
-                                   "commands": setItems,
-                                   "valueName": self.property_name_value,
-                                   "value": self.property_value_value}
+                                   "commands": setItems}
+                            # Only add the property if the option is
+                            # enabled. It's possible that the fields
+                            # contain data even if the user decided to
+                            # disable this option again.
+                            if self.property_value:
+                                cmd["valueName"] = self.property_name_value
+                                cmd["value"] = self.property_value_value
 
                         # Add the command at the end of the list or
                         # after the currently selected tool.
                         if self.button_value != 'NONE':
-                            insertIndex = getToolIndex(CONFIG_DATA, self.button_value, groupIndex)+1
+                            insertIndex = getToolIndex(CONFIG_DATA, self.button_value, groupIndex) + 1
                             CONFIG_DATA["groups"][groupIndex]["commands"].insert(insertIndex, cmd)
                         else:
                             CONFIG_DATA["groups"][groupIndex]["commands"].append(cmd)
@@ -1679,8 +1841,9 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                         if not len(self.set_value):
                             if len(self.name_value) and self.name_value.strip() != "*":
                                 CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["name"] = self.name_value
-                            if len(self.image_value) and self.image_value.strip() != "*":
+                            if self.image_value.strip() != "*":
                                 CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["icon"] = self.image_value
+                            CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["iconOnly"] = self.image_only_value
                             if self.cmd_value.strip() != "*":
                                 CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["command"] = buttonCommand
                             if len(self.tip_value) and self.tip_value.strip() != "*":
@@ -1690,13 +1853,23 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                                 CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["valueName"] = self.property_name_value
                             if len(self.property_value_value) and self.property_value_value.strip() != "*":
                                 CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["value"] = self.property_value_value
+
+                            # If the property option has been disabled
+                            # but the tool contains a property, remove
+                            # it.
+                            if not self.property_value:
+                                if "valueName" in CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]:
+                                    CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex].pop("valueName", None)
+                                if "value" in CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]:
+                                    CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex].pop("value", None)
                         else:
                             setItems = splitSetCommandString(self.set_value,
                                                              self.column_value,
                                                              self.name_value,
                                                              buttonCommand,
                                                              self.tip_value,
-                                                             self.image_value)
+                                                             self.image_value,
+                                                             self.image_only_value)
                             if setItems is None:
                                 self.report({'WARNING'}, "The number of tool labels and commands "
                                                          "does not match")
@@ -1704,9 +1877,14 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
 
                             cmd = {"set": self.set_value,
                                    "columns": self.column_value,
-                                   "commands": setItems,
-                                   "valueName": self.property_name_value,
-                                   "value": self.property_value_value}
+                                   "commands": setItems}
+                            # Only add the property if the option is
+                            # enabled. It's possible that the fields
+                            # contain data even if the user decided to
+                            # disable this option again.
+                            if self.property_value:
+                                cmd["valueName"] = self.property_name_value
+                                cmd["value"] = self.property_value_value
                             CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex] = cmd
 
                 # Save the configuration.
@@ -1723,6 +1901,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
             context.scene.tool_shelf.cmd_value = ""
             context.scene.tool_shelf.tip_value = ""
             context.scene.tool_shelf.image_value = ""
+            context.scene.tool_shelf.image_only_value = False
             context.scene.tool_shelf.property_value = False
             context.scene.tool_shelf.property_name_value = ""
             context.scene.tool_shelf.property_value_value = ""
@@ -2057,7 +2236,7 @@ def processCommand(cmd):
         return "\n".join(content)
 
 
-def splitSetCommandString(setName, columns, labels, commands, tips, icons):
+def splitSetCommandString(setName, columns, labels, commands, tip, icons, iconOnly):
     """Split the given set command data into separate commands and
     return them as a list.
 
@@ -2069,10 +2248,12 @@ def splitSetCommandString(setName, columns, labels, commands, tips, icons):
     :type labels: str
     :param commands: The semicolon-separated string for all commands.
     :type commands: str
-    :param tips: The semicolon-separated string for all tooltips.
-    :type tips: str
+    :param tip: The tooltip for all buttons.
+    :type tip: str
     :param icons: The semicolon-separated string for all icons.
     :type icons: str
+    :param iconOnly: True, if only the icon should be displayed.
+    :type iconOnly: str
 
     :return: The list of command dictionaries or None if the number of
              labels and commands don't match.
@@ -2080,19 +2261,15 @@ def splitSetCommandString(setName, columns, labels, commands, tips, icons):
     """
     labelItems = labels.split(";")
     commandItems = commands.split(";")
-    tipItems = tips.split(";")
     iconItems = icons.split(";")
 
     # The number of button labels and commands has to match.
     if len(labelItems) != len(commandItems):
         return
 
-    # If tooltip items are missing add the labels as tooltips.
-    if not len(tipItems):
-        tipItems = labelItems[:]
-    if len(tipItems) < len(labelItems):
-        for i in range(len(tipItems), len(labelItems)):
-            tipItems.append(labelItems[i])
+    # If the tooltip is missing add the name of the set.
+    if not len(tip):
+        tip = setName
 
     # If icons are missing add empty entries.
     if not len(iconItems):
@@ -2110,8 +2287,9 @@ def splitSetCommandString(setName, columns, labels, commands, tips, icons):
                "row": rowIndex,
                "name": labelItems[i],
                "icon": iconItems[i],
+               "iconOnly": iconOnly,
                "command": commandItems[i],
-               "tooltip": tipItems[i]}
+               "tooltip": tip}
         columnIndex += 1
         if columnIndex == columns:
             columnIndex = 0
@@ -2180,36 +2358,6 @@ def selectionRange(index):
         return current, selectEnd
     else:
         return selectEnd, current
-
-
-def backupConfig(data):
-    """Backup the given configuration.
-
-    :param data: The configuration dictionary to backup.
-    :type data: dict
-    """
-    backupFileName = "config_{}.json".format(nextBackupIndex())
-    backupFilePath = os.path.join(BACKUP_PATH, backupFileName)
-    jsonWrite(backupFilePath, data)
-
-
-def nextBackupIndex():
-    """Return the next index for the configuration backup. If the folder
-    doesn't exist, create it.
-    Get the index of the last file and compare it to the number of
-    backup files.
-
-    :return: The next index for the backup configuration.
-    :rtype: int
-    """
-    fileList = os.listdir(createDir(BACKUP_PATH))
-    if not len(fileList) or not fileList[-1].endswith(".json"):
-        return 1
-
-    lastIndex = int(fileList[-1].split(".")[0].split("_")[-1])
-    newIndex = (lastIndex+1) % BACKUP_COUNT
-
-    return newIndex
 
 
 def getReorderItem(context):
