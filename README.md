@@ -12,4 +12,4 @@ Perform a reflection-based placement of lights (or any other object) on a mesh b
 ## Tool Shelf
 Save scripts as buttons and organize them in groups for easy access.
 
-[Documentation](https://www.braverabbit.com/toolShelf)
+[Documentation](https://github.com/IngoClemens/blender/wiki/Tool-Shelf)
