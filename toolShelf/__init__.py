@@ -36,6 +36,11 @@ editor.
 
 Changelog:
 
+0.6.0 - 2021-05-27
+      - Added the option to add enum properties.
+      - Added the option to align multiple properties in a row rather
+        than having them appear as a column.
+
 0.5.0 - 2021-05-20
       - Added the option to use unicode characters instead of a label
         for a button.
@@ -62,7 +67,7 @@ Changelog:
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 5, 0),
+           "version": (0, 6, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -75,6 +80,7 @@ import bpy
 import bpy.utils.previews
 import addon_utils
 
+import copy
 import inspect
 import io
 import json
@@ -122,6 +128,7 @@ sys.path.append(SCRIPTS_PATH)
 # Define the alphanumeric regex pattern for the operator class name and
 # idname.
 ALPHANUM = re.compile("[\W]", re.UNICODE)
+BRACKETS = re.compile("[\[\]()]")
 
 # ----------------------------------------------------------------------
 # Descriptions and tooltips
@@ -144,7 +151,7 @@ ANN_NAME = ("The name of the group or tool.\n"
             "It needs to be unique in lowercase across all groups")
 ANN_NEW_GROUP = "Add a new group instead of a new tool"
 ANN_NEW_SET = "Add a new tool set"
-ANN_PROPERTY = "Add a numeric or boolean property to the tool"
+ANN_PROPERTY = "Add a numeric, boolean or string property to the tool"
 ANN_PROPERTY_NAME = "The name of the property"
 ANN_PROPERTY_VALUE = ("The default value for the property. To define minimum and maximum values "
                       "use the format: value, value, value")
@@ -344,6 +351,12 @@ def updateConfig(data):
                         if item[0] not in setCommand:
                             config["groups"][i]["commands"][j]["commands"][k][item[0]] = item[1]
                             update = True
+                    # Copy the properties to the set commands.
+                    if "valueName" in command and "valueName" not in setCommand:
+                        config["groups"][i]["commands"][j]["commands"][k]["valueName"] = command["valueName"]
+                        config["groups"][i]["commands"][j]["commands"][k]["value"] = command["value"]
+                        update = True
+
             else:
                 for item in updateItems:
                     if item[0] not in command:
@@ -458,42 +471,13 @@ def getIdName(data, group):
 def hasProperty(command):
     """Return if the command contains a property value name.
 
-    :param command: The button command.
+    :param command: The button command dictionary.
     :type command: dict
 
     :return: True, if the command contains a property value name
     :rtype: bool
     """
     return "valueName" in command and len(command["valueName"])
-
-
-def propertyName(data, group):
-    """Return a unique property name for each property of a tool item.
-
-    :param data: The dictionary which describes the command.
-    :type data: dict
-    :param group: The name of the group the command belongs to.
-    :type group: str
-
-    :return: The list of property names.
-    :rtype: list(str)
-    """
-    names = [i.strip() for i in data["valueName"].split(";")]
-
-    nameList = []
-    for valueName in names:
-        items = [group, data["name"], valueName]
-        # If the property belongs to a set remove the tool name because only
-        # the set names needs to be included.
-        # This is important to make the property available to all buttons of
-        # the set.
-        if "set" in data:
-            items.pop(1)
-            items.insert(1, data["set"])
-        name = "_".join(items)
-        nameList.append("{}_value".format(idName(name.replace("-", "_"))))
-
-    return nameList
 
 
 def stringToValue(string):
@@ -511,100 +495,222 @@ def stringToValue(string):
         return float(string)
     elif string.lower() == "string":
         return "string"
+    elif len(string.split(":")) > 1:
+        return "enum"
     else:
         return int(string)
 
 
-def createProperty(data, group):
-    """Return a string representation for each property defined in the
-    given tool dictionary.
+def listToEnumItemsString(items):
+    """Convert the given list to a list of items for an enum property
+    and return is as a string representation.
 
-    :param data: The dictionary which describes the command.
-    :type data: dict
-    :param group: The name of the group the command belongs to.
-    :type group: str
+    :param items: The list of items to convert.
+    :type items: list
 
-    :return: The string representation for each property declaration.
-    :rtype: list(str)
+    :return: The string representation of the enum item list.
+    :rtype: str
     """
-    names = propertyName(data, group)
-    valueNames = [i.strip() for i in data["valueName"].split(";")]
-    values = [i.strip() for i in data["value"].split(";")]
+    enumItems = []
+    for i in range(len(items)):
+        enumItems.append('("{}", "{}", "")'.format(i, items[i]))
+    return "[{}]".format(",".join(enumItems))
 
-    properties = []
-    for i in range(len(names)):
-        valueItems = values[i].replace(" ", "").split(",")
-        # The values can be split up to three elements: value, min, max.
-        # It's not necessary to always include all values. Therefore it's
-        # possible to have only a value, or a value with a min setting.
-        # But in order to include a max value a min value needs to be given
-        # as well.
-        value = stringToValue(valueItems[0]) if len(valueItems) else 0
-        minValue = stringToValue(valueItems[1]) if len(valueItems) > 1 else None
-        maxValue = stringToValue(valueItems[2]) if len(valueItems) > 2 else None
 
-        valueString = ", default={}".format(value)
-        minString = ""
-        if minValue is not None:
-            minString = ", min={}".format(minValue)
-        maxString = ""
-        if maxValue is not None:
-            maxString = ", max={}".format(maxValue)
+class ToolProperty(object):
+    """Class for the properties of a tool or set.
 
-        propString = ""
-        if isinstance(value, bool):
-            propString = "BoolProperty"
-        elif isinstance(value, int):
-            propString = "IntProperty"
-        elif isinstance(value, float):
-            propString = "FloatProperty"
-        elif value == "string":
-            propString = "StringProperty"
-            valueString = ""
+    Create a string representation for registering each property of
+    the given tool dictionary and collect names, labels and types.
+    """
+    def __init__(self, data, group):
+        """
+        :param data: The dictionary which describes the command.
+        :type data: dict
+        :param group: The name of the group the command belongs to.
+        :type group: str
+        """
+        self.data = data
+        self.group = group
+
+        self.labels = []
+        self.names = []
+        self.values = []
+
+        if hasProperty(data):
+            # Get the property labels and row association.
+            # In case of a property row the brackets are being removed.
+            self.labels = self.propertyLabels()
+            # The list of unique property names for getting and setting
+            # values.
+            self.names = self.propertyName()
+            # The values for the properties.
+            self.values = [i.strip() for i in self.data["value"].split(";")]
+
+        properties = []
+        propNames = []
+        propLabels = []
+        propTypes = []
+
+        for i in range(len(self.names)):
+
+            # ----------------------------------------------------------
+            # Values
+            # ----------------------------------------------------------
+
+            valueItems = self.values[i].replace(" ", "").split(",")
+            # The values can be split up to three elements: value, min, max.
+            # It's not necessary to always include all values. Therefore
+            # it's possible to have only a value, or a value with a min
+            # setting.
+            # But in order to include a max value a min value needs to be
+            # given as well.
+            value = stringToValue(valueItems[0]) if len(valueItems) else 0
+            minValue = stringToValue(valueItems[1]) if len(valueItems) > 1 else None
+            maxValue = stringToValue(valueItems[2]) if len(valueItems) > 2 else None
+
+            valueString = ", default={}".format(value)
             minString = ""
+            if minValue is not None:
+                minString = ", min={}".format(minValue)
             maxString = ""
+            if maxValue is not None:
+                maxString = ", max={}".format(maxValue)
 
-        if len(propString):
-            properties.append('{}: bpy.props.{}(name="{}"{}{}{})'.format(names[i],
-                                                                         propString,
-                                                                         valueNames[i],
-                                                                         valueString,
-                                                                         minString,
-                                                                         maxString))
+            # ----------------------------------------------------------
+            # Property Type
+            # ----------------------------------------------------------
 
-    return properties
+            propString = ""
+            if isinstance(value, bool):
+                propString = "BoolProperty"
+            elif isinstance(value, int):
+                propString = "IntProperty"
+            elif isinstance(value, float):
+                propString = "FloatProperty"
+            elif value == "string":
+                propString = "StringProperty"
+                valueString = ""
+                minString = ""
+                maxString = ""
+            elif value == "enum":
+                propString = "EnumProperty"
+                items = valueItems[0].split(":")
+                # Check, if one of the list items has a leading asterisk
+                # which marks as the default.
+                default = ""
+                for j in range(len(items)):
+                    if items[j].startswith("*"):
+                        default = ', default="{}"'.format(j)
+                        items[j] = items[j][1:]
+                        break
+                valueString = ", items={}{}".format(listToEnumItemsString(items), default)
+                minString = ""
+                maxString = ""
+
+            if len(propString):
+                properties.append('{}: bpy.props.{}(name="{}"{}{}{})'.format(self.names[i],
+                                                                             propString,
+                                                                             self.labels[i][0],
+                                                                             valueString,
+                                                                             minString,
+                                                                             maxString))
+                propNames.append(self.names[i])
+                propLabels.append(self.labels[i])
+                propTypes.append(propString)
+
+        # The list of property registration strings.
+        self.properties = properties[:]
+        # The list of property names for getting and setting values,
+        # i.e. tool_shelf_groupName_toolName_buttonLabel.
+        self.names = propNames[:]
+        # The list of tuples with the labels and row association.
+        self.labels = propLabels[:]
+        # The list of property types.
+        self.types = propTypes[:]
+
+    def propertyLabels(self):
+        """Return a list with all property labels contained in the given
+        tool configuration.
+
+        :return: The list of tuples with the property labels and the row
+                 assignment.
+        :rtype: list(tuple(str, bool))
+        """
+        labels = []
+
+        isRow = False
+        for label in self.data["valueName"].split(";"):
+            if label[0] in ["[", "("] and not isRow:
+                isRow = True
+            elif label[-1] in ["]", ")"] and isRow:
+                isRow = False
+
+            labels.append((re.sub(BRACKETS, "", label), isRow))
+
+        return labels
+
+    def propertyName(self):
+        """Return a unique property name for each property of a tool
+        item.
+
+        :return: The list of property names.
+        :rtype: list(str)
+        """
+        nameList = []
+        for label in [label for label, row in self.labels]:
+            items = [self.group, self.data["name"], label]
+            # If the property belongs to a set remove the tool name
+            # because only the set names needs to be included.
+            # This is important to make the property available to all
+            # buttons of the set.
+            if "set" in self.data:
+                items.pop(1)
+                items.insert(1, self.data["set"])
+            name = "_".join(items)
+            nameList.append("{}_value".format(idName(name.replace("-", "_"))))
+
+        return nameList
+
+    def isRow(self, index):
+        """Return, if the property at the given index belongs to a row.
+
+        :param index: The index of the property.
+        :type index: int
+
+        :return: True, if the property belongs to a row of properties.
+        :rtype: bool
+        """
+        return self.labels[index][1]
+
+    def typeString(self, index):
+        """Return the type of property at the given index.
+
+        :param index: The index of the property.
+        :type index: int
+
+        :return: The type of the property as a string.
+        :rtype: str
+        """
+        return self.types[index].replace("Property", "").lower()
 
 
-def replacePropertyPlaceholder(cmdString, groupName="", setName="", toolName="", propName=""):
+def replacePropertyPlaceholder(cmdString, propNames):
     """Replace the placeholder to access the tool or set property with
     the reference to the property.
 
     :param cmdString: The command string of the button.
     :type cmdString: str
-    :param groupName: The name of the tool shelf group.
-    :type groupName: str
-    :param setName: The name of the tool set.
-    :type setName: str
-    :param toolName: The name of the tool.
-    :type toolName: str
-    :param propName: The name of the property.
-    :type propName: str
+    :param propNames: The list of property names.
+    :type propNames: list(str)
 
     :return: The replaced command string.
     :rtype: str
     """
-    data = {"valueName": propName}
-    if len(setName):
-        data["name"] = ""
-        data["set"] = setName
-    else:
-        data["name"] = toolName
-
-    names = propertyName(data, groupName)
-    for i in range(len(names)):
-        propString = "context.scene.tool_shelf.{}".format(names[i])
+    for i in range(len(propNames)):
+        propString = "context.scene.tool_shelf.{}".format(propNames[i])
         placeholder = "PROP"
-        if len(names) > 1:
+        if len(propNames) > 1:
             placeholder = "PROP{}".format(i+1)
         cmdString = cmdString.replace(placeholder, propString)
 
@@ -626,13 +732,15 @@ def getOperatorClassName(data, group):
     return "OBJECT_OT_{}".format(name)
 
 
-def buildOperatorClass(data, group):
+def buildOperatorClass(data, group, propCls):
     """Construct and register an operator class for the given command.
 
     :param data: The dictionary which describes the command.
     :type data: dict
     :param group: The name of the group the command belongs to.
     :type group: str
+    :param propCls: The class instance for the properties of a command.
+    :type propCls: class instance
 
     :return: The operator class.
     :rtype: class
@@ -641,22 +749,16 @@ def buildOperatorClass(data, group):
     # be referenced when the class gets build.
     execute = ["def execute(self, context):"]
 
-    # If the operator contains a property, build the property string for
-    # registering it within the add-on and the operator.
-    if hasProperty(data):
-        props = createProperty(data, group)
-        execute.extend(props)
-        PROPERTIES.extend(props)
+    # If the operator contains a property registering it within the
+    # operator.
+    execute.extend(propCls.properties)
 
+    # Add the command.
     if isAddOnToggle(data["command"]):
         execute.append("{}".format(inspect.getsource(toggleAddOn).replace("\n", "\n    ")))
         execute.append(data["command"])
     else:
-        cmd = replacePropertyPlaceholder(data["command"],
-                                         groupName=group,
-                                         setName=data["set"] if "set" in data else "",
-                                         toolName=data["name"],
-                                         propName=data["valueName"] if "valueName" in data else "")
+        cmd = replacePropertyPlaceholder(data["command"], propCls.names)
         execute.append("{}".format(cmd.replace("\n", "\n    ")))
 
     execute.append("return {'FINISHED'}")
@@ -664,6 +766,7 @@ def buildOperatorClass(data, group):
     # Register the method within the module.
     module = types.ModuleType("operatorExecute")
     exec("\n    ".join(execute), module.__dict__)
+    # print("\n    ".join(execute))
 
     # Create the class.
     toolClass = type(getOperatorClassName(data, group),
@@ -694,49 +797,29 @@ def readConfiguration(configData):
         toolData = []
         # Process each button/command in the current group.
         for cmd in group["commands"]:
+            # Create a copy of the command so that the added data isn't
+            # reflected in the configuration data.
+            cmd = copy.deepcopy(cmd)
 
             # Get either the single command for the button or in case of
             # a set the list of contained commands.
-            commandSet = [cmd] if "set" not in cmd else cmd["commands"]
+            if "set" not in cmd:
+                commands = [cmd]
+            else:
+                commands = cmd["commands"]
 
-            # If a set contains a property the name and values are
-            # defined in the set rather than the commands.
-            setProperty = ""
-            if "set" in cmd and hasProperty(cmd):
-                # Because the set data is different from a tool build
-                # a temporary dictionary to appear as tool data to be
-                # able to create the property.
-                setData = {"set": cmd["set"],
-                           "name": "",
-                           "valueName": cmd["valueName"],
-                           "value": cmd["value"]}
-                props = createProperty(setData, group["name"])
-                # If building the property was successful store the
-                # property and name.
-                PROPERTIES.extend(props)
-                setProperty = ";".join(p.split(":")[0] for p in props)
-
-                # Add the property name and value to the commands so
-                # that the operator class has access to it.
-                for cmdItem in commandSet:
-                    cmdItem["valueName"] = cmd["valueName"]
-                    cmdItem["value"] = cmd["value"]
+            # Create the property for registering.
+            # Also, get all property related data.
+            # The properties are defined per tool because they need to
+            # be available to each operator class but for a set they
+            # only need to be registered once.
+            toolProp = ToolProperty(commands[0], group["name"])
+            PROPERTIES.extend(toolProp.properties)
 
             # Build the operators for each tool or tool group.
             toolItem = []
-            for cmdItem in commandSet:
-                CMD_CLASSES.append(buildOperatorClass(cmdItem, group["name"]))
-
-                # If the item contains a property store it's name for
-                # the button dictionary.
-                # This is needed to be able to access the property from
-                # the panel.
-                # The registration string for the property has already
-                # been stored while building the operator class.
-                commandProp = ""
-                if hasProperty(cmdItem):
-                    props = createProperty(cmdItem, group["name"])
-                    commandProp = ";".join(p.split(":")[0] for p in props)
+            for cmdItem in commands:
+                CMD_CLASSES.append(buildOperatorClass(cmdItem, group["name"], toolProp))
 
                 addOnName = ""
                 # If the complete toggleAddOn("NAME") command is given
@@ -751,17 +834,10 @@ def readConfiguration(configData):
 
                 # Collect the operator data in a dictionary which is
                 # used to set up the buttons.
-                itemDict = {"id": getIdName(cmdItem, group["name"]),
-                            "icon": cmdItem["icon"],
-                            "iconOnly": cmdItem["iconOnly"],
-                            "addOn": addOnName,
-                            "property": commandProp}
-                if "set" in cmdItem:
-                    itemDict["set"] = cmdItem["set"]
-                    itemDict["column"] = cmdItem["column"]
-                    itemDict["row"] = cmdItem["row"]
-                    itemDict["property"] = setProperty
-                toolItem.append(itemDict)
+                cmdItem["id"] = getIdName(cmdItem, group["name"])
+                cmdItem["addOn"] = addOnName
+                cmdItem["property"] = toolProp
+                toolItem.append(cmdItem)
 
             if len(toolItem) == 1:
                 toolData.extend(toolItem)
@@ -1288,11 +1364,18 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
                     col.prop(tool_shelf, "button_value")
                     label = "Edit"
 
-                if tool_shelf.button_value != 'NONE':
-                    setLabel = "New Set"
-                    if mode == 'EDIT':
+                showSet = False
+                setLabel = "New Set"
+                if mode == 'EDIT':
+                    if tool_shelf.button_value != 'NONE':
                         setLabel = "Edit Set"
+                        showSet = True
+                else:
+                    showSet = True
+
+                if showSet:
                     col.prop(tool_shelf, "new_set_value", text=setLabel)
+
                 if tool_shelf.new_set_value:
                     col.prop(tool_shelf, "set_value")
                     col.prop(tool_shelf, "column_value")
@@ -1359,6 +1442,81 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         op.property_value_value = tool_shelf.property_value_value
 
 
+def buildPanelProperty(button, parent, exists):
+    """Return the layout elements for the property included in the
+    tool.
+
+    :param button: The tool dictionary.
+    :type button: dict
+    :param parent: The parent layout.
+    :type parent: str
+    :param exists: False, if the property hasn't been created yet.
+    :type exists: bool
+
+    :return: A tuple with the list of strings to create the property,
+             the current parent layout and if the property has been
+             created.
+    :rtype: tuple(list(str), str, bool)
+    """
+    draw = []
+
+    prop = button["property"]
+    count = len(prop.labels)
+
+    # If the tool includes a property use a box layout to visually
+    # combine the controls.
+    if count and not exists:
+        # If the current tool doesn't belong to a set add the box
+        # layout.
+        # The box layout for a set has been setup before iterating
+        # through the button commands.
+        if "set" not in button:
+            draw.append("box = self.layout.box()")
+            draw.append("col = box.column(align=True)")
+            parent = "col"
+
+        isRow = False
+        text = ""
+        parentPrev = parent
+        for i in range(count):
+            # If the buttons should be aligned in a row start a new one.
+            if prop.isRow(i) and not isRow:
+                draw.append("row = {}.row(align=True)".format(parent))
+                parent = "row"
+                isRow = True
+
+                # If there are more than two properties in a row remove
+                # the labels to safe space, except for checkboxes.
+                if prop.typeString(i) != "bool" and count > 2:
+                    text = ', text=""'
+
+            draw.append('{}.prop(tool_shelf, "{}"{})'.format(parent,
+                                                             prop.names[i],
+                                                             text))
+
+            # If the current button was the last in the row end the row
+            # and reset the parent layout.
+            if not prop.isRow(i) and isRow:
+                parent = parentPrev
+                text = ""
+                isRow = False
+
+        # Start a new row after the property if the buttons belong to a
+        # set.
+        if "set" in button:
+            draw.append("row = col.row(align=True)")
+
+        # Add the row layout for a set to align the buttons accordingly.
+        # This has been skipped before adding the properties.
+        if "set" in button:
+            draw.append("row = col.row(align=True)")
+            parent = "row"
+
+        exists = True
+
+    return draw, parent, exists
+
+
 def buildPanelClass(name, data, index):
     """Build the expandable sub panel for the given tool group.
 
@@ -1395,8 +1553,15 @@ def buildPanelClass(name, data, index):
             draw.append("box = self.layout.box()")
             draw.append("box.label(text='{}')".format(buttons[0]["set"]))
             draw.append("col = box.column(align=True)")
-            draw.append("row = col.row(align=True)")
-            parent = "row"
+
+            # If a set contains properties skip the row layout until
+            # after the properties have been created, so that these are
+            # placed in a column.
+            if len(buttons[0]["property"].labels):
+                parent = "col"
+            else:
+                draw.append("row = col.row(align=True)")
+                parent = "row"
 
         lastRow = 0
         propertyAdded = False
@@ -1417,30 +1582,9 @@ def buildPanelClass(name, data, index):
             # No icon or add-on button.
             # ----------------------------------------------------------
             if not len(button["icon"]):
-                # If the tool includes a property use a box layout to
-                # visually combine the controls.
-                if len(button["property"]) and not propertyAdded:
 
-                    # If the current tool doesn't belong to a set add
-                    # the box layout.
-                    # The box layout for a set has been setup before
-                    # iterating through the button commands.
-                    if "set" not in button:
-                        draw.append("box = self.layout.box()")
-                        draw.append("col = box.column(align=True)")
-                        parent = "col"
-
-                    for prop in button["property"].split(";"):
-                        draw.append('{}.prop(tool_shelf, "{}")'.format(parent, prop))
-
-                    # Start a new row after the property if the buttons
-                    # belong to a set.
-                    if "set" in button:
-                        draw.append("row = col.row(align=True)")
-                    propertyAdded = True
-
-                    draw.append("{} = {}.column()".format(parent, parent))
-                    draw.append("{} = {}.row(align=True)".format(parent, parent))
+                lines, parent, propertyAdded = buildPanelProperty(button, parent, propertyAdded)
+                draw.extend(lines)
 
                 # Add a simple button with no icon.
                 if not len(button["addOn"]):
@@ -1450,8 +1594,9 @@ def buildPanelClass(name, data, index):
                     elif button["iconOnly"]:
                         label = ", text=''"
                     draw.append("{}.operator('{}'{})".format(parent, button["id"], label))
-                # In case of an add-on toggle button the icon depends on the
-                # loaded state of the add-on
+
+                # In case of an add-on toggle button the icon depends on
+                # the loaded state of the add-on
                 else:
                     draw.append("import addon_utils")
                     draw.append("checkBox = 'CHECKBOX_DEHLT'")
@@ -1463,26 +1608,9 @@ def buildPanelClass(name, data, index):
             # Icon button.
             # ----------------------------------------------------------
             else:
-                # If the tool includes a property use a box layout to
-                # visually combine the controls.
-                if len(button["property"]) and not propertyAdded:
 
-                    # If the current tool doesn't belong to a set add
-                    # the box layout.
-                    # The box layout for a set has been setup before
-                    # iterating through the button commands.
-                    if "set" not in button:
-                        draw.append("box = self.layout.box()")
-                        parent = "box"
-
-                    for prop in button["property"].split(";"):
-                        draw.append('{}.prop(tool_shelf, "{}")'.format(parent, prop))
-
-                    # Start a new row after the property if the buttons
-                    # belong to a set.
-                    if "set" in button:
-                        draw.append("row = self.layout.row(align=True)")
-                    propertyAdded = True
+                lines, parent, propertyAdded = buildPanelProperty(button, parent, propertyAdded)
+                draw.extend(lines)
 
                 label = ""
                 if button["iconOnly"]:
@@ -1767,6 +1895,10 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                         values = self.property_value_value.split(";")
                         if len(names) != len(values):
                             self.report({'WARNING'}, "The number of properties and values does not match")
+                            return {'CANCELLED'}
+
+                        if not balancedBrackets(self.property_name_value):
+                            self.report({'WARNING'}, "The brackets for the properties are incomplete")
                             return {'CANCELLED'}
 
                     # Backup the current configuration.
@@ -2409,6 +2541,29 @@ def reorder(name="", isGroup=True, groupIndex=0, up=True):
             toolData = CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]
             CONFIG_DATA["groups"][groupIndex]["commands"].pop(toolIndex)
             CONFIG_DATA["groups"][groupIndex]["commands"].insert(toolIndex+direction, toolData)
+
+
+def balancedBrackets(checkString):
+    """Return, if the given string contains balanced brackets.
+
+    :param checkString: The string to check for brackets.
+    :type checkString: str
+
+    :return: True, if the string has balanced brackets.
+    :rtype: bool
+    """
+    pairs = {"(": ")", "[": "]"}
+    brackets = []
+    for char in checkString:
+        if char in ["(", "["]:
+            brackets.append(char)
+        elif brackets:
+            if char == pairs[brackets[-1]]:
+                brackets.pop()
+        elif char in [")", "]"]:
+            return False
+
+    return len(brackets) == 0
 
 
 # ----------------------------------------------------------------------
