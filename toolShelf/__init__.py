@@ -36,6 +36,16 @@ editor.
 
 Changelog:
 
+0.7.0 - 2021-05-31
+      - Changed that drawing of labels for properties in a row doesn't
+        depend on the total number of properties but just the number of
+        properties in a single row.
+      - Added the option to expand enum properties to appear as a line
+        of buttons.
+      - Added the option to use the tool command as a property callback
+        as an alternative to having to press the tool button to execute
+        the tool.
+
 0.6.0 - 2021-05-27
       - Added the option to add enum properties.
       - Added the option to align multiple properties in a row rather
@@ -67,7 +77,7 @@ Changelog:
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 6, 0),
+           "version": (0, 7, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -118,6 +128,8 @@ ICONS = []
 ICON_COLLECTION = {}
 # The list of custom properties.
 PROPERTIES = []
+# The list of property callbacks.
+CALLBACKS = []
 
 UPDATE_FIELDS = True
 
@@ -128,7 +140,7 @@ sys.path.append(SCRIPTS_PATH)
 # Define the alphanumeric regex pattern for the operator class name and
 # idname.
 ALPHANUM = re.compile("[\W]", re.UNICODE)
-BRACKETS = re.compile("[\[\]()]")
+BRACKETS = re.compile("[\[\]()<>]")
 
 # ----------------------------------------------------------------------
 # Descriptions and tooltips
@@ -155,6 +167,8 @@ ANN_PROPERTY = "Add a numeric, boolean or string property to the tool"
 ANN_PROPERTY_NAME = "The name of the property"
 ANN_PROPERTY_VALUE = ("The default value for the property. To define minimum and maximum values "
                       "use the format: value, value, value")
+ANN_PROPERTY_CALLBACK = ("Use the command string as the body of a callback function for all "
+                         "properties with their update option set")
 ANN_SET_COLUMNS = "The number of buttons in a row"
 ANN_SET_NAME = "The name of the button set"
 ANN_TOGGLE_ADDON = "Create a button to enable or disable an add-on"
@@ -513,7 +527,8 @@ def listToEnumItemsString(items):
     """
     enumItems = []
     for i in range(len(items)):
-        enumItems.append('("{}", "{}", "")'.format(i, items[i]))
+        label = items[i][0] if not len(items[i][1]) else ""
+        enumItems.append('("{}", "{}", "", \'{}\', {})'.format(i, label, items[i][1], i))
     return "[{}]".format(",".join(enumItems))
 
 
@@ -534,18 +549,24 @@ class ToolProperty(object):
         self.group = group
 
         self.labels = []
+        self.rowCount = []
+
         self.names = []
         self.values = []
+        self.callback = ""
 
         if hasProperty(data):
             # Get the property labels and row association.
             # In case of a property row the brackets are being removed.
-            self.labels = self.propertyLabels()
+            self.labels, self.rowCount = self.propertyLabels()
             # The list of unique property names for getting and setting
             # values.
             self.names = self.propertyName()
             # The values for the properties.
             self.values = [i.strip() for i in self.data["value"].split(";")]
+            # Create the name of the callback function if required.
+            if "valueCallback" in self.data and self.data["valueCallback"]:
+                self.callback = self.callbackName()
 
         properties = []
         propNames = []
@@ -599,22 +620,38 @@ class ToolProperty(object):
                 # Check, if one of the list items has a leading asterisk
                 # which marks as the default.
                 default = ""
+                enumItems = []
                 for j in range(len(items)):
-                    if items[j].startswith("*"):
+                    # Split the enum string to get the icon if it's
+                    # included.
+                    enum, icon = self.enumData(items[j])
+
+                    if enum.startswith("*"):
                         default = ', default="{}"'.format(j)
-                        items[j] = items[j][1:]
+                        enum = enum[1:]
                         break
-                valueString = ", items={}{}".format(listToEnumItemsString(items), default)
+
+                    enumItems.append((enum, icon))
+
+                valueString = ", items={}{}".format(listToEnumItemsString(enumItems), default)
                 minString = ""
                 maxString = ""
 
+            label = self.labels[i][0]
+
+            updateString = ""
+            if label.startswith("!") and len(self.callback):
+                updateString = ", update={}".format(self.callback)
+                label = label[1:]
+
             if len(propString):
-                properties.append('{}: bpy.props.{}(name="{}"{}{}{})'.format(self.names[i],
-                                                                             propString,
-                                                                             self.labels[i][0],
-                                                                             valueString,
-                                                                             minString,
-                                                                             maxString))
+                properties.append('{}: bpy.props.{}(name="{}"{}{}{}{})'.format(self.names[i],
+                                                                               propString,
+                                                                               label,
+                                                                               valueString,
+                                                                               minString,
+                                                                               maxString,
+                                                                               updateString))
                 propNames.append(self.names[i])
                 propLabels.append(self.labels[i])
                 propTypes.append(propString)
@@ -634,21 +671,30 @@ class ToolProperty(object):
         tool configuration.
 
         :return: The list of tuples with the property labels and the row
-                 assignment.
-        :rtype: list(tuple(str, bool))
+                 assignment. A list with the number of properties per
+                 row.
+        :rtype: list(tuple(str, bool)), list(int)
         """
         labels = []
+        numLabels = []
 
         isRow = False
+        count = 0
         for label in self.data["valueName"].split(";"):
             if label[0] in ["[", "("] and not isRow:
                 isRow = True
             elif label[-1] in ["]", ")"] and isRow:
                 isRow = False
+                numLabels.append(count + 1)
+                count = 0
+            expandEnum = True if label[0] == "<" else False
 
-            labels.append((re.sub(BRACKETS, "", label), isRow))
+            if isRow:
+                count += 1
 
-        return labels
+            labels.append((re.sub(BRACKETS, "", label), isRow, expandEnum))
+
+        return labels, numLabels
 
     def propertyName(self):
         """Return a unique property name for each property of a tool
@@ -658,7 +704,7 @@ class ToolProperty(object):
         :rtype: list(str)
         """
         nameList = []
-        for label in [label for label, row in self.labels]:
+        for label in [label for label, row, expandEnum in self.labels]:
             items = [self.group, self.data["name"], label]
             # If the property belongs to a set remove the tool name
             # because only the set names needs to be included.
@@ -671,6 +717,31 @@ class ToolProperty(object):
             nameList.append("{}_value".format(idName(name.replace("-", "_"))))
 
         return nameList
+
+    def callbackName(self):
+        """Return a unique name for the property callback function.
+        item.
+
+        :return: The name of the callback function.
+        :rtype: str
+        """
+        items = [self.group, self.data["name"]]
+        if "set" in self.data:
+            items = [self.group, self.data["set"]]
+        name = "_".join(items)
+        return "{}_callback".format(idName(name.replace("-", "_")))
+
+    def initCallback(self):
+        """Use the command string from the tool to create a property
+        callback function.
+
+        :return: The callback function as a string to execute.
+        :rtype: str
+        """
+        execute = ["def {}(self, context):".format(self.callback)]
+        cmd = replacePropertyPlaceholder(self.data["command"], self.names)
+        execute.append("{}".format(cmd.replace("\n", "\n    ")))
+        return "\n    ".join(execute)
 
     def isRow(self, index):
         """Return, if the property at the given index belongs to a row.
@@ -693,6 +764,40 @@ class ToolProperty(object):
         :rtype: str
         """
         return self.types[index].replace("Property", "").lower()
+
+    def expandEnum(self, index):
+        """Return, if the enum property should be expanded to appear as
+        a radio button collection.
+
+        :param index: The index of the property.
+        :type index: int
+
+        :return: True, if the enum should eb expanded.
+        :rtype: bool
+        """
+        return self.labels[index][2]
+
+
+    def enumData(self, enumString):
+        """Return the name and icon for the given enum property item.
+
+        :param enumString: The string of the enum item as defined in the
+                           the configuration. This can only be the enum
+                           name or the name and icon name, separated be
+                           a @ symbol.
+        :type enumString: str
+
+        :return: A tuple with the name of the enum item and the icon.
+        :rtype: tuple(str, str)
+        """
+        enum = ""
+        icon = ""
+        itemPair = enumString.split("@")
+        if len(itemPair) > 1:
+            enum, icon = itemPair
+        else:
+            enum = enum
+        return enum, icon
 
 
 def replacePropertyPlaceholder(cmdString, propNames):
@@ -749,7 +854,7 @@ def buildOperatorClass(data, group, propCls):
     # be referenced when the class gets build.
     execute = ["def execute(self, context):"]
 
-    # If the operator contains a property registering it within the
+    # If the operator contains a property register it within the
     # operator.
     execute.extend(propCls.properties)
 
@@ -757,7 +862,9 @@ def buildOperatorClass(data, group, propCls):
     if isAddOnToggle(data["command"]):
         execute.append("{}".format(inspect.getsource(toggleAddOn).replace("\n", "\n    ")))
         execute.append(data["command"])
-    else:
+    # If no property callback is defined add the command to the
+    # operator.
+    elif not len(propCls.callback):
         cmd = replacePropertyPlaceholder(data["command"], propCls.names)
         execute.append("{}".format(cmd.replace("\n", "\n    ")))
 
@@ -815,6 +922,8 @@ def readConfiguration(configData):
             # only need to be registered once.
             toolProp = ToolProperty(commands[0], group["name"])
             PROPERTIES.extend(toolProp.properties)
+            if len(toolProp.callback):
+                CALLBACKS.append(toolProp.initCallback())
 
             # Build the operators for each tool or tool group.
             toolItem = []
@@ -849,6 +958,10 @@ def readConfiguration(configData):
 
 
 readConfiguration(CONFIG_DATA)
+
+# Initialize the property callbacks.
+for callback in CALLBACKS:
+    exec(callback)
 
 
 # ----------------------------------------------------------------------
@@ -926,6 +1039,7 @@ def clearFields(context):
     tool_shelf.property_value = False
     tool_shelf.property_name_value = ""
     tool_shelf.property_value_value = ""
+    tool_shelf.property_callback_value = False
 
 
 def groupChanged(self, context):
@@ -978,13 +1092,16 @@ def toolChanged(self, context):
                 useProp = False
                 propName = ""
                 propValue = ""
+                propCallbackValue = False
                 if hasProperty(command):
                     useProp = True
                     propName = command["valueName"]
                     propValue = command["value"]
+                    propCallbackValue = command["valueCallback"] if "valueCallback" in command else False
                 tool_shelf.property_value = useProp
                 tool_shelf.property_name_value = propName
                 tool_shelf.property_value_value = propValue
+                tool_shelf.property_callback_value = propCallbackValue
             # Tool set
             else:
                 tool_shelf.new_set_value = True
@@ -998,13 +1115,16 @@ def toolChanged(self, context):
                 useProp = False
                 propName = ""
                 propValue = ""
+                propCallbackValue = False
                 if hasProperty(command):
                     useProp = True
                     propName = command["valueName"]
                     propValue = command["value"]
+                    propCallbackValue = command["valueCallback"] if "valueCallback" in command else False
                 tool_shelf.property_value = useProp
                 tool_shelf.property_name_value = propName
                 tool_shelf.property_value_value = propValue
+                tool_shelf.property_callback_value = propCallbackValue
         # Group
         else:
             tool_shelf.name_value = tool_shelf.group_value
@@ -1248,6 +1368,9 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
     property_value_value: bpy.props.StringProperty(name="Value",
                                                    description=ANN_PROPERTY_VALUE,
                                                    default="")
+    property_callback_value: bpy.props.BoolProperty(name="Command As Callback",
+                                                    description=ANN_PROPERTY_CALLBACK,
+                                                    default=False)
     group_value: bpy.props.EnumProperty(name="Group",
                                         description=ANN_GROUP,
                                         items=groupItems,
@@ -1401,6 +1524,7 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
                         if tool_shelf.property_value:
                             col.prop(tool_shelf, "property_name_value")
                             col.prop(tool_shelf, "property_value_value")
+                            col.prop(tool_shelf, "property_callback_value")
         elif mode == 'IMPORT':
             col.prop(tool_shelf, "file_value")
             if tool_shelf.file_value:
@@ -1440,6 +1564,7 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         op.property_value = tool_shelf.property_value
         op.property_name_value = tool_shelf.property_name_value
         op.property_value_value = tool_shelf.property_value_value
+        op.property_callback_value = tool_shelf.property_callback_value
 
 
 def buildPanelProperty(button, parent, exists):
@@ -1476,6 +1601,7 @@ def buildPanelProperty(button, parent, exists):
             parent = "col"
 
         isRow = False
+        rowCountIndex = 0
         text = ""
         parentPrev = parent
         for i in range(count):
@@ -1484,15 +1610,27 @@ def buildPanelProperty(button, parent, exists):
                 draw.append("row = {}.row(align=True)".format(parent))
                 parent = "row"
                 isRow = True
+                # Get the number of properties in the current row.
+                # This defines if the labels are added or discarded.
+                rowCount = prop.rowCount[rowCountIndex]
 
                 # If there are more than two properties in a row remove
                 # the labels to safe space, except for checkboxes.
-                if prop.typeString(i) != "bool" and count > 2:
+                if prop.typeString(i) != "bool" and rowCount > 2:
                     text = ', text=""'
 
-            draw.append('{}.prop(tool_shelf, "{}"{})'.format(parent,
-                                                             prop.names[i],
-                                                             text))
+            # If the property is an enum which should be expanded start
+            # a new row.
+            expandEnum = ""
+            if prop.expandEnum(i):
+                draw.append("row = {}.row(align=True)".format(parent))
+                parent = "row"
+                expandEnum = ", expand=True"
+
+            draw.append('{}.prop(tool_shelf, "{}"{}{})'.format(parent,
+                                                               prop.names[i],
+                                                               text,
+                                                               expandEnum))
 
             # If the current button was the last in the row end the row
             # and reset the parent layout.
@@ -1500,6 +1638,11 @@ def buildPanelProperty(button, parent, exists):
                 parent = parentPrev
                 text = ""
                 isRow = False
+                rowCountIndex += 1
+
+            # Reset to the parent layout after the expanded enum.
+            if prop.expandEnum(i):
+                parent = parentPrev
 
         # Start a new row after the property if the buttons belong to a
         # set.
@@ -1568,69 +1711,69 @@ def buildPanelClass(name, data, index):
 
         for button in buttons:
 
+            prop = button["property"]
+
             # In case of a tool set add a new row to the layout when the
             # defined row number increases.
             if "row" in button and button["row"] > lastRow:
                 draw.append("row = col.row(align=True)")
                 lastRow = button["row"]
 
+            # Create the properties.
+            lines, parent, propertyAdded = buildPanelProperty(button, parent, propertyAdded)
+            draw.extend(lines)
+
             # Check, if the icon is a default icon, an image or a
             # unicode string.
             labelSymbol, button["icon"] = filterIcon(button["icon"])
 
-            # ----------------------------------------------------------
-            # No icon or add-on button.
-            # ----------------------------------------------------------
-            if not len(button["icon"]):
+            if not len(prop.callback):
 
-                lines, parent, propertyAdded = buildPanelProperty(button, parent, propertyAdded)
-                draw.extend(lines)
+                # ------------------------------------------------------
+                # No icon or add-on button.
+                # ------------------------------------------------------
+                if not len(button["icon"]):
+                    # Add a simple button with no icon.
+                    if not len(button["addOn"]):
+                        label = ""
+                        if len(labelSymbol):
+                            label = ", text='{}'".format(labelSymbol)
+                        elif button["iconOnly"]:
+                            label = ", text=''"
+                        draw.append("{}.operator('{}'{})".format(parent, button["id"], label))
 
-                # Add a simple button with no icon.
-                if not len(button["addOn"]):
+                    # In case of an add-on toggle button the icon
+                    # depends on the loaded state of the add-on
+                    else:
+                        draw.append("import addon_utils")
+                        draw.append("checkBox = 'CHECKBOX_DEHLT'")
+                        draw.append('enabled, loaded = addon_utils.check("{}")'.format(button["addOn"]))
+                        draw.append("if loaded:")
+                        draw.append("    checkBox = 'CHECKBOX_HLT'")
+                        draw.append("{}.operator('{}', icon='{{}}'.format(checkBox))".format(parent, button["id"]))
+                # ------------------------------------------------------
+                # Icon button.
+                # ------------------------------------------------------
+                else:
                     label = ""
-                    if len(labelSymbol):
-                        label = ", text='{}'".format(labelSymbol)
-                    elif button["iconOnly"]:
+                    if button["iconOnly"]:
                         label = ", text=''"
-                    draw.append("{}.operator('{}'{})".format(parent, button["id"], label))
 
-                # In case of an add-on toggle button the icon depends on
-                # the loaded state of the add-on
-                else:
-                    draw.append("import addon_utils")
-                    draw.append("checkBox = 'CHECKBOX_DEHLT'")
-                    draw.append('enabled, loaded = addon_utils.check("{}")'.format(button["addOn"]))
-                    draw.append("if loaded:")
-                    draw.append("    checkBox = 'CHECKBOX_HLT'")
-                    draw.append("{}.operator('{}', icon='{{}}'.format(checkBox))".format(parent, button["id"]))
-            # ----------------------------------------------------------
-            # Icon button.
-            # ----------------------------------------------------------
-            else:
-
-                lines, parent, propertyAdded = buildPanelProperty(button, parent, propertyAdded)
-                draw.extend(lines)
-
-                label = ""
-                if button["iconOnly"]:
-                    label = ", text=''"
-
-                # Default icon
-                if button["icon"].startswith("'"):
-                    draw.append("{}.operator('{}'{}, icon={})".format(parent,
-                                                                      button["id"],
-                                                                      label,
-                                                                      button["icon"]))
-                # Custom icon
-                else:
-                    # Get the icon id related to the image from the
-                    # preview collection.
-                    icon_id = pcoll[iconIdName(button["icon"])].icon_id
-                    draw.append("{}.operator('{}', icon_value={})".format(parent,
+                    # Default icon
+                    if button["icon"].startswith("'"):
+                        draw.append("{}.operator('{}'{}, icon={})".format(parent,
                                                                           button["id"],
                                                                           label,
-                                                                          icon_id))
+                                                                          button["icon"]))
+                    # Custom icon
+                    else:
+                        # Get the icon id related to the image from the
+                        # preview collection.
+                        icon_id = pcoll[iconIdName(button["icon"])].icon_id
+                        draw.append("{}.operator('{}', icon_value={})".format(parent,
+                                                                              button["id"],
+                                                                              label,
+                                                                              icon_id))
 
     # If no buttons are defined, which is the case when a new group has
     # just been added, add pass to the method to make it valid.
@@ -1746,6 +1889,9 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     property_value_value: bpy.props.StringProperty(name="Value",
                                                    description=ANN_PROPERTY_VALUE,
                                                    default="")
+    property_callback_value: bpy.props.BoolProperty(name="Command As Callback",
+                                                    description=ANN_PROPERTY_CALLBACK,
+                                                    default=False)
     # It's not advised to use the update callbacks when defining the
     # operator properties because they are being constantly evaluated.
     # When using update callbacks it's best to only define these when
@@ -1935,6 +2081,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                             if self.property_value:
                                 cmd["valueName"] = self.property_name_value
                                 cmd["value"] = self.property_value_value
+                                cmd["valueCallback"] = self.property_callback_value
                         else:
                             setItems = splitSetCommandString(self.set_value,
                                                              self.column_value,
@@ -1958,6 +2105,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                             if self.property_value:
                                 cmd["valueName"] = self.property_name_value
                                 cmd["value"] = self.property_value_value
+                                cmd["valueCallback"] = self.property_callback_value
 
                         # Add the command at the end of the list or
                         # after the currently selected tool.
@@ -1985,6 +2133,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                                 CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["valueName"] = self.property_name_value
                             if len(self.property_value_value) and self.property_value_value.strip() != "*":
                                 CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["value"] = self.property_value_value
+                            CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]["valueCallback"] = self.property_callback_value
 
                             # If the property option has been disabled
                             # but the tool contains a property, remove
@@ -1994,6 +2143,8 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                                     CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex].pop("valueName", None)
                                 if "value" in CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]:
                                     CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex].pop("value", None)
+                                if "valueCallback" in CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex]:
+                                    CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex].pop("valueCallback", None)
                         else:
                             setItems = splitSetCommandString(self.set_value,
                                                              self.column_value,
@@ -2017,6 +2168,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                             if self.property_value:
                                 cmd["valueName"] = self.property_name_value
                                 cmd["value"] = self.property_value_value
+                                cmd["valueCallback"] = self.property_callback_value
                             CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex] = cmd
 
                 # Save the configuration.
@@ -2037,6 +2189,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
             context.scene.tool_shelf.property_value = False
             context.scene.tool_shelf.property_name_value = ""
             context.scene.tool_shelf.property_value_value = ""
+            context.scene.tool_shelf.property_callback_value = False
 
         # --------------------------------------------------------------
         # Remove mode
