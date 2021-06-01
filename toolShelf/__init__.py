@@ -36,6 +36,10 @@ editor.
 
 Changelog:
 
+0.8.0 - 2021-06-01
+      - Added tooltips for enum properties.
+      - Fixed that enum items don't show their labels.
+
 0.7.0 - 2021-05-31
       - Changed that drawing of labels for properties in a row doesn't
         depend on the total number of properties but just the number of
@@ -77,7 +81,7 @@ Changelog:
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 7, 0),
+           "version": (0, 8, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -528,7 +532,11 @@ def listToEnumItemsString(items):
     enumItems = []
     for i in range(len(items)):
         label = items[i][0] if not len(items[i][1]) else ""
-        enumItems.append('("{}", "{}", "", \'{}\', {})'.format(i, label, items[i][1], i))
+        enumItems.append('("{}", "{}", "{}", \'{}\', {})'.format(i,
+                                                                 label,
+                                                                 items[i][0],
+                                                                 items[i][1],
+                                                                 i))
     return "[{}]".format(",".join(enumItems))
 
 
@@ -796,7 +804,7 @@ class ToolProperty(object):
         if len(itemPair) > 1:
             enum, icon = itemPair
         else:
-            enum = enum
+            enum = enumString
         return enum, icon
 
 
