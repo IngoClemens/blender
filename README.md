@@ -1,6 +1,7 @@
 # Add-ons for Blender
 
 This is a free add-on collection for Blender which will be extended over time as production calls for the creation of new tools.
+It basically copies the default pickwalking behaviour of Maya with additional selection extension and opposite side switching.
 
 Feel free to download and use any available.
 
