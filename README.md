@@ -4,6 +4,11 @@ This is a free add-on collection for Blender which will be extended over time as
 
 Feel free to download and use any available.
 
+## PickWalk
+Navigate through a hierarchy of objects or bones of an armature.
+
+[Documentation](https://github.com/IngoClemens/blender/wiki/PickWalk)
+
 ## Place Reflection
 Perform a reflection-based placement of lights (or any other object) on a mesh by simply dragging the mouse over the mesh.
 
