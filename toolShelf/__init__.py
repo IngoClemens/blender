@@ -588,12 +588,13 @@ class ToolProperty(object):
             # ----------------------------------------------------------
 
             valueItems = self.values[i].replace(" ", "").split(",")
-            # The values can be split up to three elements: value, min, max.
+            # The values can be split up to three elements: value, min,
+            # max.
             # It's not necessary to always include all values. Therefore
             # it's possible to have only a value, or a value with a min
             # setting.
-            # But in order to include a max value a min value needs to be
-            # given as well.
+            # But in order to include a max value a min value needs to
+            # be given as well.
             value = stringToValue(valueItems[0]) if len(valueItems) else 0
             minValue = stringToValue(valueItems[1]) if len(valueItems) > 1 else None
             maxValue = stringToValue(valueItems[2]) if len(valueItems) > 2 else None
@@ -791,8 +792,8 @@ class ToolProperty(object):
 
         :param enumString: The string of the enum item as defined in the
                            the configuration. This can only be the enum
-                           name or the name and icon name, separated be
-                           a @ symbol.
+                           name or the name and icon name, separated by
+                           the @ symbol.
         :type enumString: str
 
         :return: A tuple with the name of the enum item and the icon.

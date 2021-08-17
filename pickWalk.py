@@ -27,6 +27,9 @@ quickly select parent objects or children or switch to child siblings.
 Current selections can be expanded and it's possible to jump to the same
 object on the opposite side based on a side identifier.
 
+Pickwalking also works in edit mode with mesh and curve objects to
+quickly navigate to the next point connected to the current selection.
+
 Keymaps are registered for the 3D view, Outliner, Graph Editor and
 Dope Sheet.
 
@@ -41,11 +44,18 @@ Ctrl + Left Arrow: Select Previous Child Sibling
 
 Ctrl + Shift + Arrow Key: Keep the current selection and add the parent
                           or child.
-Ctrl + Alt + Left/Right Arrow: Select Opposite
+Ctrl + Alt + Left/Right Arrow: Select Opposite. When in mesh edit mode
+                               it cycles through the connected vertices.
 
 ------------------------------------------------------------------------
 
 Changelog:
+
+0.2.0 - 2021-08-17
+      - Added the ability to walk through the top level objects of the
+        related collection by pickwalking right/left.
+      - Added pickwalking for mesh and curve objects in edit mode to
+        walk to connected vertices and points.
 
 0.1.0 - 2021-08-10
       - First public release
@@ -55,17 +65,21 @@ Changelog:
 
 bl_info = {"name": "PickWalk",
            "author": "Ingo Clemens",
-           "version": (0, 1, 0),
+           "version": (0, 2, 0),
            "blender": (2, 93, 0),
            "category": "Interface",
            "location": "3D View, Outliner, Graph Editor, Dope Sheet",
-           "description": "Navigate through a hierarchy of objects",
+           "description": "Navigate through a hierarchy of objects, mesh vertices or curve points",
            "warning": "",
            "doc_url": "https://github.com/IngoClemens/blender/wiki/PickWalk",
            "tracker_url": ""}
 
 import bpy
+import bmesh
+from bpy_extras import view3d_utils
 
+import math
+from mathutils import Vector
 import re
 
 
@@ -80,6 +94,20 @@ RIGHT_IDENTIFIER = ["right", "rgt", "rt", "rg", "r"]
 # ----------------------------------------------------------------------
 # General
 # ----------------------------------------------------------------------
+
+def activeEditMesh():
+    """Return a list of the current mesh objects and bmeshes.
+
+    :return: A list with tuples with the current mesh object and bmesh.
+    :rtype: list(tuple(bpy.context.obj, BMesh))
+    """
+    meshes = []
+    for obj in bpy.context.objects_in_mode:
+        if obj.type == 'MESH':
+            bm = bmesh.from_edit_mesh(obj.data)
+            meshes.append((obj, bm))
+    return meshes
+
 
 def isArmature(obj):
     """Return, if the given object is or belongs to an armature.
@@ -274,14 +302,14 @@ def sideIdentifier(name):
     return "", ""
 
 
-def selectSibling(next=True, extend=False, switchSide=False):
+def selectSibling(toNext=True, extend=False, switchSide=False):
     """Select the next or previous sibling of the current object. If the
     object is the first or last child of it's parent the list order gets
     wrapped.
 
-    :param next: True, if the next sibling in the list should be
-                 selected.
-    :type next: bool
+    :param toNext: True, if the next sibling in the list should be
+                   selected.
+    :type toNext: bool
     :param extend: True, if the current selection should be kept and the
                    sibling should be added to the list.
     :type extend: bool
@@ -294,7 +322,7 @@ def selectSibling(next=True, extend=False, switchSide=False):
 
     # Define the direction.
     direction = +1
-    if not next:
+    if not toNext:
         direction = -1
 
     objects = []
@@ -313,7 +341,7 @@ def selectSibling(next=True, extend=False, switchSide=False):
                 index = (index + direction) % len(children)
                 objects.append(children[index])
             else:
-                objects.append(obj)
+                objects.extend(worldObject(obj, toNext=toNext))
 
         # With a side identifier.
         else:
@@ -341,6 +369,529 @@ def selectSibling(next=True, extend=False, switchSide=False):
         selectObject(obj)
 
 
+def walkComponents(context, x=1, y=0, extend=False, cycle=False, toNext=True):
+    """Walk over the connected components. The walking is based on
+    vertices. If another selection mode is active the current selection
+    will be converted.
+
+    :param context: The current context.
+    :type context: bpy.context
+    :param x: The x direction to walk.  1: Right
+                                       -1: Left
+                                        0: Off
+    :type x: int
+    :param y: The y direction to walk.  1: Up
+                                       -1: Down
+                                        0: Off
+    :type y: int
+    :param extend: True, if the current selection should be kept and the
+                   sibling should be added to the list.
+    :type extend: bool
+    :param cycle: True, to only cycle through connected vertices in case
+                  a specific vertex cannot be reached.
+    :type cycle: bool
+    :param toNext: True, if the toNext connected vertex should be
+                   selected.
+    :type toNext: bool
+
+    :return: True, if the next component could be selected. False, if
+             the object is not a mesh in edit mode.
+    :rtype: bool
+    """
+    if bpy.context.object.type == 'MESH' and bpy.context.object.mode == 'EDIT':
+        walkMeshComponents(context, x, y, extend, cycle, toNext)
+        return True
+    elif bpy.context.object.type == 'CURVE' and bpy.context.object.mode == 'EDIT':
+        walkCurveComponents(extend, toNext)
+        return True
+    else:
+        return False
+
+
+def walkCurveComponents(extend=False, toNext=True):
+    """Walk over the curve components.
+
+    :param extend: True, if the current selection should be kept and the
+                   sibling should be added to the list.
+    :type extend: bool
+    :param toNext: True, if the toNext connected vertex should be
+                   selected.
+    :type toNext: bool
+    """
+    # Define the direction.
+    direction = +1
+    if not toNext:
+        direction = -1
+
+    for obj in bpy.context.objects_in_mode:
+        pointData = None
+        curveType = None
+
+        # NURBS curve
+        if len(obj.data.splines.active.points):
+            pointData = obj.data.splines.active.points
+            curveType = "nurbs"
+        # Bezier curve
+        elif len(obj.data.splines.active.bezier_points):
+            pointData = obj.data.splines.active.bezier_points
+            curveType = "bezier"
+
+        if pointData is not None:
+            indices = []
+            if curveType == "nurbs":
+                for i in range(len(pointData)):
+                    if pointData[i].select:
+                        indices.append((i + direction) % len(pointData))
+                        if extend:
+                            indices.append(i)
+                        pointData[i].select = False
+            else:
+                for i in range(len(pointData)):
+                    if pointData[i].select_control_point:
+                        indices.append((i + direction) % len(pointData))
+                        if extend:
+                            indices.append(i)
+                        pointData[i].select_control_point = False
+                        pointData[i].select_left_handle = False
+                        pointData[i].select_right_handle = False
+
+            for index in indices:
+                if curveType == "nurbs":
+                    pointData[index].select = True
+                else:
+                    pointData[index].select_control_point = True
+                    pointData[index].select_left_handle = True
+                    pointData[index].select_right_handle = True
+
+
+class Cycle(object):
+    """Class to cycle through the connected vertices.
+    """
+    def __init__(self):
+        # Dictionary for storing all the vertex data.
+        self.obj = {}
+        # Switch for walking to the next or previous vertex.
+        self.increment = True
+        # Status switch, which activates the cycling.
+        self.active = False
+        # Switch for starting at the first item of the connected
+        # vertices.
+        self.firstIndex = True
+
+    def reset(self):
+        """Reset everything.
+        """
+        self.obj = {}
+        self.increment = True
+        self.active = False
+        self.firstIndex = True
+
+    def isValid(self, obj):
+        """Return, if the object is contained in the stored object list.
+
+        Used to reset the cycling data when the object has been
+        switched.
+
+        :param obj: The current object.
+        :type obj: bpy.object
+
+        :return: True, if the object is listed.
+        :rtype: bool
+        """
+        return obj in self.obj
+
+    def setVertex(self, obj, vertices):
+        """Set the vertex to get the connected vertices from.
+
+        :param obj: The current object.
+        :type obj: bpy.object
+        :param vertices: The vertices to get the connected vertices
+                         from.
+        :type vertices: list(bpy.types.MeshVertices)
+        """
+        self.obj[obj] = {"vertex": vertices}
+        self.obj[obj]["connected"] = []
+        self.obj[obj]["current"] = []
+        self.obj[obj]["connectedIndex"] = []
+        # Collect all connected vertices.
+        for vert in vertices:
+            linked = []
+            for edge in vert.link_edges:
+                linked.append(edge.other_vert(vert))
+            self.obj[obj]["connected"].append(linked)
+
+    def update(self, obj, vertices):
+        """Update the current vertex data based on the current
+        selection.
+
+        If cycling has been used as the last pickwalk action but the
+        vertex selection has been changed by the user the data needs to
+        be updated, otherwise cycling would still be based on the
+        previous selection.
+
+        :param obj: The current object.
+        :type obj: bpy.object
+        :param vertices: The vertices to get the connected vertices
+                         from.
+        :type vertices: list(bpy.types.MeshVertices)
+        """
+        # Create a status map to track which vertices are still in use
+        # and which can be discarded.
+        status = {}
+        for i in range(len(self.obj[obj]["vertex"])):
+            status[self.obj[obj]["vertex"][i].index] = (i, False)
+
+        # Compare, which of the currently selected vertices are already
+        # part of a previous cycle.
+        for vert in vertices:
+            exists = False
+            for i in range(len(self.obj[obj]["vertex"])):
+                # Compare against the last selection.
+                if self.obj[obj]["vertex"][i].index == vert.index:
+                    exists = True
+                    # Flag the existing vertex as in use.
+                    status[self.obj[obj]["vertex"][i].index] = (i, True)
+                # Compare against the connected vertices of the last
+                # selection. Since a cycle walk changes the current
+                # selection these need to be considered as well.
+                for j in range(len(self.obj[obj]["connected"][i])):
+                    if self.obj[obj]["connected"][i][j].index == vert.index:
+                        exists = True
+                        # Flag the existing vertex as in use.
+                        status[self.obj[obj]["vertex"][i].index] = (i, True)
+
+            # If the selected vertex isn't yet included add it to the
+            # list and collect it's data.
+            if not exists:
+                self.obj[obj]["vertex"].append(vert)
+                linked = []
+                for edge in vert.link_edges:
+                    linked.append(edge.other_vert(vert))
+                self.obj[obj]["connected"].append(linked)
+                self.obj[obj]["current"].append(linked[0])
+                self.obj[obj]["connectedIndex"].append(0)
+
+        # Check, if any vertices form a previous cycle aren't used
+        # anymore. Remove all unused vertices and their data.
+        for key in status:
+            if not status[key][1]:
+                self.obj[obj]["vertex"].pop(status[key][0])
+                self.obj[obj]["connected"].pop(status[key][0])
+                self.obj[obj]["current"].pop(status[key][0])
+                self.obj[obj]["connectedIndex"].pop(status[key][0])
+
+    def toNext(self, obj):
+        """Jump to the next vertex in the list of connected vertices.
+        If the last/first vertex is reached jump tp the first/last
+        vertex in the list.
+
+        :param obj: The current object.
+        :type obj: bpy.object
+        """
+        if self.active:
+            if self.increment:
+                direction = 1
+            else:
+                direction = -1
+
+            for i in range(len(self.obj[obj]["connected"])):
+                connected = self.obj[obj]["connected"][i]
+                numConnected = len(connected)
+                if self.firstIndex:
+                    self.obj[obj]["current"].append(connected[0])
+                    self.obj[obj]["connectedIndex"].append(0)
+                else:
+                    self.obj[obj]["connectedIndex"][i] = (self.obj[obj]["connectedIndex"][i] + direction) % numConnected
+                    self.obj[obj]["current"][i] = connected[self.obj[obj]["connectedIndex"][i]]
+            self.firstIndex = False
+
+    def getCurrent(self, obj):
+        """Return the indices of the current connected vertices.
+
+        It's necessary to use the indices because the vertex objects
+        change with every pickwalk because of the mesh updates.
+
+        :param obj: The current object.
+        :type obj: bpy.object
+
+        :return: The indices of the current connected vertices.
+        :rtype: list(int)
+        """
+        return [i.index for i in self.obj[obj]["current"]]
+
+
+cycleConnected = Cycle()
+
+
+def walkMeshComponents(context, x=1, y=0, extend=False, cycle=False, toNext=True):
+    """Walk over the connected components. The walking is based on
+    vertices. If another selection mode is active the current selection
+    will be converted.
+
+    :param context: The current context.
+    :type context: bpy.context
+    :param x: The x direction to walk.  1: Right
+                                       -1: Left
+                                        0: Off
+    :type x: int
+    :param y: The y direction to walk.  1: Up
+                                       -1: Down
+                                        0: Off
+    :type y: int
+    :param extend: True, if the current selection should be kept and the
+                   sibling should be added to the list.
+    :type extend: bool
+    :param cycle: True, to only cycle through connected vertices in case
+                  a specific vertex cannot be reached.
+    :type cycle: bool
+    :param toNext: True, if the next connected vertex should be
+                   selected.
+    :type toNext: bool
+    """
+    # Get all region data because component walking is performed in
+    # screen space.
+    region = context.region
+    regionView3d = context.region_data
+
+    # Go through all active edit meshes.
+    for obj, bm in activeEditMesh():
+
+        # Reset the cycling with a regular pickwalk so that cycling is
+        # only active when used in succession.
+        if not cycle:
+            cycleConnected.reset()
+        # Make sure that the current object is either known or reset
+        # the cycling in case the object has been switched.
+        if not cycleConnected.isValid(obj):
+            cycleConnected.reset()
+
+        # Get the object's matrix for calculating the screen position of
+        # a vertex.
+        mat = obj.matrix_world
+
+        # Store the current component mode to be able to reset it later.
+        # It's important to define the mode as a tuple or a direct
+        # reference will be created which changes when the mode gets
+        # changed.
+        currentMode = tuple(bpy.context.tool_settings.mesh_select_mode)
+
+        # If not in vertex selection mode convert the current selection.
+        if 'EDGE' in bm.select_mode or 'FACE' in bm.select_mode:
+            bm.select_flush_mode()
+            bpy.context.tool_settings.mesh_select_mode = (True, False, False)
+            bmesh.update_edit_mesh(obj.data)
+
+        # The list of vertices to select. The vertices cannot be
+        # selected directly because the loop goes through the current
+        # selection and changing the selection affects the loop.
+        # Therefore the vertices to select are stored and the resulting
+        # selection is set afterwards.
+        selection = []
+        cycleSelection = []
+
+        for vert in bm.verts:
+            if vert.select:
+                # Store the current vertex if the selection should be
+                # expanded.
+                if extend:
+                    selection.append(vert)
+                # Deselect the vertex so that the selection is not
+                # expanded automatically.
+                vert.select = False
+
+                #
+                # Cycle through connected vertices
+                #
+                # When cycling the selected vertices first get collected
+                # and then cycled as a whole. This makes cycling more
+                # predictable.
+                if cycle:
+                    cycleSelection.append(vert)
+
+                #
+                # Mesh curve
+                #
+                # Handle the special case where a vertex only connects
+                # to two edges. Because of the limited direction the
+                # walking can be performed by vertex index.
+                elif len(vert.link_edges) < 3:
+                    # Marker for the endpoint of the curve. It prevents
+                    # that the first/last vertex gets deselected when
+                    # walking.
+                    endPoint = True
+                    for edge in vert.link_edges:
+                        connected = edge.other_vert(vert)
+                        # Walking right or up goes to the connected
+                        # higher index.
+                        if x == 1 or y == 1:
+                            if connected.index > vert.index:
+                                selection.append(connected)
+                                endPoint = False
+                        # Walking left or down goes to the connected
+                        # lower index.
+                        elif x == -1 or y == -1:
+                            if connected.index < vert.index:
+                                selection.append(connected)
+                                endPoint = False
+                    # In case of the first/last vertex keep the
+                    # selection.
+                    if endPoint:
+                        selection.append(vert)
+
+                #
+                # Standard mesh
+                #
+                # Walk through a regular mesh where a vertex is
+                # connected to at least three edges. The direction is
+                # based on the vector to the connected vertex.
+                else:
+                    # Get the screen position of the current vertex.
+                    pos1 = vertex2DPosition(vert, mat, region, regionView3d)
+
+                    inRange = []
+                    for edge in vert.link_edges:
+                        # Get the next connected vertex and it's screen
+                        # position.
+                        connected = edge.other_vert(vert)
+                        pos2 = vertex2DPosition(connected, mat, region, regionView3d)
+
+                        # Get the vector to the connected vertex and
+                        # normalize it.
+                        vec = pos2 - pos1
+                        vec.normalize()
+                        # Calculate the angle of the vector in relation
+                        # to a reference vector pointing in screen x
+                        # position.
+                        dot = vec.dot(Vector((1, 0)))
+                        angle = math.degrees(math.acos(dot))
+
+                        # Decide if the vector matches the given walking
+                        # direction and is within the angle limit of the
+                        # direction.
+                        if x == 1 and vec[0] > 0 and angle < 45:
+                            inRange.append({"vertex": connected,
+                                            "angle": angle,
+                                            "orient": 0})
+                        elif x == -1 and vec[0] < 0 and angle > 135:
+                            inRange.append({"vertex": connected,
+                                            "angle": angle,
+                                            "orient": 180})
+                        elif y == 1 and vec[1] > 0 and 45 < angle < 135:
+                            inRange.append({"vertex": connected,
+                                            "angle": angle,
+                                            "orient": 90})
+                        elif y == -1 and vec[1] < 0 and 45 < angle < 135:
+                            inRange.append({"vertex": connected,
+                                            "angle": angle,
+                                            "orient": 90})
+
+                    # If multiple vertices match the given direction
+                    # check which one is closest to the provided
+                    # reference angle.
+                    nextVert = None
+                    for vertex in inRange:
+                        dirAngle = vertex["orient"]
+                        if nextVert is None or abs(vertex["angle"] - dirAngle) < abs(nextVert["angle"] - dirAngle):
+                            nextVert = vertex
+                    # If a connected vertex is found add it to the list
+                    # or just keep the current selection.
+                    if nextVert:
+                        selection.append(nextVert["vertex"])
+                    else:
+                        selection.append(vert)
+
+        #
+        # Cycle through connected vertices
+        #
+        if cycle:
+            # When cycling is inactive because of a preceding regular
+            # pickwalk initialize the cycling with the current object
+            # and vertex selection.
+            if not cycleConnected.active:
+                cycleConnected.setVertex(obj, cycleSelection)
+                # Activate the cycling so that it can be used
+                # repeatedly.
+                cycleConnected.active = True
+
+            # Compare the stored vertices with the current selection.
+            # New vertices will be added and unused vertices removed.
+            cycleConnected.update(obj, cycleSelection)
+            # Set, if the next or previous vertex should be selected.
+            cycleConnected.increment = toNext
+            # Jump to the next/previous vertex.
+            cycleConnected.toNext(obj)
+            # Add the resulting vertices based on their index.
+            for i in cycleConnected.getCurrent(obj):
+                selection.append(bm.verts[i])
+
+        # Select all found vertices.
+        bm.select_flush_mode()
+        for vert in selection:
+            vert.select = True
+
+        # Switch the selection mode back to where it was.
+        bm.select_flush_mode()
+        bpy.context.tool_settings.mesh_select_mode = currentMode
+        bmesh.update_edit_mesh(obj.data)
+
+
+def vertex2DPosition(vertex, mat, region, regionView3d):
+    """Return the screen position of the given vertex based on it's 3d
+    position and the object's matrix.
+
+    :param vertex: The vertex to find the screen position for.
+    :type vertex: bpy.types.MeshVertices
+    :param mat: The object's transform matrix.
+    :type mat: float[]
+    :param region: The region of the 3D view.
+    :type region: bpy.types.Region
+    :param regionView3d: The 3D region data.
+    :type regionView3d: bpy.types.RegionView3D
+
+    :return: The screen postion.
+    :rtype: tuple(float, float)
+    """
+    pos = vertex.co
+    pos = mat @ pos
+    return view3d_utils.location_3d_to_region_2d(region, regionView3d, pos)
+
+
+def worldObject(obj, toNext=True):
+    """Return the next or previous object/s at the top level of the
+    collection/s the given object belongs to.
+
+    :param obj: The object to get the world sibling from.
+    :type obj: bpy.object
+    :param toNext: True, if the next sibling in the list should be
+                   selected.
+    :type toNext: bool
+
+    :return: A list with sibling objects. This can be more than one
+             object if the given object belongs to more than one
+             collection.
+    :rtype: list(bpy.object)
+    """
+    # Define the direction.
+    direction = +1
+    if not toNext:
+        direction = -1
+
+    objects = []
+
+    collections = obj.users_collection
+    for collection in collections:
+        items = collection.all_objects
+        topObjects = []
+        for item in items:
+            if not item.parent:
+                topObjects.append(item)
+        index = topObjects.index(obj)
+        index = (index + direction) % len(topObjects)
+        objects.append(topObjects[index])
+
+    return objects
+
+
 # ----------------------------------------------------------------------
 # Operators
 # ----------------------------------------------------------------------
@@ -363,6 +914,12 @@ class PICKWALK_OT_hierarchyUp(bpy.types.Operator):
         :param context: The current context.
         :type context: bpy.context
         """
+        if walkComponents(context,
+                          x=0,
+                          y=1,
+                          extend=self.extend):
+            return {'FINISHED'}
+
         selection = currentSelection()
         deselectAll()
 
@@ -401,6 +958,12 @@ class PICKWALK_OT_hierarchyDown(bpy.types.Operator):
         :param context: The current context.
         :type context: bpy.context
         """
+        if walkComponents(context,
+                          x=0,
+                          y=-1,
+                          extend=self.extend):
+            return {'FINISHED'}
+
         selection = currentSelection()
         deselectAll()
 
@@ -442,7 +1005,15 @@ class PICKWALK_OT_hierarchyLeft(bpy.types.Operator):
         :param context: The current context.
         :type context: bpy.context
         """
-        selectSibling(next=False,
+        if walkComponents(context,
+                          x=-1,
+                          y=0,
+                          extend=self.extend,
+                          cycle=self.switchSide,
+                          toNext=False):
+            return {'FINISHED'}
+
+        selectSibling(toNext=False,
                       extend=self.extend,
                       switchSide=self.switchSide)
 
@@ -470,7 +1041,15 @@ class PICKWALK_OT_hierarchyRight(bpy.types.Operator):
         :param context: The current context.
         :type context: bpy.context
         """
-        selectSibling(next=True,
+        if walkComponents(context,
+                          x=1,
+                          y=0,
+                          extend=self.extend,
+                          cycle=self.switchSide,
+                          toNext=True):
+            return {'FINISHED'}
+
+        selectSibling(toNext=True,
                       extend=self.extend,
                       switchSide=self.switchSide)
 
