@@ -51,6 +51,9 @@ Ctrl + Alt + Left/Right Arrow: Select Opposite. When in mesh edit mode
 
 Changelog:
 
+0.3.0 - 2021-08-17
+      - Stability improvements for vertex cycling.
+
 0.2.0 - 2021-08-17
       - Added the ability to walk through the top level objects of the
         related collection by pickwalking right/left.
@@ -65,7 +68,7 @@ Changelog:
 
 bl_info = {"name": "PickWalk",
            "author": "Ingo Clemens",
-           "version": (0, 2, 0),
+           "version": (0, 3, 0),
            "blender": (2, 93, 0),
            "category": "Interface",
            "location": "3D View, Outliner, Graph Editor, Dope Sheet",
@@ -509,7 +512,7 @@ class Cycle(object):
                          from.
         :type vertices: list(bpy.types.MeshVertices)
         """
-        self.obj[obj] = {"vertex": vertices}
+        self.obj[obj] = {"vertex": [i.index for i in vertices]}
         self.obj[obj]["connected"] = []
         self.obj[obj]["current"] = []
         self.obj[obj]["connectedIndex"] = []
@@ -517,7 +520,7 @@ class Cycle(object):
         for vert in vertices:
             linked = []
             for edge in vert.link_edges:
-                linked.append(edge.other_vert(vert))
+                linked.append(edge.other_vert(vert).index)
             self.obj[obj]["connected"].append(linked)
 
     def update(self, obj, vertices):
@@ -539,7 +542,7 @@ class Cycle(object):
         # and which can be discarded.
         status = {}
         for i in range(len(self.obj[obj]["vertex"])):
-            status[self.obj[obj]["vertex"][i].index] = (i, False)
+            status[self.obj[obj]["vertex"][i]] = (i, False)
 
         # Compare, which of the currently selected vertices are already
         # part of a previous cycle.
@@ -547,26 +550,26 @@ class Cycle(object):
             exists = False
             for i in range(len(self.obj[obj]["vertex"])):
                 # Compare against the last selection.
-                if self.obj[obj]["vertex"][i].index == vert.index:
+                if self.obj[obj]["vertex"][i] == vert.index:
                     exists = True
                     # Flag the existing vertex as in use.
-                    status[self.obj[obj]["vertex"][i].index] = (i, True)
+                    status[self.obj[obj]["vertex"][i]] = (i, True)
                 # Compare against the connected vertices of the last
                 # selection. Since a cycle walk changes the current
                 # selection these need to be considered as well.
                 for j in range(len(self.obj[obj]["connected"][i])):
-                    if self.obj[obj]["connected"][i][j].index == vert.index:
+                    if self.obj[obj]["connected"][i][j] == vert.index:
                         exists = True
                         # Flag the existing vertex as in use.
-                        status[self.obj[obj]["vertex"][i].index] = (i, True)
+                        status[self.obj[obj]["vertex"][i]] = (i, True)
 
             # If the selected vertex isn't yet included add it to the
             # list and collect it's data.
             if not exists:
-                self.obj[obj]["vertex"].append(vert)
+                self.obj[obj]["vertex"].append(vert.index)
                 linked = []
                 for edge in vert.link_edges:
-                    linked.append(edge.other_vert(vert))
+                    linked.append(edge.other_vert(vert).index)
                 self.obj[obj]["connected"].append(linked)
                 self.obj[obj]["current"].append(linked[0])
                 self.obj[obj]["connectedIndex"].append(0)
@@ -617,7 +620,7 @@ class Cycle(object):
         :return: The indices of the current connected vertices.
         :rtype: list(int)
         """
-        return [i.index for i in self.obj[obj]["current"]]
+        return self.obj[obj]["current"]
 
 
 cycleConnected = Cycle()

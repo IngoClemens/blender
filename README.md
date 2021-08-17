@@ -6,7 +6,7 @@ It basically copies the default pickwalking behaviour of Maya with additional se
 Feel free to download and use any available.
 
 ## PickWalk
-Navigate through a hierarchy of objects or bones of an armature.
+Navigate through a hierarchy of objects or bones of an armature or walk over vertices and points of meshes and curves in edit mode.
 
 [Documentation](https://github.com/IngoClemens/blender/wiki/PickWalk)
 
