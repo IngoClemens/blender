@@ -45,11 +45,19 @@ Ctrl + Left Arrow: Select Previous Child Sibling
 Ctrl + Shift + Arrow Key: Keep the current selection and add the parent
                           or child.
 Ctrl + Alt + Left/Right Arrow: Select Opposite. When in mesh edit mode
-                               it cycles through the connected vertices.
+                               cycle through connected vertices.
 
 ------------------------------------------------------------------------
 
 Changelog:
+
+0.4.0 - 2021-08-18
+      - Added the period character as a side identifier separator.
+      - Armatures are not selected when walking over top level siblings.
+      - Fixed: Error when walking to a sibling when the root bone of an
+        armature is selected in pose or edit mode.
+      - Fixed: Cycling over multiple vertices in a complex mesh can
+        cause an error.
 
 0.3.0 - 2021-08-17
       - Stability improvements for vertex cycling.
@@ -68,7 +76,7 @@ Changelog:
 
 bl_info = {"name": "PickWalk",
            "author": "Ingo Clemens",
-           "version": (0, 3, 0),
+           "version": (0, 4, 0),
            "blender": (2, 93, 0),
            "category": "Interface",
            "location": "3D View, Outliner, Graph Editor, Dope Sheet",
@@ -154,7 +162,7 @@ def selectObject(obj):
     :param obj: The object to select.
     :type obj: bpy.object
     """
-    if isArmature(obj):
+    if isArmature(obj) and bpy.context.object.mode != 'OBJECT':
         dataObj = getDataObject(obj)
         if dataObj.mode == 'POSE':
             dataObj.data.bones[obj.name].select = True
@@ -253,54 +261,61 @@ def sideIdentifier(name):
     leftItems = LEFT_IDENTIFIER[:]
     rightItems = RIGHT_IDENTIFIER[:]
 
-    # First only the prefixes and suffixes get processed because
-    # otherwise any embedded strings, which could appear to be
-    # identifiers can easily override the actual prefix or suffix.
-    for i in range(len(leftItems)):
+    # List of commonly used separators as tuples.
+    # The first item is for prefix/suffix use, the second for use in a
+    # regular expression, in case it's a special character which needs
+    # escaping.
+    separator = [("_", "_"), (".", "\.")]
 
-        # Loop through different capitalization cases.
-        for j in range(3):
-            left = leftItems[i]
-            right = rightItems[i]
-            if j == 1:
-                left = left.capitalize()
-                right = right.capitalize()
-            elif j == 2:
-                left = left.upper()
-                right = right.upper()
+    for sep in separator:
+        # First only the prefixes and suffixes get processed because
+        # otherwise any embedded strings, which could appear to be
+        # identifiers, can easily override the actual prefix or suffix.
+        for i in range(len(leftItems)):
 
-            # Loop through prefix, suffix and embedding.
-            for k in range(3):
-                # prefix
-                if k == 0:
-                    Left = "{}_".format(left)
-                    Right = "{}_".format(right)
-                    if name.startswith(Left):
-                        return Left, Right
-                    elif name.startswith(Right):
-                        return Right, Left
+            # Loop through different capitalization cases.
+            for j in range(3):
+                left = leftItems[i]
+                right = rightItems[i]
+                if j == 1:
+                    left = left.capitalize()
+                    right = right.capitalize()
+                elif j == 2:
+                    left = left.upper()
+                    right = right.upper()
 
-                # suffix
-                elif k == 1:
-                    Left = "_{}".format(left)
-                    Right = "_{}".format(right)
-                    if name.endswith(Left):
-                        return Left, Right
-                    elif name.endswith(Right):
-                        return Right, Left
+                # Loop through prefix, suffix and embedding.
+                for k in range(3):
+                    # prefix
+                    if k == 0:
+                        Left = "{}{}".format(left, sep[0])
+                        Right = "{}{}".format(right, sep[0])
+                        if name.startswith(Left):
+                            return Left, Right
+                        elif name.startswith(Right):
+                            return Right, Left
 
-                # embedded
-                elif k == 2:
-                    Left = "_{}_".format(left)
-                    Right = "_{}_".format(right)
-                    # left
-                    regex = re.compile(".{}.".format(Left))
-                    if re.search(regex, name):
-                        return Left, Right
-                    # right
-                    regex = re.compile(".{}.".format(Right))
-                    if re.search(regex, name):
-                        return Right, Left
+                    # suffix
+                    elif k == 1:
+                        Left = "{}{}".format(sep[0], left)
+                        Right = "{}{}".format(sep[0], right)
+                        if name.endswith(Left):
+                            return Left, Right
+                        elif name.endswith(Right):
+                            return Right, Left
+
+                    # embedded
+                    elif k == 2:
+                        Left = "{}{}{}".format(sep[1], left, sep[1])
+                        Right = "{}{}{}".format(sep[1], right, sep[1])
+                        # left
+                        regex = re.compile(".{}.".format(Left))
+                        if re.search(regex, name):
+                            return Left, Right
+                        # right
+                        regex = re.compile(".{}.".format(Right))
+                        if re.search(regex, name):
+                            return Right, Left
 
     return "", ""
 
@@ -576,12 +591,16 @@ class Cycle(object):
 
         # Check, if any vertices form a previous cycle aren't used
         # anymore. Remove all unused vertices and their data.
+        remove = []
         for key in status:
             if not status[key][1]:
-                self.obj[obj]["vertex"].pop(status[key][0])
-                self.obj[obj]["connected"].pop(status[key][0])
-                self.obj[obj]["current"].pop(status[key][0])
-                self.obj[obj]["connectedIndex"].pop(status[key][0])
+                remove.append(status[key][0])
+        remove.sort(reverse=True)
+        for i in range(len(remove)):
+            self.obj[obj]["vertex"].pop(remove[i])
+            self.obj[obj]["connected"].pop(remove[i])
+            self.obj[obj]["current"].pop(remove[i])
+            self.obj[obj]["connectedIndex"].pop(remove[i])
 
     def toNext(self, obj):
         """Jump to the next vertex in the list of connected vertices.
@@ -874,6 +893,12 @@ def worldObject(obj, toNext=True):
              collection.
     :rtype: list(bpy.object)
     """
+    # If the object belongs to an armature in edit or pose mode it's not
+    # possible to pickwalk away form it. Return the object so that it
+    # stays selected.
+    if isArmature(obj) and bpy.context.object.mode != 'OBJECT':
+        return [obj]
+
     # Define the direction.
     direction = +1
     if not toNext:
