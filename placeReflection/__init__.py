@@ -1,6 +1,6 @@
 """
 placeReflection
-Copyright (C) 2021, Ingo Clemens, brave rabbit, www.braverabbit.com
+Copyright (C) 2021-2022, Ingo Clemens, brave rabbit, www.braverabbit.com
 
     GNU GENERAL PUBLIC LICENSE Version 3
 
@@ -34,8 +34,7 @@ Usage:
 
 1. Select the light or object to place.
 2. Activate placeReflection from the object menu in the 3d view or by
-   searching for it with F3. It's also available from the 3d view's tool
-   panel.
+   searching for it with F3.
 3. LMB drag the mouse over the surface to define the object's reflection
    point.
 4. Use the scrollwheel on the mouse to set the distance of the object to
@@ -50,6 +49,12 @@ Usage:
 
 Changelog:
 
+0.8.0 - 2022-02-17
+      - Fixed several issues related to adjusting the distance with the
+        mouse wheel before continuing to drag over the surface.
+      - Removed the tool from the current tool panel as it felt
+        misplaced.
+
 0.7.0 - 2021-04-15
       - Added the light distance to the operator and redo panel.
 
@@ -61,7 +66,7 @@ Changelog:
 
 bl_info = {"name": "Place Reflection",
            "author": "Ingo Clemens",
-           "version": (0, 7, 0),
+           "version": (0, 8, 0),
            "blender": (2, 92, 0),
            "category": "Lighting",
            "location": "View3D > Object",
@@ -112,30 +117,6 @@ AXIS_ITEMS = (("-X", "X", ""),
 
 
 # ----------------------------------------------------------------------
-# Property Group
-# ----------------------------------------------------------------------
-
-class PlaceReflection_properties(bpy.types.PropertyGroup):
-    """Property group class to make the properties globally available.
-    """
-    axis_value: bpy.props.EnumProperty(name="Axis",
-                                       description="The axis which is oriented towards the surface",
-                                       items=AXIS_ITEMS,
-                                       default=AIM_AXIS)
-    location_value: bpy.props.BoolProperty(name="Location",
-                                           description="Affect the location of the selected object",
-                                           default=USE_LOCATION)
-    rotation_value: bpy.props.BoolProperty(name="Rotation",
-                                           description="Affect the rotation of the selected object",
-                                           default=USE_ROTATION)
-    distance_value: bpy.props.FloatProperty(name="Distance",
-                                            description="The distance of the selected object to "
-                                                        "the surface. Set to 0 to use the current "
-                                                        "distance of the object",
-                                            default=DISTANCE)
-
-
-# ----------------------------------------------------------------------
 # Main Operator
 # ----------------------------------------------------------------------
 
@@ -169,10 +150,10 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
     dragPos = None
     reflVector = None
     dist = 1.0
-    distFactor = 1.0
-    distIncrementFactor = 1.0
     shiftPressed = False
     ctrlPressed = False
+
+    isModal = False
 
     # ------------------------------------------------------------------
     # General operator methods.
@@ -186,9 +167,8 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.dist = self.distance_value
-        self.distFactor = 1.0
         self.applyPlacement(context.object)
+        self.isModal = False
         return {'FINISHED'}
 
     def modal(self, context, event):
@@ -251,6 +231,8 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         :param event: The current event.
         :type event: bpy.types.Event
         """
+        self.isModal = True
+
         if context.object:
             context.window_manager.modal_handler_add(self)
             context.workspace.status_text_set("LMB-Drag: Place, "
@@ -278,6 +260,8 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         :return: The enum for cancelling the operator.
         :rtype: enum
         """
+        self.isModal = False
+
         # Set the location and rotation back to their original values.
         if context.object:
             context.object.location = self.startPos
@@ -294,6 +278,7 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         :param context: The current context.
         :type context: bpy.context
         """
+        self.isModal = False
         self.isDragging = False
         context.workspace.status_text_set(None)
 
@@ -340,22 +325,18 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         # Calculate the reflection vector.
         self.reflVector = reflection_vector(viewVector, normal)
 
-        # If the tool is entered with a distance vallue of 0.0 get the
-        # current distance to the object's intersection point at the
-        # first drag and set this as the distance to use for the entire
-        # cycle of the placement.
+        # Get the current distance to the object's intersection point at
+        # the first drag and set this as the distance to use for the
+        # entire cycle of the placement.
         # In case the object is in it's default position either at the
         # world center of the cursor position use the distance of the
         # view to the surface point.
-        if self.distance_value is 0.0:
-            cursorPos = context.scene.cursor.location
-            objPos = context.object.location
-            if objPos == Vector((0.0, 0.0, 0.0)) or objPos == cursorPos:
-                self.dist = distance(viewOrigin, self.dragPos)
-            else:
-                self.dist = distance(self.dragPos, context.object.location)
+        cursorPos = context.scene.cursor.location
+        objPos = context.object.location
+        if objPos == Vector((0.0, 0.0, 0.0)) or objPos == cursorPos:
+            self.dist = distance(viewOrigin, self.dragPos)
         else:
-            self.dist = self.distance_value
+            self.dist = distance(self.dragPos, context.object.location)
 
         # Apply the new position and rotation.
         self.applyPlacement(context.object)
@@ -367,6 +348,7 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         :param eventType: The current event type string.
         :type eventType: str
         """
+        factor = 1.0
         speed = 0.05
         if self.shiftPressed:
             speed *= SPEED_SLOW
@@ -374,12 +356,14 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
             speed *= SPEED_FAST
 
         if eventType == 'WHEELUPMOUSE':
-            self.distFactor += speed
+            factor += speed
         elif eventType == 'WHEELDOWNMOUSE':
-            self.distFactor -= speed
+            factor -= speed
 
-        if self.distFactor < 0:
-            self.distFactor = 0
+        if factor < 0:
+            factor = 0
+
+        self.dist *= factor
 
     def applyPlacement(self, obj):
         """Apply the position and rotation, based on the global
@@ -392,6 +376,8 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
             self.set_position(obj)
         if self.rotation_value:
             self.set_rotation(obj)
+        # Get the current distance for the redo panel.
+        self.distance_value = self.dist
 
     def set_position(self, obj):
         """Set the resulting position of the selected object based on
@@ -403,8 +389,11 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
         if self.reflVector is None:
             return
 
-        self.distance_value = self.dist * self.distFactor
-        obj.location = self.reflVector * self.distance_value + self.dragPos
+        # When adjusting the distance through the redo panel, therefore
+        # the modal mode is not active, get the distance from the panel.
+        if not self.isModal:
+            self.dist = self.distance_value
+        obj.location = self.reflVector * self.dist + self.dragPos
 
     def set_rotation(self, obj):
         """Set the resulting orientation of the selected object based on
@@ -436,54 +425,6 @@ class OBJECT_OT_PlaceReflection(bpy.types.Operator):
             obj.rotation_quaternion = quat
         else:
             obj.rotation_euler = quat.to_euler(order)
-
-
-# ----------------------------------------------------------------------
-# Tool Panel
-# ----------------------------------------------------------------------
-
-class VIEW3D_PT_PlaceReflection(bpy.types.Panel):
-    """Creates a Panel in the Tool properties window.
-    """
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "Tool"
-    bl_label = "Place Reflection"
-
-    @classmethod
-    def poll(cls, context):
-        """Returns, if the panel is visible.
-
-        :param context: The current context.
-        :type context: bpy.context
-
-        :return: True, if the panel should be visible.
-        :rtype: bool
-        """
-        return context.object is not None
-
-    def draw(self, context):
-        """Draw the panel and it's properties.
-
-        :param context: The current context.
-        :type context: bpy.context
-        """
-        # Access the global properties.
-        scene = context.scene
-        place_reflection = scene.place_reflection
-
-        layout = self.layout
-        layout.prop(place_reflection, "axis_value")
-        layout.prop(place_reflection, "location_value")
-        layout.prop(place_reflection, "rotation_value")
-        layout.prop(place_reflection, "distance_value")
-
-        # Call the operator with the current settings.
-        op = layout.operator("view3d.place_reflection")
-        op.axis_value = place_reflection.axis_value
-        op.location_value = place_reflection.location_value
-        op.rotation_value = place_reflection.rotation_value
-        op.distance_value = place_reflection.distance_value
 
 
 # ----------------------------------------------------------------------
@@ -551,9 +492,7 @@ def menu_item(self, context):
 preview_collections = {}
 
 # Collect all classes in a list for easier access.
-classes = [PlaceReflection_properties,
-           OBJECT_OT_PlaceReflection,
-           VIEW3D_PT_PlaceReflection]
+classes = [OBJECT_OT_PlaceReflection]
 
 
 def register():
@@ -567,7 +506,6 @@ def register():
 
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.place_reflection = bpy.props.PointerProperty(type=PlaceReflection_properties)
     # Add the menu items.
     bpy.types.VIEW3D_MT_object.append(menu_item)
 
@@ -582,7 +520,6 @@ def unregister():
 
     for cls in classes:
         bpy.utils.unregister_class(cls)
-    del bpy.types.Scene.place_reflection
     # Remove the menu items.
     bpy.types.VIEW3D_MT_object.remove(menu_item)
 

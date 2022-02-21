@@ -1,6 +1,6 @@
 """
 pickWalk
-Copyright (C) 2021, Ingo Clemens, brave rabbit, www.braverabbit.com
+Copyright (C) 2021-2022, Ingo Clemens, brave rabbit, www.braverabbit.com
 
     GNU GENERAL PUBLIC LICENSE Version 3
 
@@ -51,6 +51,9 @@ Ctrl + Alt + Left/Right Arrow: Select Opposite. When in mesh edit mode
 
 Changelog:
 
+0.5.0 - 2022-02-17
+      - Improved walking order for top level objects of a collection.
+
 0.4.0 - 2021-08-18
       - Added the period character as a side identifier separator.
       - Armatures are not selected when walking over top level siblings.
@@ -76,7 +79,7 @@ Changelog:
 
 bl_info = {"name": "PickWalk",
            "author": "Ingo Clemens",
-           "version": (0, 4, 0),
+           "version": (0, 5, 0),
            "blender": (2, 93, 0),
            "category": "Interface",
            "location": "3D View, Outliner, Graph Editor, Dope Sheet",
@@ -870,7 +873,7 @@ def vertex2DPosition(vertex, mat, region, regionView3d):
     :param regionView3d: The 3D region data.
     :type regionView3d: bpy.types.RegionView3D
 
-    :return: The screen postion.
+    :return: The screen position.
     :rtype: tuple(float, float)
     """
     pos = vertex.co
@@ -908,9 +911,8 @@ def worldObject(obj, toNext=True):
 
     collections = obj.users_collection
     for collection in collections:
-        items = collection.all_objects
         topObjects = []
-        for item in items:
+        for item in [i[1] for i in sorted(collection.all_objects.items())]:
             if not item.parent:
                 topObjects.append(item)
         index = topObjects.index(obj)

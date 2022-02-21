@@ -1,6 +1,6 @@
 """
 toolShelf
-Copyright (C) 2021, Ingo Clemens, brave rabbit, www.braverabbit.com
+Copyright (C) 2021-2022, Ingo Clemens, brave rabbit, www.braverabbit.com
 
     GNU GENERAL PUBLIC LICENSE Version 3
 
@@ -35,6 +35,12 @@ editor.
 ------------------------------------------------------------------------
 
 Changelog:
+
+0.9.0 - 2022-02-10
+      - Added an option to set a group to be expanded by default.
+      - Added undo capability to operator buttons.
+      - Fixed that editing is not possible when New Group is active in
+        Add Mode.
 
 0.8.0 - 2021-06-01
       - Added tooltips for enum properties.
@@ -81,7 +87,7 @@ Changelog:
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 8, 0),
+           "version": (0, 9, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -154,6 +160,7 @@ ANN_ADDON = "The add-on to create a toggle button for"
 ANN_COMMAND = ("The command string for the button.\n"
                "For simple commands the bpy import is added automatically.\n"
                "Leave empty to get the content from the text editor")
+ANN_EXPAND = "Set the group to be expanded by default"
 ANN_IMPORT_FILE = ("The configuration file to import groups or "
                    "tools from")
 ANN_IMPORT_ITEM = "The group or tool to import"
@@ -890,6 +897,7 @@ def buildOperatorClass(data, group, propCls):
                      {"bl_idname": getIdName(data, group),
                       "bl_label": data["name"],
                       "bl_description": data["tooltip"],
+                      "bl_options": {'REGISTER', 'UNDO'},
                       "execute": module.execute})
 
     return toolClass
@@ -962,8 +970,11 @@ def readConfiguration(configData):
             else:
                 toolData.append(toolItem)
 
+        if "expand" not in group:
+            group["expand"] = False
+
         # Store the collected data per group along with the group name.
-        GROUPS.append({"name": group["name"], "toolData": toolData})
+        GROUPS.append({"name": group["name"], "toolData": toolData, "expand": group["expand"]})
 
 
 readConfiguration(CONFIG_DATA)
@@ -1042,6 +1053,7 @@ def clearFields(context):
     tool_shelf.image_value = ""
     tool_shelf.image_only_value = False
     tool_shelf.new_set_value = False
+    tool_shelf.expand_value = False
     tool_shelf.addon_value = False
     tool_shelf.set_value = ""
     tool_shelf.column_value = 2
@@ -1067,6 +1079,7 @@ def groupChanged(self, context):
         groupIndex = getGroupIndex(CONFIG_DATA, tool_shelf.group_value)
         if groupIndex is not None:
             tool_shelf.name_value = tool_shelf.group_value
+            tool_shelf.expand_value = CONFIG_DATA["groups"][groupIndex]["expand"]
 
 
 def toolChanged(self, context):
@@ -1168,7 +1181,7 @@ def addOnChanged(self, context):
 def importFileChanged(self, context):
     """Callback for when the import file path property changes.
     Reads the content of the selected configuration file and populates
-    the import enum propery with the contained commands.
+    the import enum property with the contained commands.
 
     :param context: The current context.
     :type context: bpy.context
@@ -1339,6 +1352,9 @@ class Tool_Shelf_Properties(bpy.types.PropertyGroup):
     new_group_value: bpy.props.BoolProperty(name="New Group",
                                             description=ANN_NEW_GROUP,
                                             default=newGroup)
+    expand_value: bpy.props.BoolProperty(name="Auto Expand",
+                                         description=ANN_EXPAND,
+                                         default=False)
     addon_value: bpy.props.BoolProperty(name="Add-on Toggle",
                                         description=ANN_TOGGLE_ADDON,
                                         default=False)
@@ -1484,9 +1500,10 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
             if mode == 'ADD':
                 col.prop(tool_shelf, "new_group_value")
 
-            if tool_shelf.new_group_value:
+            if tool_shelf.new_group_value and mode == 'ADD':
                 col.prop(tool_shelf, "name_value")
                 col.prop(tool_shelf, "group_value", text="After Group")
+                col.prop(tool_shelf, "expand_value")
                 label = "Add Group"
             else:
                 col.prop(tool_shelf, "group_value")
@@ -1523,6 +1540,10 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
                 col = self.layout.column(align=True)
 
                 col.prop(tool_shelf, "name_value", text=nameLabel)
+
+                if mode == 'EDIT' and tool_shelf.button_value == 'NONE':
+                    col.prop(tool_shelf, "expand_value")
+
                 if mode == 'ADD' or (mode == 'EDIT' and tool_shelf.button_value != 'NONE'):
                     col.prop(tool_shelf, "cmd_value", text=commandLabel)
                     col.prop(tool_shelf, "tip_value")
@@ -1557,6 +1578,7 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         op = self.layout.operator("view3d.tool_shelf", text=label)
         op.mode_value = tool_shelf.mode_value
         op.new_group_value = tool_shelf.new_group_value
+        op.expand_value = tool_shelf.expand_value
         op.new_set_value = tool_shelf.new_set_value
         op.set_value = tool_shelf.set_value
         op.column_value = tool_shelf.column_value
@@ -1669,7 +1691,7 @@ def buildPanelProperty(button, parent, exists):
     return draw, parent, exists
 
 
-def buildPanelClass(name, data, index):
+def buildPanelClass(name, data, index, expand):
     """Build the expandable sub panel for the given tool group.
 
     :param name: The name of the sub panel/group.
@@ -1680,6 +1702,8 @@ def buildPanelClass(name, data, index):
     :param index: The index of the group used for defining a unique
                   panel class name.
     :type index: int
+    :param expand: True, if the group should be expanded by default.
+    :type expand: bool
 
     :return: The class of the sub panel.
     :rtype: class
@@ -1796,13 +1820,18 @@ def buildPanelClass(name, data, index):
 
     # Define the class name based on the group index.
     clsName = "VIEW3D_PT_ToolShelf_Sub_{}".format(index)
+
+    # Define the panel options.
+    options = {"bl_parent_id": "VIEW3D_PT_ToolShelf_Main"}
+    options["bl_label"] = name
+    if not expand:
+        options["bl_options"] = {"DEFAULT_CLOSED"}
+    options["draw"] = module.draw
+
     # Create the class.
     toolClass = type(clsName,
                      (VIEW3D_PT_ToolShelf, ),
-                     {"bl_parent_id": "VIEW3D_PT_ToolShelf_Main",
-                      "bl_label": name,
-                      "bl_options": {"DEFAULT_CLOSED"},
-                      "draw": module.draw})
+                     options)
 
     return toolClass
 
@@ -1813,7 +1842,8 @@ def buildGroupPanels():
     for i in range(len(GROUPS)):
         CMD_CLASSES.append(buildPanelClass(GROUPS[i]["name"],
                                            GROUPS[i]["toolData"],
-                                           i))
+                                           i,
+                                           GROUPS[i]["expand"]))
 
 
 def filterIcon(icon):
@@ -1860,6 +1890,9 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
     new_group_value: bpy.props.BoolProperty(name="New Group",
                                             description=ANN_NEW_GROUP,
                                             default=False)
+    expand_value: bpy.props.BoolProperty(name="Auto Expand",
+                                         description=ANN_EXPAND,
+                                         default=False)
     addon_value: bpy.props.BoolProperty(name="Add-on Toggle",
                                         description=ANN_TOGGLE_ADDON,
                                         default=False)
@@ -1960,7 +1993,8 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
 
                 # Add a new group to the configuration and save it.
                 group = {"name": self.name_value,
-                         "commands": []}
+                         "commands": [],
+                         "expand": self.expand_value}
                 # If no groups exist append to the empty list.
                 if not len(CONFIG_DATA["groups"]):
                     CONFIG_DATA["groups"].append(group)
@@ -2000,6 +2034,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                     # Rename the group.
                     groupIndex = getGroupIndex(CONFIG_DATA, self.group_value)
                     CONFIG_DATA["groups"][groupIndex]["name"] = self.name_value
+                    CONFIG_DATA["groups"][groupIndex]["expand"] = self.expand_value
 
                 # ------------------------------------------------------
                 # Edit the button command.
@@ -2186,6 +2221,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
             # Reload the panel.
             bpy.ops.script.reload()
 
+            context.scene.tool_shelf.expand_value = False
             context.scene.tool_shelf.new_set_value = False
             context.scene.tool_shelf.set_value = ""
             context.scene.tool_shelf.column_value = 2
