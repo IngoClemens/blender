@@ -75,7 +75,7 @@ bl_info = {"name": "Thumb Mate",
            "location": "Asset Browser",
            "description": "Create rendered beauty previews for the asset browser",
            "warning": "",
-           "doc_url": "https://github.com/IngoClemens/blender/wiki/thumbMate",
+           "doc_url": "https://github.com/IngoClemens/blender/wiki/Thumb-Mate",
            "tracker_url": ""}
 
 import bpy
