@@ -24,8 +24,8 @@ Description:
 
 Rapid SDK provides a simple one-button workflow to quickly set up
 driving relationships between one or more properties. It's aimed to help
-simplify the steps needed to adjust particular relative values or even
-non-linear behavior.
+simplify the steps needed to adjust relative ranges or even non-linear
+behavior.
 Obviously a one-button solution has limitations such as defining more
 complex driving setups (multiple driving objects) or evaluating certain
 properties such as colors or strings. But this is beyond the scope of
@@ -83,6 +83,11 @@ rapidSDK.execute()
 
 Changelog:
 
+0.4.0 - 2022-03-29
+- Added an on-screen message for create and edit mode.
+- Improved selection detection of hidden bones.
+- Possible bugfixes which can lead to random crashes (to be watched)
+
 0.3.0 - 2022-03-29
 - Added shape keys on mesh and curve objects to be driven.
 - Added a menu item to the Object and Pose Animation submenu.
@@ -98,7 +103,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 3, 0),
+           "version": (0, 4, 0),
            "blender": (3, 0, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -107,6 +112,7 @@ bl_info = {"name": "Rapid SDK",
            "doc_url": "https://github.com/IngoClemens/blender/wiki/Rapid-SDK",
            "tracker_url": ""}
 
+import blf
 import bpy
 import idprop
 
@@ -117,14 +123,100 @@ import re
 
 
 NAME = "rapidSDK"
-EXTRAPOLATION = True
+EXTRAPOLATION = False
 KEY_HANDLES = 'AUTO_CLAMPED'
 TOLERANCE = 0.000001
+COLOR = (0.258, 0.716, 0.0)
 
 
 ANN_OUTSIDE = "Enable the extrapolation for the generated driver curves"
 ANN_HANDLES = "The default handle type for the driver's keyframe points"
 ANN_TOLERANCE = "The minimum difference a value needs to be captured as a driver key. Default: {})".format(TOLERANCE)
+ANN_COLOR = "Display color for the on-screen message when in create or edit mode (not gamma corrected)"
+
+
+def getViewSize():
+    """Return the size of the 3d view exclusive the header area.
+
+    :return: The size of the 3d view in pixels.
+    :rtype: tuple(int, int)
+    """
+    size = None
+    header = 0
+    for area in bpy.context.screen.areas:
+        if area.type == 'VIEW_3D':
+            for region in area.regions:
+                if region.type == 'WINDOW':
+                    size = (region.width, region.height)
+                elif region.type == 'HEADER':
+                    header += region.height
+                elif region.type == 'TOOL_HEADER':
+                    header += region.height
+    return size[0], size[1]-header
+
+
+class DrawInfo3D(object):
+    """Class for drawing the status info during create and edit.
+    """
+    def __init__(self):
+        """Variable initialization.
+        """
+        self.msg = ""
+        self.handle = None
+
+    def drawCallback(self, context):
+        """Callback for drawing the info message.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        w, h = getViewSize()
+        color = getPreferences().color_value
+        # Gamma-correct the color.
+        color = [pow(c, 0.454) for c in color]
+
+        fontId = 0
+        # Draw the message in the center at the top of the screen.
+        blf.position(fontId, w/2, h, 0)
+        blf.size(fontId, 22, 72)
+        blf.color(fontId, color[0], color[1], color[2], 1.0)
+        blf.draw(fontId, self.msg)
+
+    def add(self, message=""):
+        """Add the message to the 3d view and store the handler for
+        later removal.
+
+        :param message: The message to display on screen.
+        :type message: str
+        """
+        self.msg = message
+        self.handle = bpy.types.SpaceView3D.draw_handler_add(self.drawCallback,
+                                                             (bpy.context,),
+                                                             'WINDOW',
+                                                             'POST_PIXEL')
+
+        self.updateView()
+
+    def remove(self):
+        """Remove the message from the 3d view.
+        """
+        if self.handle:
+            bpy.types.SpaceView3D.draw_handler_remove(self.handle, 'WINDOW')
+            self.handle = None
+            self.updateView()
+
+    def updateView(self):
+        """Force a redraw of the current 3d view.
+        """
+        for area in bpy.context.screen.areas:
+            if area.type == 'VIEW_3D':
+                for region in area.regions:
+                    if region.type == 'WINDOW':
+                        region.tag_redraw()
+
+
+# Global instance.
+drawInfo3d = DrawInfo3D()
 
 
 class RapidSDK(object):
@@ -151,6 +243,8 @@ class RapidSDK(object):
         # Get the current selection.
         objects = selectedObjects()
         active = selectedObjects(active=True)
+        if not active:
+            return {'WARNING'}, "No driving object selected"
 
         # --------------------------------------------------------------
         # Initiate
@@ -173,6 +267,8 @@ class RapidSDK(object):
             if len(self.driven) > 1:
                 drivenMsg = " (+ {} more)".format(len(self.driven)-1)
 
+            drawInfo3d.add("Record SDK")
+
             return {'INFO'}, "Starting driver setup: {} -> {}{}".format(self.driver.name,
                                                                         self.driven[0].name,
                                                                         drivenMsg)
@@ -183,6 +279,7 @@ class RapidSDK(object):
         # If only one object is selected setup the driver.
         elif self.createMode:
             self.createMode = False
+            drawInfo3d.remove()
 
             # Get the modified values to compare with the original.
             self.driverCurrent = getCurrentValues(self.driver)[self.driver]
@@ -216,11 +313,13 @@ class RapidSDK(object):
             # ----------------------------------------------------------
             if not self.editMode:
                 self.initEdit(active)
+                drawInfo3d.add("Edit SDK")
 
             # ----------------------------------------------------------
             # Exit edit
             # ----------------------------------------------------------
             elif self.editMode:
+                drawInfo3d.remove()
                 # Even if there's only one driven object in edit mode
                 # the driven is still a list for consistency.
                 if active == self.driven[0]:
@@ -255,8 +354,12 @@ class RapidSDK(object):
         # --------------------------------------------------------------
         # If nothing is selected reset the muted driver state for the
         # last driven object.
-        elif not len(objects) and self.driven:
-            return self.resetDriverState(self.driven)
+        elif not len(objects):
+            drawInfo3d.remove()
+            if self.driven:
+                return self.resetDriverState(self.driven)
+            else:
+                return {'WARNING'}, "No driven objects selected"
 
 
     def getDrivingProperty(self):
@@ -444,7 +547,15 @@ def selectedObjects(active=False):
         if obj.type == 'ARMATURE':
             if bpy.context.object.mode == 'POSE':
                 if active:
-                    return bpy.context.active_pose_bone
+                    activeBone = bpy.context.active_pose_bone
+                    if not activeBone:
+                        bones = selectedBones(obj)
+                        poseBones = bpy.context.selected_pose_bones
+                        for b in bones:
+                            if b not in poseBones:
+                                return b
+                    else:
+                        return bpy.context.active_pose_bone
                 else:
                     sel.extend(selectedBones(obj))
             elif bpy.context.object.mode == 'EDIT':
@@ -571,9 +682,9 @@ def customProperties(obj):
     :rtype: list(str)
     """
     props = []
-    if obj.keys():
+    if len(obj.keys()):
         for prop in obj.keys():
-            if prop not in "_RNA_UI":
+            if prop not in '_RNA_UI':
                 props.append(prop)
     return props
 
@@ -1507,6 +1618,10 @@ class RAPIDSDKPreferences(bpy.types.AddonPreferences):
     tolerance_value: bpy.props.FloatProperty(name="Value Tolerance",
                                              description=ANN_TOLERANCE,
                                              default=TOLERANCE)
+    color_value: bpy.props.FloatVectorProperty(name="Message Color",
+                                               description=ANN_COLOR,
+                                               subtype='COLOR',
+                                               default=COLOR)
 
     def draw(self, context):
         """Draw the panel and it's properties.
@@ -1520,6 +1635,7 @@ class RAPIDSDKPreferences(bpy.types.AddonPreferences):
         col.prop(self, "outside_value")
         col.prop(self, "handle_value")
         col.prop(self, "tolerance_value")
+        col.prop(self, "color_value")
 
 
 # ----------------------------------------------------------------------
@@ -1546,6 +1662,9 @@ def unregister():
     """
     for cls in classes:
         bpy.utils.unregister_class(cls)
+
+    # Remove the message in the 3d view if any.
+    drawInfo3d.remove()
 
     # Remove the menu items.
     bpy.types.VIEW3D_MT_object_animation.remove(animation_menu_item)
