@@ -15,6 +15,11 @@ Perform a reflection-based placement of lights (or any other object) on a mesh b
 
 [Documentation](https://github.com/IngoClemens/blender/wiki/Place-Reflection)
 
+## Rapid SDK
+One-button tool to quickly set up driving relationships between one or more properties, aimed to simplify the steps needed to adjust relative ranges or even non-linear behavior.
+
+[Documentation](https://github.com/IngoClemens/blender/wiki/Rapid-SDK)
+
 ## Thumb Mate
 Create customizable thumbnail previews for object assets in the asset browser.
 
