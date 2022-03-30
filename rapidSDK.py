@@ -83,6 +83,10 @@ rapidSDK.execute()
 
 Changelog:
 
+0.5.0 - 2022-03-30
+- Added a separate preference setting for intermediate key handles.
+- Added a preference setting for choosing the position of the on-screen message.
+
 0.4.0 - 2022-03-29
 - Added an on-screen message for create and edit mode.
 - Improved selection detection of hidden bones.
@@ -103,7 +107,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 4, 0),
+           "version": (0, 5, 0),
            "blender": (3, 0, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -124,15 +128,19 @@ import re
 
 NAME = "rapidSDK"
 EXTRAPOLATION = False
-KEY_HANDLES = 'AUTO_CLAMPED'
+RANGE_KEY_HANDLES = 'VECTOR'
+MID_KEY_HANDLES = 'AUTO_CLAMPED'
 TOLERANCE = 0.000001
-COLOR = (0.258, 0.716, 0.0)
+MESSAGE_POSITION = 'TOP'
+MESSAGE_COLOR = (0.263, 0.723, 0.0) # (0.545, 0.863, 0.0)
 
 
 ANN_OUTSIDE = "Enable the extrapolation for the generated driver curves"
-ANN_HANDLES = "The default handle type for the driver's keyframe points"
+ANN_RANGE_HANDLES = "The default handle type for the driver's start and end keyframe points"
+ANN_MID_HANDLES = "The default handle type for the driver's intermediate keyframe points"
 ANN_TOLERANCE = "The minimum difference a value needs to be captured as a driver key. Default: {})".format(TOLERANCE)
-ANN_COLOR = "Display color for the on-screen message when in create or edit mode (not gamma corrected)"
+ANN_MESSAGE_POSITION = "The position of the on-screen message when in create or edit mode"
+ANN_MESSAGE_COLOR = "Display color for the on-screen message when in create or edit mode (not gamma corrected)"
 
 
 def getViewSize():
@@ -171,9 +179,13 @@ class DrawInfo3D(object):
         :type context: bpy.context
         """
         w, h = getViewSize()
-        color = getPreferences().color_value
+        color = getPreferences().message_color_value
         # Gamma-correct the color.
         color = [pow(c, 0.454) for c in color]
+
+        pos = getPreferences().message_position_value
+        if pos == 'BOTTOM':
+            h = 36
 
         fontId = 0
         # Draw the message in the center at the top of the screen.
@@ -244,6 +256,7 @@ class RapidSDK(object):
         objects = selectedObjects()
         active = selectedObjects(active=True)
         if not active:
+            drawInfo3d.remove()
             return {'WARNING'}, "No driving object selected"
 
         # --------------------------------------------------------------
@@ -682,6 +695,10 @@ def customProperties(obj):
     :rtype: list(str)
     """
     props = []
+    # Possible solution to prevent random crashes when editing bone
+    # relationships. It's not fully confirmed but the crash reports
+    # indicated this method. After adding the query about the key size
+    # crashes have become less frequent, if at all.
     if len(obj.keys()):
         for prop in obj.keys():
             if prop not in '_RNA_UI':
@@ -1259,9 +1276,6 @@ def addDriver(driver, driverData, driven, drivenData):
     for mod in driverBlock.animation_data.drivers[driverId].modifiers:
         driverBlock.animation_data.drivers[driverId].modifiers.remove(mod)
 
-    # Calculate the vectors for setting the keyframe handles.
-    h1, h2 = getHandleVector((minValue, maxValue), drivenData[2])
-
     # Set the extrapolation.
     if getPreferences().outside_value:
         driverBlock.animation_data.drivers[driverId].extrapolation = 'LINEAR'
@@ -1269,18 +1283,14 @@ def addDriver(driver, driverData, driven, drivenData):
     # Create the keyframes and set the values.
     keyPoints = driverBlock.animation_data.drivers[driverId].keyframe_points
 
-    handle = getPreferences().handle_value
+    handle = getPreferences().range_handle_value
 
     keyPoints.add(2)
     keyPoints[0].co = (minValue, drivenData[2][0])
-    keyPoints[0].handle_left = h1[0]
-    keyPoints[0].handle_right = h1[1]
     keyPoints[0].handle_left_type = handle
     keyPoints[0].handle_right_type = handle
 
     keyPoints[1].co = (maxValue, drivenData[2][1])
-    keyPoints[1].handle_left = h2[0]
-    keyPoints[1].handle_right = h2[1]
     keyPoints[1].handle_left_type = handle
     keyPoints[1].handle_right_type = handle
 
@@ -1362,28 +1372,6 @@ def createDriver(obj, data):
     # Default and custom properties.
     else:
         return obj.driver_add(data[0], data[1]).driver
-
-
-def getHandleVector(x, y):
-    """Create coordinates for keyframe handles based on the given
-    keyframe data.
-
-    :param x: A tuple with the start and end x values.
-    :type x: tuple(float, float)
-    :param y: A tuple with the start and end y values.
-    :type y: tuple(float, float)
-
-    :return: Two tuples for the first and last key with tuples, each
-             containing the left and right handle coordinates.
-    :rtype: tuple(tuple(float, float), tuple(float, float))
-    """
-    deltaX = (x[1] - x[0]) * 0.25
-    deltaY = (y[1] - y[0]) * 0.25
-
-    key1 = ((x[0] - deltaX, y[0] - deltaY), (x[0] + deltaX, y[0] + deltaY))
-    key2 = ((x[1] - deltaX, y[1] - deltaY), (x[1] + deltaX, y[1] + deltaY))
-
-    return key1, key2
 
 
 def insertKey(driven, drivenData):
@@ -1489,9 +1477,7 @@ def insertKey(driven, drivenData):
                         index = len(keyPoints) - 1
 
                         keyPoints[index].co = (dVal, prop[2][1])
-                        keyPoints[index].handle_left = (dVal, prop[2][1])
-                        keyPoints[index].handle_right = (dVal, prop[2][1])
-                        handle = getPreferences().handle_value
+                        handle = getPreferences().mid_handle_value
                         keyPoints[index].handle_left_type = handle
                         keyPoints[index].handle_right_type = handle
 
@@ -1608,20 +1594,31 @@ class RAPIDSDKPreferences(bpy.types.AddonPreferences):
                ('AUTO', "Auto", ""),
                ('AUTO_CLAMPED', "Auto Clamped", "")]
 
+    position = [('TOP', "Top", ""),
+                ('BOTTOM', "Bottom", "")]
+
     outside_value: bpy.props.BoolProperty(name="Extrapolate Driver Curves",
                                           description=ANN_OUTSIDE,
                                           default=EXTRAPOLATION)
-    handle_value: bpy.props.EnumProperty(name="Keyframe Handles",
-                                         description=ANN_HANDLES,
-                                         items=handles,
-                                         default=KEY_HANDLES)
+    range_handle_value: bpy.props.EnumProperty(name="Start/End Key Handles",
+                                               description=ANN_RANGE_HANDLES,
+                                               items=handles,
+                                               default=RANGE_KEY_HANDLES)
+    mid_handle_value: bpy.props.EnumProperty(name="Intermediate Key Handles",
+                                             description=ANN_MID_HANDLES,
+                                             items=handles,
+                                             default=MID_KEY_HANDLES)
     tolerance_value: bpy.props.FloatProperty(name="Value Tolerance",
                                              description=ANN_TOLERANCE,
                                              default=TOLERANCE)
-    color_value: bpy.props.FloatVectorProperty(name="Message Color",
-                                               description=ANN_COLOR,
-                                               subtype='COLOR',
-                                               default=COLOR)
+    message_position_value: bpy.props.EnumProperty(name="Message Position",
+                                                   description=ANN_MESSAGE_POSITION,
+                                                   items=position,
+                                                   default=MESSAGE_POSITION)
+    message_color_value: bpy.props.FloatVectorProperty(name="Message Color",
+                                                       description=ANN_MESSAGE_COLOR,
+                                                       subtype='COLOR',
+                                                       default=MESSAGE_COLOR)
 
     def draw(self, context):
         """Draw the panel and it's properties.
@@ -1633,9 +1630,11 @@ class RAPIDSDKPreferences(bpy.types.AddonPreferences):
 
         col = self.layout.column(align=True)
         col.prop(self, "outside_value")
-        col.prop(self, "handle_value")
+        col.prop(self, "range_handle_value")
+        col.prop(self, "mid_handle_value")
         col.prop(self, "tolerance_value")
-        col.prop(self, "color_value")
+        col.prop(self, "message_position_value")
+        col.prop(self, "message_color_value")
 
 
 # ----------------------------------------------------------------------
