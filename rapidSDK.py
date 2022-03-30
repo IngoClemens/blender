@@ -83,6 +83,10 @@ rapidSDK.execute()
 
 Changelog:
 
+0.5.1 - 2022-03-30
+- Fixed an issue where a wrong object/armature/bone selection combo doesn't throw a warning.
+- Fixed that edit mode can be entered without any driven properties present.
+
 0.5.0 - 2022-03-30
 - Added a separate preference setting for intermediate key handles.
 - Added a preference setting for choosing the position of the on-screen message.
@@ -107,7 +111,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 5, 0),
+           "version": (0, 5, 1),
            "blender": (3, 0, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -132,7 +136,7 @@ RANGE_KEY_HANDLES = 'VECTOR'
 MID_KEY_HANDLES = 'AUTO_CLAMPED'
 TOLERANCE = 0.000001
 MESSAGE_POSITION = 'TOP'
-MESSAGE_COLOR = (0.263, 0.723, 0.0) # (0.545, 0.863, 0.0)
+MESSAGE_COLOR = (0.263, 0.723, 0.0)  # (0.545, 0.863, 0.0)
 
 
 ANN_OUTSIDE = "Enable the extrapolation for the generated driver curves"
@@ -321,12 +325,29 @@ class RapidSDK(object):
         # --------------------------------------------------------------
         elif len(objects) == 1 and not self.createMode:
 
+            # A special case of selection which mostly happens with mesh
+            # and bone selections in object mode.
+            # For example, the driving bone can be selected in the
+            # outliner but it's icon is not highlighted. Though the
+            # armature is selected and the icon highlighted.
+            # As a result of the selection filter there's only the mesh
+            # in the list of selected objects but the active selection
+            # is the armature.
+            # But when editing the driver the selection and active
+            # object needs to match.
+            if active not in objects:
+                return {'WARNING'}, "Selection inconclusive. Please check your selection"
+
             # ----------------------------------------------------------
             # Enter edit
             # ----------------------------------------------------------
             if not self.editMode:
-                self.initEdit(active)
-                drawInfo3d.add("Edit SDK")
+                message = self.initEdit(active)
+                if not message:
+                    drawInfo3d.add("Edit SDK")
+                    return {'INFO'}, "Editing driver for {}".format(active.name)
+                else:
+                    return message
 
             # ----------------------------------------------------------
             # Exit edit
@@ -520,8 +541,6 @@ class RapidSDK(object):
 
         # Get and store the current values as the driving base.
         self.drivenBase = getCurrentValues(self.driven)
-
-        return {'INFO'}, "Editing driver for {}".format(obj.name)
 
 
     def resetDriverState(self, objects):
