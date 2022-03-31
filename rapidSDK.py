@@ -83,13 +83,24 @@ rapidSDK.execute()
 
 Changelog:
 
+0.6.0 - 2022-03-31
+- Added an on-screen message which displays the names of the currently
+    affected objects in create mode.
+- The on-screen messages are now scaling correctly depending on the
+    pixel-size of the display.
+- Fixed that the driven object's properties are left muted when leaving
+    edit mode with nothing selected.
+
 0.5.1 - 2022-03-30
-- Fixed an issue where a wrong object/armature/bone selection combo doesn't throw a warning.
-- Fixed that edit mode can be entered without any driven properties present.
+- Fixed an issue where a wrong object/armature/bone selection combo
+    doesn't throw a warning.
+- Fixed that edit mode can be entered without any driven properties
+    present.
 
 0.5.0 - 2022-03-30
 - Added a separate preference setting for intermediate key handles.
-- Added a preference setting for choosing the position of the on-screen message.
+- Added a preference setting for choosing the position of the on-screen
+    message.
 
 0.4.0 - 2022-03-29
 - Added an on-screen message for create and edit mode.
@@ -111,7 +122,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 5, 1),
+           "version": (0, 6, 0),
            "blender": (3, 0, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -142,7 +153,7 @@ MESSAGE_COLOR = (0.263, 0.723, 0.0)  # (0.545, 0.863, 0.0)
 ANN_OUTSIDE = "Enable the extrapolation for the generated driver curves"
 ANN_RANGE_HANDLES = "The default handle type for the driver's start and end keyframe points"
 ANN_MID_HANDLES = "The default handle type for the driver's intermediate keyframe points"
-ANN_TOLERANCE = "The minimum difference a value needs to be captured as a driver key. Default: {})".format(TOLERANCE)
+ANN_TOLERANCE = "The minimum difference a value needs to be captured as a driver key. Default: {}".format(TOLERANCE)
 ANN_MESSAGE_POSITION = "The position of the on-screen message when in create or edit mode"
 ANN_MESSAGE_COLOR = "Display color for the on-screen message when in create or edit mode (not gamma corrected)"
 
@@ -182,30 +193,65 @@ class DrawInfo3D(object):
         :param context: The current context.
         :type context: bpy.context
         """
-        w, h = getViewSize()
+        fontId = 0
+        # The font size and positioning depends on the system's pixel
+        # size.
+        pixelSize = bpy.context.preferences.system.pixel_size
+
+        # Get the size of the 3d view to be able to place the text
+        # correctly.
+        viewWidth, viewHeight = getViewSize()
+
         color = getPreferences().message_color_value
         # Gamma-correct the color.
         color = [pow(c, 0.454) for c in color]
 
         pos = getPreferences().message_position_value
         if pos == 'BOTTOM':
-            h = 36
+            viewHeight = 18 * pixelSize
 
-        fontId = 0
-        # Draw the message in the center at the top of the screen.
-        blf.position(fontId, w/2, h, 0)
-        blf.size(fontId, 22, 72)
+        fontSize = 11 * pixelSize
+        textWidth, textHeight = blf.dimensions(fontId, self.msg)
+
+        # Draw the message in the center at the top or bottom of the
+        # screen.
+        blf.position(fontId, viewWidth / 2 - textWidth / 2, viewHeight, 0)
+        blf.size(fontId, fontSize, 72)
         blf.color(fontId, color[0], color[1], color[2], 1.0)
         blf.draw(fontId, self.msg)
 
-    def add(self, message=""):
+        # Draw the name of the objects in the lower left corner of the
+        # screen.
+        if len(self.driven):
+            lines = ["Driver:", self.driver, "", "Driven:"]
+            lines.extend(self.driven)
+
+            lineHeight = fontSize * 1.45
+            xPos = 20 * pixelSize
+            yPos = 20 * pixelSize
+            for i in reversed(range(len(lines))):
+                blf.position(fontId, xPos, yPos, 0)
+                blf.draw(fontId, lines[i])
+                yPos += lineHeight
+
+    def add(self, message="", driver="", driven=None):
         """Add the message to the 3d view and store the handler for
         later removal.
 
         :param message: The message to display on screen.
         :type message: str
+        :param driver: The name of the driver to display.
+        :type driver: str
+        :param driven: The list of object names for the driven to
+                       display.
+        :type driven: str
         """
+        if driven is None:
+            driven = []
         self.msg = message
+        self.driver = driver
+        self.driven = driven
+
         self.handle = bpy.types.SpaceView3D.draw_handler_add(self.drawCallback,
                                                              (bpy.context,),
                                                              'WINDOW',
@@ -259,7 +305,7 @@ class RapidSDK(object):
         # Get the current selection.
         objects = selectedObjects()
         active = selectedObjects(active=True)
-        if not active:
+        if len(objects) and not active:
             drawInfo3d.remove()
             return {'WARNING'}, "No driving object selected"
 
@@ -284,7 +330,7 @@ class RapidSDK(object):
             if len(self.driven) > 1:
                 drivenMsg = " (+ {} more)".format(len(self.driven)-1)
 
-            drawInfo3d.add("Record SDK")
+            drawInfo3d.add("Record SDK", self.driver.name, [d.name for d in self.driven])
 
             return {'INFO'}, "Starting driver setup: {} -> {}{}".format(self.driver.name,
                                                                         self.driven[0].name,
@@ -344,7 +390,7 @@ class RapidSDK(object):
             if not self.editMode:
                 message = self.initEdit(active)
                 if not message:
-                    drawInfo3d.add("Edit SDK")
+                    drawInfo3d.add("Edit SDK: {}".format(active.name))
                     return {'INFO'}, "Editing driver for {}".format(active.name)
                 else:
                     return message
@@ -380,7 +426,6 @@ class RapidSDK(object):
                 # If the current object is not the last edited driven
                 # object reset the last driven and start a new edit.
                 else:
-                    self.editMode = False
                     return self.resetDriverState(self.driven)
 
         # --------------------------------------------------------------
@@ -557,6 +602,7 @@ class RapidSDK(object):
             setAnimationCurvesState(obj, True)
             names.append(obj.name)
         self.driven = None
+        self.editMode = False
         return {'INFO'}, "Reset driver curves for {}".format(", ".join(names))
 
 
