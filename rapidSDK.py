@@ -83,6 +83,15 @@ rapidSDK.execute()
 
 Changelog:
 
+0.7.0 - 2022-04-05
+- Improvement to the selection detection so that an object can be the
+    driver for a bone in object mode.
+- Fixed an error because custom string properties are not filtered.
+- Fixed that already driven shape keys are edited when creating new
+    drivers.
+- Fixed a typo regarding custom properties.
+- Fixed an issue where custom properties weren't able to be driven.
+
 0.6.0 - 2022-03-31
 - Added an on-screen message which displays the names of the currently
     affected objects in create mode.
@@ -122,7 +131,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 6, 0),
+           "version": (0, 7, 0),
            "blender": (3, 0, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -216,7 +225,7 @@ class DrawInfo3D(object):
         # Draw the message in the center at the top or bottom of the
         # screen.
         blf.position(fontId, viewWidth / 2 - textWidth / 2, viewHeight, 0)
-        blf.size(fontId, fontSize, 72)
+        blf.size(fontId, int(fontSize), 72)
         blf.color(fontId, color[0], color[1], color[2], 1.0)
         blf.draw(fontId, self.msg)
 
@@ -519,6 +528,7 @@ class RapidSDK(object):
         :rtype: dict(list(list(str, int, tuple(float, float))))
         """
         result = {}
+
         for obj in self.driven:
             drivenData = getDriver(obj)
 
@@ -553,12 +563,22 @@ class RapidSDK(object):
                     name = value["name"]
                     for i in range(len(value["shapes"])):
                         val = value["shapes"][i]
+                        # In case of shape keys the baseValue is the
+                        # tuple containing the shape key name and value.
                         baseValue = self.drivenBase[obj]["shapeKeys"]["shapes"][i]
                         if not isClose(val[1], baseValue[1]):
-                            keyId = bpy.data.shape_keys[name]
-                            blockName = val[0]
-                            tgt = {"shapeKeys": {"keyId": keyId, "name": blockName, "prop": "value"}}
-                            props.append([tgt, -1, (baseValue[1], val[1])])
+                            # To query the availability of a shape key
+                            # the shape key data block needs to be
+                            # passed as the object.
+                            if propertyIsAvailable(bpy.data.shape_keys[name],
+                                                   drivenData,
+                                                   baseValue[0],
+                                                   i,
+                                                   create):
+                                keyId = bpy.data.shape_keys[name]
+                                blockName = val[0]
+                                tgt = {"shapeKeys": {"keyId": keyId, "name": blockName, "prop": "value"}}
+                                props.append([tgt, -1, (baseValue[1], val[1])])
 
             result[obj] = props
 
@@ -644,7 +664,7 @@ def selectedObjects(active=False):
             else:
                 if active:
                     bones = selectedBones(obj)
-                    if len(bones):
+                    if len(bones) and bpy.context.active_object == obj:
                         return bones[0]
                 else:
                     sel.extend(selectedBones(obj))
@@ -766,7 +786,7 @@ def customProperties(obj):
     # crashes have become less frequent, if at all.
     if len(obj.keys()):
         for prop in obj.keys():
-            if prop not in '_RNA_UI':
+            if prop not in '_RNA_UI' and type(obj[prop]) != str:
                 props.append(prop)
     return props
 
@@ -908,10 +928,14 @@ def propertyIsDriven(obj, prop, index, drivenData):
     :rtype: bool
     """
     for item in drivenData:
-        if (item["driven"]["prop"] == prop and
-                item["driven"]["index"] == index and
-                item["driven"]["object"] == obj):
-            return True
+        if type(obj) == bpy.types.Key:
+            if item["driven"]["object"] == obj.key_blocks[prop]:
+                return True
+        else:
+            if (item["driven"]["prop"] == prop and
+                    item["driven"]["index"] == index and
+                    item["driven"]["object"] == obj):
+                return True
     return False
 
 
@@ -952,12 +976,11 @@ def animationCurves(obj):
              animated property and the index.
     :rtype: list(dict)
     """
+    obj = obj.id_data
     data = []
-    try:
+    if obj.animation_data and obj.animation_data.action:
         for curve in obj.animation_data.action.fcurves:
             data.append({"prop": curve.data_path, "index": curve.array_index})
-    except AttributeError:
-        pass
     return data
 
 
@@ -975,8 +998,12 @@ def propertyIsAnimated(obj, prop, index):
     :rtype: bool
     """
     for anim in animationCurves(obj):
-        if anim["prop"] == prop and anim["index"] == index:
-            return True
+        if type(obj) == bpy.types.Key:
+            if anim["prop"] == obj.key_blocks[prop].value:
+                return True
+        else:
+            if anim["prop"] == prop and anim["index"] == index:
+                return True
     return False
 
 
@@ -1016,7 +1043,10 @@ def getDriverIndex(obj, prop, index):
     else:
         data = getDriver(obj.id_data)
         for i in range(len(data)):
-            if (data[i]["driven"]["prop"] == prop and
+            # Custom properties are contained in the data set as
+            # '["open"]'. Therefore simply find if the name is
+            # contained.
+            if (prop in data[i]["driven"]["prop"] and
                     data[i]["driven"]["index"] == index and
                     data[i]["driven"]["object"] == obj):
                 return obj.id_data, i
@@ -1035,13 +1065,29 @@ def getDriver(obj):
     """
     obj = obj.id_data
     driver = []
-    # Try, in case an object has no driver data.
-    try:
-        for drv in obj.animation_data.drivers:
-            target = getDrivenObject(obj, drv)
-            driver.append(getDriverData(drv, target))
-    except AttributeError:
-        pass
+    if type(obj) == bpy.types.Object:
+        # Try, in case an object has no driver data.
+        try:
+            for drv in obj.animation_data.drivers:
+                target = getDrivenObject(obj, drv)
+                driver.append(getDriverData(drv, target))
+        except AttributeError:
+            pass
+
+        # Check for any shape key data.
+        name = shapeKeyName(obj)
+        if name:
+            if bpy.data.shape_keys[name].animation_data:
+                for drv in bpy.data.shape_keys[name].animation_data.drivers:
+                    target = getDrivenObject(bpy.data.shape_keys[name], drv)
+                    driver.append(getDriverData(drv, target))
+
+    elif type(obj) == bpy.types.Key:
+        if obj.animation_data:
+            for drv in obj.animation_data.drivers:
+                target = getDrivenObject(obj, drv)
+                driver.append(getDriverData(drv, target))
+
     return driver
 
 
@@ -1159,7 +1205,7 @@ def getDriverData(driver, targetObj):
             # property name.
             # Example: pose.bones["Bone.001"].rotation_quaternion[0]
             #          pose.bones["main_ctrl"]["FK"]
-            attr = target.data_path
+            attr = target.data_path.replace("'", "\"")
             bone = ""
             if getattr(target.id, "type", "") == 'ARMATURE':
                 # Remove the leading pose bone part and the possible
@@ -1205,8 +1251,19 @@ def getDriverData(driver, targetObj):
 
         data.append({"variable": name, "source": varData})
 
+    # The array index represents the index of an array property, though
+    # in case of a custom property it's 0. This interferes with the
+    # fact that single property indices are usually -1. Therefore the
+    # index needs to be corrected when it's a custom property.
+    # The only way to identify a custom property is it's name in
+    # brackets.
+    propName = driver.data_path.split(".")[-1]
+    arrayIndex = driver.array_index
+    if propName.startswith("["):
+        arrayIndex = -1
+
     channelData = {"driven": {"prop": driver.data_path.split(".")[-1],
-                              "index": driver.array_index,
+                              "index": arrayIndex,
                               "fCurve": driver,
                               "object": targetObj},
                    "keys": keys,
@@ -1307,7 +1364,7 @@ def addDriver(driver, driverData, driven, drivenData):
                              "rotation_axis_angle", "scale"]:
             prop = driverItem[0]
         else:
-            prop = "['{}']".format(driverItem[0])
+            prop = '["{}"]'.format(driverItem[0])
 
         # Array
         if driverItem[1] != -1:
@@ -1436,7 +1493,12 @@ def createDriver(obj, data):
         return block.driver_add(prop, -1).driver
     # Default and custom properties.
     else:
-        return obj.driver_add(data[0], data[1]).driver
+        if data[0] in ["location", "rotation_euler", "rotation_quaternion",
+                       "rotation_axis_angle", "scale"]:
+            return obj.driver_add(data[0], data[1]).driver
+        # Custom property.
+        else:
+            return obj.driver_add('["{}"]'.format(data[0]), data[1]).driver
 
 
 def insertKey(driven, drivenData):
@@ -1521,7 +1583,10 @@ def insertKey(driven, drivenData):
                             if type(s["object"]) != bpy.types.Key:
                                 # Use the property and index to get the
                                 # current value from the driver.
-                                dVal += driverValues[s["prop"]][s["index"]]
+                                if s["index"] == -1:
+                                    dVal += driverValues[s["prop"]]
+                                else:
+                                    dVal += driverValues[s["prop"]][s["index"]]
                             # Shape key drivers.
                             else:
                                 dVal += driverValues[s["prop"]]
