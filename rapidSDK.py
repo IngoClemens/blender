@@ -83,6 +83,11 @@ rapidSDK.execute()
 
 Changelog:
 
+0.8.0 - 2022-04-05
+- Switched the stored objects to string representations because of a
+    bone related undo bug which invalidates the object data and leads to
+    a hard crash.
+
 0.7.0 - 2022-04-05
 - Improvement to the selection detection so that an object can be the
     driver for a bone in object mode.
@@ -131,8 +136,8 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 7, 0),
-           "blender": (3, 0, 0),
+           "version": (0, 8, 0),
+           "blender": (2, 93, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
            "description": "Quickly create driving relationships between properties",
@@ -157,6 +162,11 @@ MID_KEY_HANDLES = 'AUTO_CLAMPED'
 TOLERANCE = 0.000001
 MESSAGE_POSITION = 'TOP'
 MESSAGE_COLOR = (0.263, 0.723, 0.0)  # (0.545, 0.863, 0.0)
+
+SEPARATOR = "::"
+POSEBONE = "POSEBONE"
+OBJECT = "OBJECT"
+SHAPEKEY = "SHAPEKEY"
 
 
 ANN_OUTSIDE = "Enable the extrapolation for the generated driver curves"
@@ -195,6 +205,8 @@ class DrawInfo3D(object):
         """
         self.msg = ""
         self.handle = None
+        self.driver = None
+        self.driven = None
 
     def drawCallback(self, context):
         """Callback for drawing the info message.
@@ -312,8 +324,8 @@ class RapidSDK(object):
         setup based on the number of selected objects.
         """
         # Get the current selection.
-        objects = selectedObjects()
-        active = selectedObjects(active=True)
+        objects = objectToString(selectedObjects())
+        active = objectToString(selectedObjects(active=True))
         if len(objects) and not active:
             drawInfo3d.remove()
             return {'WARNING'}, "No driving object selected"
@@ -335,14 +347,20 @@ class RapidSDK(object):
             self.driverBase = getCurrentValues(self.driver)[self.driver]
             self.drivenBase = getCurrentValues(self.driven)
 
+            # ----------------------------------------------------------
+            # Messages
+            # ----------------------------------------------------------
             drivenMsg = ""
             if len(self.driven) > 1:
                 drivenMsg = " (+ {} more)".format(len(self.driven)-1)
 
-            drawInfo3d.add("Record SDK", self.driver.name, [d.name for d in self.driven])
+            driverName = stringToObject(self.driver).name
+            drivenNames = [d.name for d in stringToObject(self.driven)]
 
-            return {'INFO'}, "Starting driver setup: {} -> {}{}".format(self.driver.name,
-                                                                        self.driven[0].name,
+            drawInfo3d.add("Record SDK", driverName, drivenNames)
+
+            return {'INFO'}, "Starting driver setup: {} -> {}{}".format(driverName,
+                                                                        drivenNames[0],
                                                                         drivenMsg)
 
         # --------------------------------------------------------------
@@ -370,7 +388,7 @@ class RapidSDK(object):
                 return {'WARNING'}, "No driven properties changed or are already been driven by the target"
 
             # Create the driving relationship.
-            setupDriver(self.driver, driverData, drivenData)
+            setupDriver(stringToObject(self.driver), driverData, drivenData)
 
             msg = "object" if len(self.driven) == 1 else "objects"
             return {'INFO'}, "Created driver for {} {}".format(len(self.driven), msg)
@@ -399,8 +417,9 @@ class RapidSDK(object):
             if not self.editMode:
                 message = self.initEdit(active)
                 if not message:
-                    drawInfo3d.add("Edit SDK: {}".format(active.name))
-                    return {'INFO'}, "Editing driver for {}".format(active.name)
+                    name = active.split(SEPARATOR)[-1]
+                    drawInfo3d.add("Edit SDK: {}".format(name))
+                    return {'INFO'}, "Editing driver for {}".format(name)
                 else:
                     return message
 
@@ -423,12 +442,13 @@ class RapidSDK(object):
 
                     if drivenData:
                         insertKey(self.driven[0], drivenData[self.driven[0]])
-                        message = {'INFO'}, "Updating driver curves for {}".format(self.driven[0].name)
+                        obj = stringToObject(self.driven[0])
+                        message = {'INFO'}, "Updating driver curves for {}".format(obj.name)
                     else:
                         message = {'INFO'}, "Editing cancelled without any changes"
 
                     # Enable the driver animation curves.
-                    setAnimationCurvesState(self.driven[0], True)
+                    setAnimationCurvesState(stringToObject(self.driven[0]), True)
 
                     return message
 
@@ -448,7 +468,6 @@ class RapidSDK(object):
                 return self.resetDriverState(self.driven)
             else:
                 return {'WARNING'}, "No driven objects selected"
-
 
     def getDrivingProperty(self):
         """Find which properties have been changed for the driver and
@@ -476,7 +495,7 @@ class RapidSDK(object):
                     if not isClose(value[i], baseValue):
                         # Check, if the current value is already a
                         # driver for the current driven object.
-                        for drivenObj in self.driven:
+                        for drivenObj in stringToObject(self.driven):
                             if not propertyIsDriver(key, i, drivenObj, driverData):
                                 result.append([key, i, (baseValue, value[i])])
             # Skip the rotation mode key.
@@ -488,7 +507,7 @@ class RapidSDK(object):
                 if not isClose(value, baseValue):
                     # Check, if the current value is already a driver
                     # for the current driven object.
-                    for drivenObj in self.driven:
+                    for drivenObj in stringToObject(self.driven):
                         if not propertyIsDriver(key, -1, drivenObj, driverData):
                             result.append([key, -1, (baseValue, value)])
             # Shape keys.
@@ -506,7 +525,6 @@ class RapidSDK(object):
                         result.append([src, -1, (baseValue[1], val[1])])
 
         return result
-
 
     def getDrivenProperty(self, create=True):
         """Find which properties have been changed for the driven and
@@ -584,20 +602,20 @@ class RapidSDK(object):
 
         return result
 
-
     def initEdit(self, obj):
         """Enter edit mode by disabling the driver curves and getting
         the current values of the driven object.
 
-        :param obj: The object to edit.
-        :type obj: bpy.types.Object
+        :param obj: The name of the object to edit.
+        :type obj: str
 
         :return: The info message about the reset.
         :rtype: tuple(str, str)
         """
         # Disable the driver animation curves.
-        if not setAnimationCurvesState(obj, False):
-            return {'INFO'}, "No drivers to edit for {}".format(obj.name)
+        objInst = stringToObject(obj)
+        if not setAnimationCurvesState(objInst, False):
+            return {'INFO'}, "No drivers to edit for {}".format(objInst.name)
 
         self.editMode = True
 
@@ -607,11 +625,11 @@ class RapidSDK(object):
         # Get and store the current values as the driving base.
         self.drivenBase = getCurrentValues(self.driven)
 
-
     def resetDriverState(self, objects):
         """Enable the driver animation curves for the driven objects.
 
-        :param objects: The objects to reset the driver state for.
+        :param objects: The names of the objects to reset the driver
+                        state for.
         :type objects: list(bpy.types.Object)
 
         :return: The info message about the reset.
@@ -619,6 +637,7 @@ class RapidSDK(object):
         """
         names = []
         for obj in objects:
+            obj = stringToObject(obj)
             setAnimationCurvesState(obj, True)
             names.append(obj.name)
         self.driven = None
@@ -693,6 +712,67 @@ def selectedBones(armature):
     return sel
 
 
+def objectToString(objects):
+    """Convert the given object or list of objects to a name string.
+    In case of a pose bone it's a delimited string of the armature name
+    and the bone name.
+
+    :param objects: The object or list of objects to convert.
+    :type objects: bpy.types.Object or list(bpy.types.Object)
+
+    :return: The name or list of names.
+    :rtype: str or list(str)
+    """
+    isArray = True
+    if type(objects) != list:
+        isArray = False
+        objects = [objects]
+
+    items = []
+    for obj in objects:
+        if type(obj) == bpy.types.PoseBone:
+            items.append(SEPARATOR.join([POSEBONE, obj.id_data.name, obj.name]))
+        elif type(obj) == bpy.types.Key:
+            items.append(SEPARATOR.join([SHAPEKEY, obj.name]))
+        else:
+            items.append(SEPARATOR.join([OBJECT, obj.name]))
+
+    if not isArray and len(items):
+        return items[0]
+    return items
+
+
+def stringToObject(names):
+    """Return the given name or list of names to objects.
+
+    :param names: The name or list of object names.
+    :type names: str or list(str)
+
+    :return: The object or list of objects.
+    :rtype: bpy.types.Object or list(bpy.types.Object)
+    """
+    isArray = True
+    if type(names) != list:
+        isArray = False
+        names = [names]
+
+    items = []
+    for name in names:
+        elements = name.split(SEPARATOR)
+        if len(elements):
+            if len(elements) > 2:
+                items.append(bpy.data.objects[elements[1]].pose.bones[elements[2]])
+            else:
+                if elements[0] == OBJECT:
+                    items.append(bpy.data.objects[elements[1]])
+                elif elements[0] == SHAPEKEY:
+                    items.append(obj.data.shape_keys[elements[1]])
+
+    if not isArray and len(items):
+        return items[0]
+    return items
+
+
 def getArmatureData(obj):
     """Return the armature data block which is used by the given
     armature object.
@@ -708,25 +788,27 @@ def getArmatureData(obj):
             return bpy.data.armatures[i]
 
 
-def getCurrentValues(obj):
+def getCurrentValues(objects):
     """Return a dictionary with all properties and their current values
     of the given object, wrapped in a dictionary with the object as the
     key and the data as it's value.
 
-    :param obj: The object to get the data from.
-    :type obj: bpy.types.Object
+    :param objects: The object names to get the data from.
+    :type objects: str or list(str)
 
     :return: A dictionary with all properties as keys and their values
              for each object.
     :rtype: dict(dict())
     """
-    objects = [obj]
-    if type(obj) == list:
-        objects = obj
+    if type(objects) != list:
+        objects = [objects]
 
     allData = {}
 
-    for obj in objects:
+    for i in range(len(objects)):
+        # Convert the name to an object.
+        obj = stringToObject(objects[i])
+
         data = {}
         # --------------------------------------------------------------
         # bpy.types.Object
@@ -765,7 +847,9 @@ def getCurrentValues(obj):
             for block in obj.key_blocks:
                 data[block.name] = block.value
 
-        allData[obj] = copy.deepcopy(data)
+        # The key for the data set is not the object but the string
+        # representation.
+        allData[objects[i]] = copy.deepcopy(data)
 
     return allData
 
@@ -780,10 +864,6 @@ def customProperties(obj):
     :rtype: list(str)
     """
     props = []
-    # Possible solution to prevent random crashes when editing bone
-    # relationships. It's not fully confirmed but the crash reports
-    # indicated this method. After adding the query about the key size
-    # crashes have become less frequent, if at all.
     if len(obj.keys()):
         for prop in obj.keys():
             if prop not in '_RNA_UI' and type(obj[prop]) != str:
@@ -885,8 +965,8 @@ def propertyIsAvailable(obj, drivenData, prop, index, create=True):
     """Return True, if the property of the given object is available for
     creating a driver in create mode or editing an existing driver.
 
-    :param obj: The object to evaluate.
-    :type obj: bpy.types.Object
+    :param obj: The object or name of the object to evaluate.
+    :type obj: bpy.types.Object or str
     :param drivenData: A list of dictionaries containing all driving data.
     :type drivenData: list(dict)
     :param prop: The name of the property.
@@ -899,6 +979,9 @@ def propertyIsAvailable(obj, drivenData, prop, index, create=True):
     :return: True, if the property is available for the given mode.
     :rtype: bool
     """
+    if type(obj) == str:
+        obj = stringToObject(obj)
+
     isDriven = propertyIsDriven(obj, prop, index, drivenData)
     isAnimated = propertyIsAnimated(obj, prop, index)
 
@@ -1057,12 +1140,15 @@ def getDriverIndex(obj, prop, index):
 def getDriver(obj):
     """Return all necessary driving data for the given object.
 
-    :param obj: The object to get the data from.
-    :type obj: bpy.types.Object
+    :param obj: The object or name of the object to get the data from.
+    :type obj: bpy.types.Object or str
 
     :return: A list of dictionaries containing all driving data.
     :rtype: list(dict)
     """
+    if type(obj) == str:
+        obj = stringToObject(obj)
+
     obj = obj.id_data
     driver = []
     if type(obj) == bpy.types.Object:
@@ -1117,8 +1203,8 @@ def getDriven(obj):
     """Return a list with all driving relationships for the given
     object.
 
-    :param obj: The object to get the data from.
-    :type obj: bpy.types.Object
+    :param obj: The object name to get the data from.
+    :type obj: str
 
     :return: A list of tuples which contain the driver and driven data
              as dictionaries. Each dictionary contains the object,
@@ -1141,6 +1227,9 @@ def getDriven(obj):
         )
     ]
     """
+    # Convert the string representation to an object.
+    obj = stringToObject(obj)
+
     result = []
     for o in bpy.data.objects:
         data = getDriver(o)
@@ -1301,7 +1390,7 @@ def setupDriver(driver, driverData, drivenData):
     """
     for obj in drivenData:
         for prop in drivenData[obj]:
-            addDriver(driver, driverData, obj, prop)
+            addDriver(driver, driverData, stringToObject(obj), prop)
 
 
 def addDriver(driver, driverData, driven, drivenData):
@@ -1507,14 +1596,16 @@ def insertKey(driven, drivenData):
     If the driver values haven't changed the existing keyframe gets
     updated.
 
-    :param driven: The driven object.
-    :type driven: bpy.types.Object
+    :param driven: The name of the driven object.
+    :type driven: str
     :param drivenData: A list with the property, index and tuple of
                        start and end values.
     :type drivenData: list(str, int, tuple(float, float))
     """
+    drivenObj = stringToObject(driven)
+
     # Get the armature object from the pose bone.
-    obj = driven.id_data
+    obj = drivenObj.id_data
 
     # Get all driving data from the armature.
     # Each driver is represented through a dictionary.
@@ -1529,7 +1620,7 @@ def insertKey(driven, drivenData):
     filteredItems = {}
     for data in driverData:
         for prop in drivenData:
-            if driverContainsDriven(driven, prop, data):
+            if driverContainsDriven(drivenObj, prop, data):
                 # Get the name of the armature object.
                 driverObj = data["driver"][0]["source"][0]["object"]
                 bone = data["driver"][0]["source"][0]["bone"]
@@ -1551,8 +1642,9 @@ def insertKey(driven, drivenData):
 
     # Go through every driver of the changed properties.
     for driverObj in driverData:
+        driverName = objectToString(driverObj)
         # Get the current property values of the driver.
-        driverValues = getCurrentValues(driverObj)[driverObj]
+        driverValues = getCurrentValues(driverName)[driverName]
 
         # Go through every driver of the driven object.
         for data in driverData[driverObj]:
@@ -1560,11 +1652,11 @@ def insertKey(driven, drivenData):
                 # For every changed property value check if the property
                 # is being driven by a driver and if the property
                 # indices match.
-                if driverContainsDriven(driven, prop, data):
+                if driverContainsDriven(drivenObj, prop, data):
                     # Find the index of the driver for the property.
                     # The index is necessary for getting the keyframe
                     # data from the driving curve.
-                    driverBlock, driverId = getDriverIndex(driven,
+                    driverBlock, driverId = getDriverIndex(drivenObj,
                                                            prop=prop[0],
                                                            index=prop[1])
 
