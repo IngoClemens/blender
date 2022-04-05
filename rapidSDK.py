@@ -83,6 +83,9 @@ rapidSDK.execute()
 
 Changelog:
 
+0.8.1 - 2022-04-05
+- Fixed an issue with IDPropertyGroups.
+
 0.8.0 - 2022-04-05
 - Switched the stored objects to string representations because of a
     bone related undo bug which invalidates the object data and leads to
@@ -136,7 +139,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 8, 0),
+           "version": (0, 8, 1),
            "blender": (2, 93, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -864,10 +867,9 @@ def customProperties(obj):
     :rtype: list(str)
     """
     props = []
-    if len(obj.keys()):
-        for prop in obj.keys():
-            if prop not in '_RNA_UI' and type(obj[prop]) != str:
-                props.append(prop)
+    for prop in obj.keys():
+        if prop not in '_RNA_UI' and isinstance(obj[prop], (int, float, list)):
+            props.append(prop)
     return props
 
 
