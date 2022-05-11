@@ -83,6 +83,17 @@ rapidSDK.execute()
 
 Changelog:
 
+0.9.0 - 2022-05-11
+- Added support for object modifiers.
+- Added a colored frame to clearly identify create or edit mode.
+- Improvements to object/bone selections in object mode.
+- Fixed that adding keys outside the defined range are created with
+    in-between curve handles.
+- Fixed that multiple recorded properties create the same number of
+    drivers per property.
+- Fixed that driver indices weren't correctly passed which leads to keys
+    not getting created.
+
 0.8.1 - 2022-04-05
 - Fixed an issue with IDPropertyGroups.
 
@@ -139,7 +150,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 8, 1),
+           "version": (0, 9, 0),
            "blender": (2, 93, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -150,6 +161,8 @@ bl_info = {"name": "Rapid SDK",
 
 import blf
 import bpy
+import gpu
+from gpu_extras.batch import batch_for_shader
 import idprop
 
 import copy
@@ -165,11 +178,14 @@ MID_KEY_HANDLES = 'AUTO_CLAMPED'
 TOLERANCE = 0.000001
 MESSAGE_POSITION = 'TOP'
 MESSAGE_COLOR = (0.263, 0.723, 0.0)  # (0.545, 0.863, 0.0)
+BORDER_WIDTH = 2
 
 SEPARATOR = "::"
 POSEBONE = "POSEBONE"
 OBJECT = "OBJECT"
 SHAPEKEY = "SHAPEKEY"
+
+DEFAULT_PROPS = ["location", "rotation_euler", "rotation_quaternion", "rotation_axis_angle", "scale", "key_blocks", "modifiers"]
 
 
 ANN_OUTSIDE = "Enable the extrapolation for the generated driver curves"
@@ -178,6 +194,7 @@ ANN_MID_HANDLES = "The default handle type for the driver's intermediate keyfram
 ANN_TOLERANCE = "The minimum difference a value needs to be captured as a driver key. Default: {}".format(TOLERANCE)
 ANN_MESSAGE_POSITION = "The position of the on-screen message when in create or edit mode"
 ANN_MESSAGE_COLOR = "Display color for the on-screen message when in create or edit mode (not gamma corrected)"
+ANN_BORDER_WIDTH = "The width of the colored frame when in create or edit mode."
 
 
 def getViewSize():
@@ -231,15 +248,18 @@ class DrawInfo3D(object):
         color = [pow(c, 0.454) for c in color]
 
         pos = getPreferences().message_position_value
-        if pos == 'BOTTOM':
-            viewHeight = 18 * pixelSize
+        textPos = viewHeight
+        if pos == 'TOP':
+            textPos = textPos - 20 * pixelSize
+        else:
+            textPos = 18 * pixelSize
 
         fontSize = 11 * pixelSize
         textWidth, textHeight = blf.dimensions(fontId, self.msg)
 
         # Draw the message in the center at the top or bottom of the
         # screen.
-        blf.position(fontId, viewWidth / 2 - textWidth / 2, viewHeight, 0)
+        blf.position(fontId, viewWidth / 2 - textWidth / 2, textPos, 0)
         blf.size(fontId, int(fontSize), 72)
         blf.color(fontId, color[0], color[1], color[2], 1.0)
         blf.draw(fontId, self.msg)
@@ -257,6 +277,26 @@ class DrawInfo3D(object):
                 blf.position(fontId, xPos, yPos, 0)
                 blf.draw(fontId, lines[i])
                 yPos += lineHeight
+
+        # Draw the frame.
+        # https://docs.blender.org/api/blender2.8/gpu.html?highlight=gpu#module-gpu
+        border = getPreferences().border_width_value * pixelSize
+        viewWidth -= 20 * pixelSize
+
+        vertices = ((1, 1), (viewWidth, 1), (viewWidth, 1+border), (1, 1+border),
+                    (viewWidth, viewHeight), (viewWidth-border, viewHeight), (viewWidth-border, 1),
+                    (1, viewHeight), (1, viewHeight-border), (viewWidth, viewHeight-border),
+                    (1+border, 1), (1+border, viewHeight))
+        indices = ((0, 1, 2), (0, 2, 3),
+                   (1, 4, 5), (1, 5, 6),
+                   (4, 7, 8), (4, 8, 9),
+                   (7, 0, 10), (7, 10, 11))
+
+        shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+        batch = batch_for_shader(shader, 'TRIS', {"pos": vertices}, indices=indices)
+        shader.bind()
+        shader.uniform_float("color", (color[0], color[1], color[2], 1.0))
+        batch.draw(shader)
 
     def add(self, message="", driver="", driven=None):
         """Add the message to the 3d view and store the handler for
@@ -397,7 +437,7 @@ class RapidSDK(object):
             return {'INFO'}, "Created driver for {} {}".format(len(self.driven), msg)
 
         # --------------------------------------------------------------
-        # Enter mode
+        # Edit mode
         # --------------------------------------------------------------
         elif len(objects) == 1 and not self.createMode:
 
@@ -482,8 +522,6 @@ class RapidSDK(object):
                  the index and a tuple with the start and end values.
         :rtype: list(list(str, int, tuple(float, float)))
         """
-        driverData = getDriven(self.driver)
-
         result = []
 
         # Compare which values have been changed.
@@ -491,41 +529,49 @@ class RapidSDK(object):
             value = self.driverCurrent[key]
             # In case of list-type properties the values need to be
             # extracted individually.
-            if type(value) in [Euler, Quaternion, Vector, list, tuple,
-                               idprop.types.IDPropertyArray]:
+            if isinstance(value, (Euler, Quaternion, Vector, list, tuple,
+                                  idprop.types.IDPropertyArray)):
                 for i in range(len(value)):
                     baseValue = self.driverBase[key][i]
                     if not isClose(value[i], baseValue):
-                        # Check, if the current value is already a
-                        # driver for the current driven object.
-                        for drivenObj in stringToObject(self.driven):
-                            if not propertyIsDriver(key, i, drivenObj, driverData):
-                                result.append([key, i, (baseValue, value[i])])
+                        result.append([key, i, (baseValue, value[i])])
             # Skip the rotation mode key.
-            elif type(value) == str:
+            elif isinstance(value, str):
                 pass
             # Single-value properties.
-            elif key != "shapeKeys":
+            elif key not in ["shapeKeys", "modifiers"]:
                 baseValue = self.driverBase[key]
                 if not isClose(value, baseValue):
-                    # Check, if the current value is already a driver
-                    # for the current driven object.
-                    for drivenObj in stringToObject(self.driven):
-                        if not propertyIsDriver(key, -1, drivenObj, driverData):
-                            result.append([key, -1, (baseValue, value)])
+                    result.append([key, -1, (baseValue, value)])
             # Shape keys.
             # Example:
-            # {'shapeKeys': {'name': 'Key', 'shapes': [('Basis', 0.0), ('smile', 0.0)]}}
+            # {'shapeKeys': {'Key': {'Basis': 0.0, 'smile': 0.0}}}
             elif key == "shapeKeys" and value is not None:
-                name = value["name"]
-                for i in range(len(value["shapes"])):
-                    val = value["shapes"][i]
-                    baseValue = self.driverBase["shapeKeys"]["shapes"][i]
-                    if not isClose(val[1], baseValue[1]):
+                name = list(value.keys())[0]
+                for k in value[name].keys():
+                    val = value[name][k]
+                    baseValue = self.driverBase["shapeKeys"][name][k]
+                    if not isClose(val, baseValue):
                         keyId = bpy.data.shape_keys[name]
-                        blockName = val[0]
-                        src = {"shapeKeys": {"keyId": keyId, "name": blockName, "prop": "value"}}
-                        result.append([src, -1, (baseValue[1], val[1])])
+                        src = {"shapeKeys": {"keyId": keyId, "name": k, "prop": "value"}}
+                        result.append([src, -1, (baseValue, val)])
+            # Modifiers
+            # Example:
+            # {'GeometryNodes': {'Input_3': 0.1, 'Input_4': 180.0}}
+            elif key == "modifiers" and value is not None:
+                for mod in value.keys():
+                    for attr in value[mod].keys():
+                        val = value[mod][attr]
+                        baseValue = self.driverBase["modifiers"][mod][attr]
+                        if isinstance(val, (idprop.types.IDPropertyArray, list)):
+                            for i in range(len(val)):
+                                if not isClose(val[i], baseValue[i]):
+                                    src = {"modifier": {"name": mod, "prop": attr}}
+                                    result.append([src, i, (baseValue[i], val[i])])
+                        else:
+                            if not isClose(val, baseValue):
+                                src = {"modifier": {"name": mod, "prop": attr}}
+                                result.append([src, -1, (baseValue, val)])
 
         return result
 
@@ -549,61 +595,99 @@ class RapidSDK(object):
         :rtype: dict(list(list(str, int, tuple(float, float))))
         """
         result = {}
-
         for obj in self.driven:
-            drivenData = getDriver(obj)
-
-            props = []
-
-            # Compare which values have been changed.
-            for key in self.drivenCurrent[obj].keys():
-                value = self.drivenCurrent[obj][key]
-                # In case of list-type properties the values need to be
-                # extracted individually.
-                if type(value) in [Euler, Quaternion, Vector, list, tuple,
-                                   idprop.types.IDPropertyArray]:
-                    for i in range(len(value)):
-                        baseValue = self.drivenBase[obj][key][i]
-                        if not isClose(value[i], baseValue):
-                            # Check, if the current value is already
-                            # target of a driving relationship.
-                            if propertyIsAvailable(obj, drivenData, key, i, create):
-                                props.append([key, i, (baseValue, value[i])])
-                # Single-value properties.
-                elif key != "shapeKeys":
-                    baseValue = self.drivenBase[obj][key]
-                    if not isClose(value, baseValue):
-                        # Check, if the current value is already target
-                        # of a driving relationship.
-                        if propertyIsAvailable(obj, drivenData, key, -1, create):
-                            props.append([key, -1, (baseValue, value)])
-                # Shape keys.
-                # Example:
-                # {'keys': {'name': 'Key', 'shapes': [('Basis', 0.0), ('smile', 0.0)]}}
-                elif key == "shapeKeys" and value is not None:
-                    name = value["name"]
-                    for i in range(len(value["shapes"])):
-                        val = value["shapes"][i]
-                        # In case of shape keys the baseValue is the
-                        # tuple containing the shape key name and value.
-                        baseValue = self.drivenBase[obj]["shapeKeys"]["shapes"][i]
-                        if not isClose(val[1], baseValue[1]):
-                            # To query the availability of a shape key
-                            # the shape key data block needs to be
-                            # passed as the object.
-                            if propertyIsAvailable(bpy.data.shape_keys[name],
-                                                   drivenData,
-                                                   baseValue[0],
-                                                   i,
-                                                   create):
-                                keyId = bpy.data.shape_keys[name]
-                                blockName = val[0]
-                                tgt = {"shapeKeys": {"keyId": keyId, "name": blockName, "prop": "value"}}
-                                props.append([tgt, -1, (baseValue[1], val[1])])
-
-            result[obj] = props
-
+            result[obj] = self.getDrivenPropertyForObject(obj, create)
         return result
+
+    def getDrivenPropertyForObject(self, obj, create):
+        """Find which properties have been changed for the driven and
+        filter all which cannot be used because they are already driven
+        or have animation.
+
+        :param obj: The name of the object to query.
+        :type obj: str
+        :param create: True, if a new driver setup should be created and
+                       therefore existing driven properties should be
+                       excluded.
+                       False, to include driven properties when editing.
+        :type create: bool
+
+        :return: A list with a list of values which can be used for
+                 being driven. Each item contains a list with the
+                 property, the index and a tuple with the start and end
+                 values.
+        :rtype: list(list(str, int, tuple(float, float)))
+        """
+        drivenData = getDriver(obj)
+
+        props = []
+
+        # Compare which values have been changed.
+        for key in self.drivenCurrent[obj].keys():
+            value = self.drivenCurrent[obj][key]
+            # In case of list-type properties the values need to be
+            # extracted individually.
+            if isinstance(value, (Euler, Quaternion, Vector, list, tuple,
+                                  idprop.types.IDPropertyArray)):
+                for i in range(len(value)):
+                    baseValue = self.drivenBase[obj][key][i]
+                    if not isClose(value[i], baseValue):
+                        # Check, if the current value is already the
+                        # target of a driving relationship.
+                        if propertyIsAvailable(obj, drivenData, key, i, create):
+                            props.append([key, i, (baseValue, value[i])])
+            # Single-value properties.
+            elif key not in ["shapeKeys", "modifiers"]:
+                baseValue = self.drivenBase[obj][key]
+                if not isClose(value, baseValue):
+                    # Check, if the current value is already the target
+                    # of a driving relationship.
+                    if propertyIsAvailable(obj, drivenData, key, -1, create):
+                        props.append([key, -1, (baseValue, value)])
+            # Shape keys.
+            # Example:
+            # {'shapeKeys': {'Key': {'Basis': 0.0, 'smile': 0.0}}}
+            elif key == "shapeKeys" and value is not None:
+                name = list(value.keys())[0]
+                for k in value[name].keys():
+                    val = value[name][k]
+                    baseValue = self.drivenBase[obj]["shapeKeys"][name][k]
+                    if not isClose(val, baseValue):
+                        # To query the availability of a shape key the
+                        # shape key data block needs to be passed as the
+                        # object.
+                        if propertyIsAvailable(bpy.data.shape_keys[name],
+                                               drivenData,
+                                               k,
+                                               -1,
+                                               create):
+                            keyId = bpy.data.shape_keys[name]
+                            tgt = {"shapeKeys": {"keyId": keyId, "name": k, "prop": "value"}}
+                            props.append([tgt, -1, (baseValue, val)])
+            # Modifiers
+            # Example:
+            # {'GeometryNodes': {'Input_3': 0.1, 'Input_4': 180.0}}
+            elif key == "modifiers" and value is not None:
+                for mod in value.keys():
+                    for attr in value[mod].keys():
+                        val = value[mod][attr]
+                        baseValue = self.drivenBase[obj]["modifiers"][mod][attr]
+                        if isinstance(val, (idprop.types.IDPropertyArray, list)):
+                            for i in range(len(val)):
+                                if not isClose(val[i], baseValue[i]):
+                                    # Check, if the current value is
+                                    # already the target of a driving
+                                    # relationship.
+                                    if propertyIsAvailable(obj, drivenData, (mod, attr), i, create):
+                                        tgt = {"modifier": {"name": mod, "prop": attr}}
+                                        props.append([tgt, i, (baseValue[i], val[i])])
+                        else:
+                            if not isClose(val, baseValue):
+                                if propertyIsAvailable(obj, drivenData, (mod, attr), -1, create):
+                                    tgt = {"modifier": {"name": mod, "prop": attr}}
+                                    props.append([tgt, -1, (baseValue, val)])
+
+        return props
 
     def initEdit(self, obj):
         """Enter edit mode by disabling the driver curves and getting
@@ -684,15 +768,21 @@ def selectedObjects(active=False):
                 else:
                     sel.extend(bpy.context.selected_bones)
             else:
+                bones = selectedBones(obj)
                 if active:
-                    bones = selectedBones(obj)
-                    if len(bones) and bpy.context.active_object == obj:
-                        return bones[0]
+                    if bpy.context.active_object == obj:
+                        if len(bones) and bpy.context.active_object == obj:
+                            return bones[0]
+                        else:
+                            return obj
                 else:
-                    sel.extend(selectedBones(obj))
+                    if len(bones):
+                        sel.extend(selectedBones(obj))
+                    else:
+                        sel.append(obj)
         else:
-            if active:
-                return bpy.context.active_object
+            if active and obj == bpy.context.active_object:
+                return obj
             else:
                 sel.append(obj)
     return sel
@@ -727,15 +817,15 @@ def objectToString(objects):
     :rtype: str or list(str)
     """
     isArray = True
-    if type(objects) != list:
+    if not isinstance(objects, list):
         isArray = False
         objects = [objects]
 
     items = []
     for obj in objects:
-        if type(obj) == bpy.types.PoseBone:
+        if isinstance(obj, bpy.types.PoseBone):
             items.append(SEPARATOR.join([POSEBONE, obj.id_data.name, obj.name]))
-        elif type(obj) == bpy.types.Key:
+        elif isinstance(obj, bpy.types.Key):
             items.append(SEPARATOR.join([SHAPEKEY, obj.name]))
         else:
             items.append(SEPARATOR.join([OBJECT, obj.name]))
@@ -755,7 +845,7 @@ def stringToObject(names):
     :rtype: bpy.types.Object or list(bpy.types.Object)
     """
     isArray = True
-    if type(names) != list:
+    if not isinstance(names, list):
         isArray = False
         names = [names]
 
@@ -794,7 +884,7 @@ def getArmatureData(obj):
 def getCurrentValues(objects):
     """Return a dictionary with all properties and their current values
     of the given object, wrapped in a dictionary with the object as the
-    key and the data as it's value.
+    key and the data as its value.
 
     :param objects: The object names to get the data from.
     :type objects: str or list(str)
@@ -803,7 +893,7 @@ def getCurrentValues(objects):
              for each object.
     :rtype: dict(dict())
     """
-    if type(objects) != list:
+    if not isinstance(objects, list):
         objects = [objects]
 
     allData = {}
@@ -816,7 +906,7 @@ def getCurrentValues(objects):
         # --------------------------------------------------------------
         # bpy.types.Object
         # --------------------------------------------------------------
-        if type(obj) != bpy.types.Key:
+        if not isinstance(obj, bpy.types.Key):
             data["location"] = obj.location
             if obj.rotation_mode == 'AXIS_ANGLE':
                 values = obj.rotation_axis_angle
@@ -830,13 +920,16 @@ def getCurrentValues(objects):
             # Get the custom properties.
             for prop in customProperties(obj):
                 value = obj.get(prop)
-                if type(value) in [idprop.types.IDPropertyArray]:
+                if isinstance(value, idprop.types.IDPropertyArray):
                     data[prop] = [i for i in value]
                 else:
                     data[prop] = value
 
             # Get the shape keys for meshes and curves.
-            data["shapeKeys"] = getShapeKeys(obj)[obj]
+            data["shapeKeys"] = getShapeKeys(obj)
+
+            # Get the modifiers.
+            data["modifiers"] = getModifierProperties(obj)[obj]
 
         # --------------------------------------------------------------
         # bpy.types.Key
@@ -844,7 +937,7 @@ def getCurrentValues(objects):
         # If the given object is a shapes key only the shapes and their
         # values are of importance. This is only the case when querying
         # the current driver values for inserting a new key. Therefore
-        # the result is different than getting the values upon
+        # the result is different from getting the values upon
         # initializing.
         else:
             for block in obj.key_blocks:
@@ -909,13 +1002,13 @@ def shapeKeyProperties(obj):
     :param obj: The mesh or curve object to query.
     :type obj: bpy.types.Object
 
-    :return: A list with all property names of the shape keys.
-    :rtype: list(str)
+    :return: A dictionary with all property names of the shape keys.
+    :rtype: dict()
     """
-    props = []
+    props = {}
     if hasShapeKeys(obj):
         for prop in obj.data.shape_keys.key_blocks:
-            props.append((prop.name, prop.value))
+            props[prop.name] = prop.value
     return props
 
 
@@ -930,37 +1023,64 @@ def getShapeKeys(obj):
              shape key data block and the properties and values.
 
              Example:
-             {'keys': {'name': 'Key', 'shapes': [('Basis', 0.0), ('smile', 0.0)]}}
+             {'Key': {'Basis': 0.0, 'smile': 0.0}}
     :rtype: dict(dict)
     """
-    keys = {obj: None}
+    keys = None
     if hasShapeKeys(obj):
-        keys[obj] = {"name": shapeKeyName(obj),
-                     "shapes": shapeKeyProperties(obj)}
+        keys = {shapeKeyName(obj): shapeKeyProperties(obj)}
     return keys
 
 
-def propertyIsDriver(prop, index, driven, driverData):
-    """Return, if the given property is already driving a property on
-    the given target object.
+def getModifierProperties(obj):
+    """Get all modifier properties from the given object.
 
-    :param prop: The name of the property.
-    :type prop: str
-    :param index: The index of the property.
-    :type index: int
-    :param driven: The driven object.
-    :type driven: bpy.types.Object
-    :param driverData: A list of dictionaries containing all driving
-                       data.
-    :type driverData: list(dict)
+    :param obj: The mesh or curve object to query.
+    :type obj: bpy.types.Object
 
-    :return: True, if the given property is already used as a driver.
-    :rtype: bool
+    :return: A dictionary with the object as the key and for each
+             modifier a dictionary with the properties and values.
+    :rtype: dict(dict)
     """
-    for src, tgt in driverData:
-        if tgt["object"] == driven and prop == src["prop"] and index == src["index"]:
-            return True
-    return False
+    modifier = {obj: None}
+    if "modifiers" not in dir(obj):
+        return modifier
+
+    data = {}
+    for mod in obj.modifiers:
+        props = {}
+
+        # The properties of a geometry nodes modifier are similar to
+        # custom properties and need to be handled differently.
+        if isinstance(mod, bpy.types.NodesModifier):
+            for item in mod.keys():
+                value = mod[item]
+                # Each input  of a geometry nodes modifier
+                # has three items:
+                # Input_9
+                # Input_9_use_attribute
+                # Input_9_attribute_name
+                # Only the actual input value, the first, is of
+                # interest.
+                skipItems = ["_use_attribute", "_attribute_name"]
+                isInputOnly = not any(s in item for s in skipItems)
+                if isinstance(value, (int, float, idprop.types.IDPropertyArray)) and isInputOnly:
+                    if isinstance(value, idprop.types.IDPropertyArray):
+                        props[item] = [i for i in value]
+                    else:
+                        props[item] = value
+        else:
+            for item in dir(mod):
+                if not item.startswith("__") and item not in ["bl_rna", "rna_type"]:
+                    value = eval("mod.{}".format(item))
+                    if isinstance(value, (int, float)):
+                        props[item] = value
+
+        # Store the modifier with the name as the key and the property
+        # dictionary as the value.
+        data[mod.name] = props
+
+    return {obj: data}
 
 
 def propertyIsAvailable(obj, drivenData, prop, index, create=True):
@@ -981,7 +1101,7 @@ def propertyIsAvailable(obj, drivenData, prop, index, create=True):
     :return: True, if the property is available for the given mode.
     :rtype: bool
     """
-    if type(obj) == str:
+    if isinstance(obj, str):
         obj = stringToObject(obj)
 
     isDriven = propertyIsDriven(obj, prop, index, drivenData)
@@ -1013,14 +1133,22 @@ def propertyIsDriven(obj, prop, index, drivenData):
     :rtype: bool
     """
     for item in drivenData:
-        if type(obj) == bpy.types.Key:
+        if isinstance(obj, bpy.types.Key):
             if item["driven"]["object"] == obj.key_blocks[prop]:
                 return True
         else:
-            if (item["driven"]["prop"] == prop and
+            # Standard and custom properties.
+            if not isinstance(prop, tuple):
+                propName = prop
+            # Modifier properties.
+            else:
+                propName = buildPropertyString(obj, prop[0], prop[1])
+
+            if (item["driven"]["prop"] == propName and
                     item["driven"]["index"] == index and
                     item["driven"]["object"] == obj):
                 return True
+
     return False
 
 
@@ -1037,7 +1165,7 @@ def setAnimationCurvesState(obj, enable=True):
     """
     result = False
 
-    for driver in getDriver(obj.id_data):
+    for driver in getDriver(obj):
         if driver["driven"]["object"] == obj:
             driver["driven"]["fCurve"].mute = not enable
             result = True
@@ -1083,12 +1211,21 @@ def propertyIsAnimated(obj, prop, index):
     :rtype: bool
     """
     for anim in animationCurves(obj):
-        if type(obj) == bpy.types.Key:
+        if isinstance(obj, bpy.types.Key):
             if anim["prop"] == obj.key_blocks[prop].value:
                 return True
         else:
-            if anim["prop"] == prop and anim["index"] == index:
-                return True
+            if not isinstance(prop, tuple):
+                if anim["prop"] in [prop, '["{}"]'.format(prop)]:
+                    if index == -1 or anim["index"] == index:
+                        return True
+            # Modifier
+            else:
+                propName = buildPropertyString(obj, prop[0], prop[1])
+                if anim["prop"] == propName:
+                    if index == -1 or anim["index"] == index:
+                        return True
+
     return False
 
 
@@ -1096,7 +1233,7 @@ def getDriverIndex(obj, prop, index):
     """Return the animation data block and driver index the property is
     driven by.
 
-    param obj: The object to get the data from.
+    :param obj: The object to get the data from.
     :type obj: bpy.types.Object
     :param prop: The name of the property.
     :type prop: str
@@ -1115,28 +1252,70 @@ def getDriverIndex(obj, prop, index):
     """
     # In case of a shape key the driver isn't located on the object but
     # the shape keys data block.
-    if type(prop) == dict:
-        data = getDriver(prop["shapeKeys"]["keyId"])
-        for i in range(len(data)):
-            # Check, if the current shape name matches the name of the
-            # key block.
-            if prop["shapeKeys"]["name"] == data[i]["driven"]["object"].name:
-                return prop["shapeKeys"]["keyId"], i
+    if isinstance(prop, dict):
+        if "shapeKeys" in prop:
+            data = getDriver(prop["shapeKeys"]["keyId"])
+            for d in data:
+                # Check, if the current shape name matches the name of the
+                # key block.
+                if prop["shapeKeys"]["name"] == d["driven"]["object"].name:
+                    return prop["shapeKeys"]["keyId"], d["driverIndex"]
+        elif "modifier" in prop:
+            data = getDriver(obj)
+
+            propName = buildPropertyString(obj,
+                                           prop["modifier"]["name"],
+                                           prop["modifier"]["prop"])
+
+            for d in data:
+                if (d["driven"]["object"] == obj and
+                        d["driven"]["index"] == index and
+                        d["driven"]["prop"] == propName):
+                    return obj.id_data, d["driverIndex"]
 
     # In case of an armature the given object is the pose bone. To get
     # the driver data the actual armature object needs to get passed.
+    # Edit: The armature object gets extracted when querying the data
+    # because otherwise there wouldn't be a way to compare the object
+    # and target object in getDriver().
     else:
-        data = getDriver(obj.id_data)
-        for i in range(len(data)):
+        data = getDriver(obj)
+        for d in data:
             # Custom properties are contained in the data set as
             # '["open"]'. Therefore simply find if the name is
             # contained.
-            if (prop in data[i]["driven"]["prop"] and
-                    data[i]["driven"]["index"] == index and
-                    data[i]["driven"]["object"] == obj):
-                return obj.id_data, i
+            if (d["driven"]["object"] == obj and
+                    prop in d["driven"]["prop"] and
+                    d["driven"]["index"] == index):
+                return obj.id_data, d["driverIndex"]
 
-    return
+
+def buildPropertyString(obj, name, prop):
+    """Create and return a property string which includes the modifier
+    and property depending on the type of modifier.
+
+    The formatting of modifier property strings for drivers depends on
+    the type of modifier. Standard modifiers have their properties
+    dot-separated, whereas geometry node modifiers have custom-like
+    bracketed properties. Therefore it's necessary to check if the
+    property is tied to the modifier by checking all included properties
+    with dir().
+
+    :param obj: The object to get the data from.
+    :type obj: bpy.types.Object
+    :param name: The name of the modifier.
+    :type name: str
+    :param prop: The name of the property.
+    :type prop: str
+
+    :return: The complete string representing the property.
+    :rtype: str
+    """
+    mod = eval('obj.modifiers["{}"]'.format(name))
+    if prop not in dir(mod):
+        return 'modifiers["{}"]["{}"]'.format(name, prop)
+    else:
+        return 'modifiers["{}"].{}'.format(name, prop)
 
 
 def getDriver(obj):
@@ -1148,33 +1327,40 @@ def getDriver(obj):
     :return: A list of dictionaries containing all driving data.
     :rtype: list(dict)
     """
-    if type(obj) == str:
+    if isinstance(obj, str):
         obj = stringToObject(obj)
 
-    obj = obj.id_data
+    baseObj = obj.id_data
     driver = []
-    if type(obj) == bpy.types.Object:
+    if isinstance(baseObj, bpy.types.Object):
         # Try, in case an object has no driver data.
         try:
-            for drv in obj.animation_data.drivers:
-                target = getDrivenObject(obj, drv)
-                driver.append(getDriverData(drv, target))
+            for index, drv in enumerate(baseObj.animation_data.drivers):
+                target = getDrivenObject(baseObj, drv)
+                if target == obj:
+                    data = getDriverData(drv, target)
+                    data["driverIndex"] = index
+                    driver.append(data)
         except AttributeError:
             pass
 
         # Check for any shape key data.
-        name = shapeKeyName(obj)
+        name = shapeKeyName(baseObj)
         if name:
             if bpy.data.shape_keys[name].animation_data:
-                for drv in bpy.data.shape_keys[name].animation_data.drivers:
+                for index, drv in enumerate(bpy.data.shape_keys[name].animation_data.drivers):
                     target = getDrivenObject(bpy.data.shape_keys[name], drv)
-                    driver.append(getDriverData(drv, target))
+                    data = getDriverData(drv, target)
+                    data["driverIndex"] = index
+                    driver.append(data)
 
-    elif type(obj) == bpy.types.Key:
-        if obj.animation_data:
-            for drv in obj.animation_data.drivers:
-                target = getDrivenObject(obj, drv)
-                driver.append(getDriverData(drv, target))
+    elif isinstance(baseObj, bpy.types.Key):
+        if baseObj.animation_data:
+            for index, drv in enumerate(baseObj.animation_data.drivers):
+                target = getDrivenObject(baseObj, drv)
+                data = getDriverData(drv, target)
+                data["driverIndex"] = index
+                driver.append(data)
 
     return driver
 
@@ -1194,55 +1380,11 @@ def getDrivenObject(obj, animDriver):
     items = animDriver.data_path.split("\"")
     if getattr(obj, "type", "") == 'ARMATURE':
         return bpy.data.objects[obj.name].pose.bones[items[1]]
-    elif type(obj) == bpy.types.Key:
+    elif isinstance(obj, bpy.types.Key):
         # For a shape key the data path is: key_blocks["smile"].value
         return bpy.data.shape_keys[obj.name].key_blocks[items[1]]
     else:
         return obj
-
-
-def getDriven(obj):
-    """Return a list with all driving relationships for the given
-    object.
-
-    :param obj: The object name to get the data from.
-    :type obj: str
-
-    :return: A list of tuples which contain the driver and driven data
-             as dictionaries. Each dictionary contains the object,
-             property and index which participates in the driver setup.
-    :rtype: list(tuple(dict))
-
-    Return example:
-    [
-        (
-            {'prop': 'location', 'index': 2, 'object': bpy.data.objects['Empty']},
-            {'prop': 'location', 'index': 0, 'object': bpy.data.objects['Cube']}
-        ),
-        (
-            {'prop': 'jump', 'index': -1, 'object': bpy.data.objects['Empty']},
-            {'prop': '["squash"]', 'index': 0, 'object': bpy.data.objects['Cube']}
-        ),
-        (
-            {'prop': 'vector', 'index': 1, 'object': bpy.data.objects['Empty']},
-            {'prop': 'scale', 'index': 1, 'object': bpy.data.objects['Cube']}
-        )
-    ]
-    """
-    # Convert the string representation to an object.
-    obj = stringToObject(obj)
-
-    result = []
-    for o in bpy.data.objects:
-        data = getDriver(o)
-        for d in data:
-            for driver in d["driver"]:
-                for src in driver["source"]:
-                    if src["object"] == obj:
-                        driven = d["driven"]
-                        driven["object"] = o
-                        result.append((src, driven))
-    return result
 
 
 def getDriverData(driver, targetObj):
@@ -1304,14 +1446,27 @@ def getDriverData(driver, targetObj):
                 attr = attr[attr.find("]")+1:]
                 attr = re.sub(r"^\.", "", attr)
                 # Extract the name of the bone.
-                bone = target.data_path.split("\"")[1]
+                pathItems = target.data_path.split("\"")
+                if len(pathItems) > 1:
+                    bone = target.data_path.split("\"")[1]
 
             # In case the driver is a shape key the attribute needs
             # some cleanup: key_blocks["Key 1"].value
             # Remove everything except the property name which makes it
             # appear like a single custom property.
-            if type(target.id) == bpy.types.Key:
+            if isinstance(target.id, bpy.types.Key):
                 attr = attr.replace("key_blocks", "").split(".")[0]
+
+            # Cleanup the property from a modifier.
+            # modifiers["GeometryNodes"]["Input_2"]
+            modName = ""
+            if attr.startswith("modifiers"):
+                parts = attr.split("][")
+                # The modifier name is needed for editing the driver
+                # curves to match against the list of drivers.
+                modName = parts[0].replace("modifiers[", "").replace("\"", "")
+                parts = parts[1:]
+                attr = "".join("[{}]".format(p.replace("[", "").replace("]", "")) for p in parts)
 
             # Default property:
             #   location[2]
@@ -1337,7 +1492,11 @@ def getDriverData(driver, targetObj):
             obj = target.id
 
             # Build the target dictionary.
-            targetData = {"prop": attrItems[0], "index": index, "object": obj, "bone": bone}
+            targetData = {"prop": attrItems[0],
+                          "index": index,
+                          "object": obj,
+                          "bone": bone,
+                          "modifier": modName}
             varData.append(targetData)
 
         data.append({"variable": name, "source": varData})
@@ -1346,14 +1505,48 @@ def getDriverData(driver, targetObj):
     # in case of a custom property it's 0. This interferes with the
     # fact that single property indices are usually -1. Therefore the
     # index needs to be corrected when it's a custom property.
-    # The only way to identify a custom property is it's name in
-    # brackets.
-    propName = driver.data_path.split(".")[-1]
+    separator = ""
+    if any(s in driver.data_path for s in DEFAULT_PROPS):
+        separator = "."
     arrayIndex = driver.array_index
-    if propName.startswith("["):
+
+    # In case the target is a shape key it's necessary to get the parent
+    # data block (bpy.types.Key) because the driver's data path contains
+    # the key_blocks attribute which needs to be combined with the key
+    # and not the shape key.
+    objData = targetObj
+    if isinstance(objData, (bpy.types.ShapeKey, bpy.types.PoseBone)):
+        objData = targetObj.id_data
+
+    # Query the property type in order to set the array index.
+    # It's possible that some properties are not accounted for and
+    # therefore it's unknown if the property is dot separated or not.
+    # Because of this first try to with/without the separator and if it
+    # fails try the reverse.
+    # If both fail assume that it's a int/float type property.
+    try:
+        dataType = eval("objData{}{}".format(separator, driver.data_path))
+    except NameError:
+        try:
+            if not len(separator):
+                separator = "."
+            else:
+                separator = ""
+            dataType = eval("objData{}{}".format(separator, driver.data_path))
+        except NameError:
+            dataType = 0
+    if isinstance(dataType, (int, float)):
         arrayIndex = -1
 
-    channelData = {"driven": {"prop": driver.data_path.split(".")[-1],
+    # To get the driven property it can be retrieved from the data path
+    # by splitting with a period.
+    # In case of a standard modifier the full data path is needed,
+    # because it contains the modifier: modifiers["Bevel"].width
+    dataPath = driver.data_path
+    if not dataPath.startswith("modifiers"):
+        dataPath = driver.data_path.split(".")[-1]
+
+    channelData = {"driven": {"prop": dataPath,
                               "index": arrayIndex,
                               "fCurve": driver,
                               "object": targetObj},
@@ -1434,12 +1627,19 @@ def addDriver(driver, driverData, driven, drivenData):
         var.name = "{}{}".format(varName, varIndex)
 
         # Process shape keys for the driver.
-        driver, blockString = filterShapeKey(driver, driverItem)
+        driverString = ""
+        if "shapeKeys" in driverItem[0]:
+            driver, driverString = filterShapeKey(driver, driverItem)
+        # Process the modifier for the driver.
+        elif "modifier" in driverItem[0]:
+            driverString = buildPropertyString(driver,
+                                               driverItem[0]["modifier"]["name"],
+                                               driverItem[0]["modifier"]["prop"])
 
         # Set the driving object.
         # If the driver is a shape key itself the driver type needs to
         # be set accordingly.
-        if type(driver) == bpy.types.Key:
+        if isinstance(driver, bpy.types.Key):
             var.targets[0].id_type = 'KEY'
         var.targets[0].id = driver
 
@@ -1451,18 +1651,21 @@ def addDriver(driver, driverData, driven, drivenData):
         #   Single: ["expand"]
         #   Array: ["size"][1]
         # Shape key: key_blocks["Key 1"].value
-        if driverItem[0] in ["location", "rotation_euler", "rotation_quaternion",
-                             "rotation_axis_angle", "scale"]:
+        if driverItem[0] in DEFAULT_PROPS:
             prop = driverItem[0]
         else:
             prop = '["{}"]'.format(driverItem[0])
 
-        # Array
+        idString = ""
         if driverItem[1] != -1:
-            var.targets[0].data_path = "{}{}[{}]".format(bonePrefix, prop, driverItem[1])
-        # Shape Key
-        elif blockString:
-            var.targets[0].data_path = blockString
+            idString = "[{}]".format(driverItem[1])
+
+        # Array
+        if idString and not driverString:
+            var.targets[0].data_path = "{}{}{}".format(bonePrefix, prop, idString)
+        # Shape Key or Modifier
+        elif driverString:
+            var.targets[0].data_path = "{}{}".format(driverString, idString)
         # Single
         else:
             var.targets[0].data_path = "{}{}".format(bonePrefix, prop)
@@ -1526,7 +1729,7 @@ def filterPoseBone(obj):
              prefix for the driver source as a string.
     :rtype: tuple(bpy.types.Object, str)
     """
-    if type(obj) == bpy.types.PoseBone:
+    if isinstance(obj, bpy.types.PoseBone):
         # Add the pose bone prefix in case of a pose bone.
         bonePrefix = 'pose.bones["{}"].'.format(obj.name)
         # Get the armature object.
@@ -1549,7 +1752,7 @@ def filterShapeKey(obj, data):
              data path.
     :rtype: tuple(bpy.types.Key, str)
     """
-    if type(data[0]) == dict:
+    if isinstance(data[0], dict):
         keyId = data[0]["shapeKeys"]["keyId"]
         name = data[0]["shapeKeys"]["name"]
         value = data[0]["shapeKeys"]["prop"]
@@ -1567,7 +1770,8 @@ def createDriver(obj, data):
                  end values.
                  Example:
                  [position, -1, (0.0, 0.5)]
-                 ["shapeKeys": {"keyId": keyId, "name": blockName, "prop": "value"}}, -1, (0.0, 0.5)]
+                 ["shapeKeys": {"keyId": keyId, "name": blockName, "prop": "value"}}, -1, (0.0, 0.5)
+                 ["modifier": {"name": "GeometryNodes", "prop": "Input_4"}}, -1, (180.0, 20.0)]
     :type data: list(str, int, tuple(float, float))
 
     :return: The created driver.
@@ -1575,13 +1779,23 @@ def createDriver(obj, data):
     """
     # If the property item (data[0]) is delivered as a dict the driver
     # gets created for a shape key.
-    if type(data[0]) == dict:
-        # Shape key example:
-        # bpy.data.shape_keys['Key'].key_blocks["smile"].driver_add("value", -1).driver
-        name = data[0]["shapeKeys"]["name"]
-        block = data[0]["shapeKeys"]["keyId"].key_blocks[name]
-        prop = data[0]["shapeKeys"]["prop"]
-        return block.driver_add(prop, -1).driver
+    if isinstance(data[0], dict):
+        if "shapeKeys" in data[0]:
+            # Shape key example:
+            # bpy.data.shape_keys['Key'].key_blocks["smile"].driver_add("value", -1).driver
+            name = data[0]["shapeKeys"]["name"]
+            block = data[0]["shapeKeys"]["keyId"].key_blocks[name]
+            prop = data[0]["shapeKeys"]["prop"]
+            return block.driver_add(prop, -1).driver
+        elif "modifier" in data[0]:
+            # Modifier example:
+            # bpy.data.objects[""].modifiers[""].driver_add("levels", -1).driver
+            name = data[0]["modifier"]["name"]
+            prop = data[0]["modifier"]["prop"]
+            mod = obj.modifiers[name]
+            if mod.type == 'NODES':
+                prop = '["{}"]'.format(prop)
+            return obj.modifiers[name].driver_add(prop, data[1]).driver
     # Default and custom properties.
     else:
         if data[0] in ["location", "rotation_euler", "rotation_quaternion",
@@ -1611,7 +1825,7 @@ def insertKey(driven, drivenData):
 
     # Get all driving data from the armature.
     # Each driver is represented through a dictionary.
-    driverData = getDriver(obj)
+    driverData = getDriver(drivenObj)
 
     # Add the driving data from any shape keys.
     if hasShapeKeys(obj):
@@ -1674,9 +1888,12 @@ def insertKey(driven, drivenData):
                     for d in data["driver"]:
                         for s in d["source"]:
                             # Object drivers.
-                            if type(s["object"]) != bpy.types.Key:
+                            if not isinstance(s["object"], bpy.types.Key):
                                 # Use the property and index to get the
                                 # current value from the driver.
+                                if s["modifier"]:
+                                    driverValues = driverValues["modifiers"][s["modifier"]]
+
                                 if s["index"] == -1:
                                     dVal += driverValues[s["prop"]]
                                 else:
@@ -1688,10 +1905,16 @@ def insertKey(driven, drivenData):
                     # If the driving value hasn't changed the existing
                     # key needs to be updated.
                     update = False
+                    minVal = None
+                    maxVal = None
                     for i in range(len(keyPoints)):
-                        if isClose(keyPoints[i].co[0], dVal):
+                        pos = keyPoints[i].co
+                        if isClose(pos[0], dVal):
                             update = True
-                            keyPoints[i].co = (keyPoints[i].co[0], prop[2][1])
+                            keyPoints[i].co = (pos[0], prop[2][1])
+
+                        # Get the min/max values:
+                        minVal, maxVal = minMax(minVal, maxVal, pos[0], pos[0])
 
                     # If a driving value has been changed add a new key.
                     if not update:
@@ -1701,12 +1924,47 @@ def insertKey(driven, drivenData):
                         index = len(keyPoints) - 1
 
                         keyPoints[index].co = (dVal, prop[2][1])
-                        handle = getPreferences().mid_handle_value
+                        # If the new driver value is outside the current
+                        # range use the start/end range handle type and
+                        # not the mid handle type.
+                        if minVal < dVal < maxVal:
+                            handle = getPreferences().mid_handle_value
+                        else:
+                            handle = getPreferences().range_handle_value
                         keyPoints[index].handle_left_type = handle
                         keyPoints[index].handle_right_type = handle
 
                     # Update the keyframe data to reflect new keys.
                     data["driven"]["fCurve"].update()
+
+
+def minMax(minVal, maxVal, v1, v2):
+    """Update the given min/max values if the given new values are
+    smaller/larger respectively.
+
+    :param minVal: The current min value.
+    :type minVal: float
+    :param maxVal: The current max value.
+    :type maxVal: float
+    :param v1: The new min value.
+    :type v1: float
+    :param v2: The new max value.
+    :type v2: float
+
+    :return. A tuple with the updated min/max values.
+    :rtype: tuple(float, float)
+    """
+    if not minVal:
+        minVal = v1
+    elif v1 < minVal:
+        minVal = v1
+
+    if not maxVal:
+        maxVal = v2
+    elif v2 > maxVal:
+        maxVal = v2
+
+    return minVal, maxVal
 
 
 def driverContainsDriven(driven, prop, driverData):
@@ -1722,16 +1980,24 @@ def driverContainsDriven(driven, prop, driverData):
     :type driverData: list
     """
     # If the property is a shape key check if the key blocks match.
-    if type(prop[0]) == dict:
+    if isinstance(prop[0], dict) and "shapeKeys" in prop[0]:
         shapeKey = prop[0]["shapeKeys"]["keyId"]
         name = prop[0]["shapeKeys"]["name"]
 
         if shapeKey.key_blocks[name] == driverData["driven"]["object"]:
             return True
+
     # Check if any default or custom property and index match with the
     # driver.
     else:
-        if (driverData["driven"]["prop"] == prop[0] and
+        if isinstance(prop[0], dict) and "modifier" in prop[0]:
+            propName = buildPropertyString(driven,
+                                           prop[0]["modifier"]["name"],
+                                           prop[0]["modifier"]["prop"])
+        else:
+            propName = prop[0]
+
+        if (driverData["driven"]["prop"] == propName and
                 driverData["driven"]["index"] == prop[1] and
                 driverData["driven"]["object"] == driven):
             return True
@@ -1843,6 +2109,9 @@ class RAPIDSDKPreferences(bpy.types.AddonPreferences):
                                                        description=ANN_MESSAGE_COLOR,
                                                        subtype='COLOR',
                                                        default=MESSAGE_COLOR)
+    border_width_value: bpy.props.IntProperty(name="Border Width",
+                                              description=ANN_BORDER_WIDTH,
+                                              default=BORDER_WIDTH)
 
     def draw(self, context):
         """Draw the panel and it's properties.
@@ -1859,6 +2128,7 @@ class RAPIDSDKPreferences(bpy.types.AddonPreferences):
         col.prop(self, "tolerance_value")
         col.prop(self, "message_position_value")
         col.prop(self, "message_color_value")
+        col.prop(self, "border_width_value")
 
 
 # ----------------------------------------------------------------------
