@@ -21,11 +21,13 @@ def getInputNodes(socket, nodeId="", allNodes=False):
     nodes = []
     for link in socket.links:
         srcNode = link.from_node
-        if srcNode.bl_idname == nodeId or nodeId == "":
-            nodes.append(srcNode)
-        elif isinstance(srcNode, bpy.types.NodeReroute):
+        # First check for reroutes.
+        if isinstance(srcNode, bpy.types.NodeReroute):
             nodes.extend(getInputNodes(srcNode.inputs[0],
                                        nodeId=nodeId))
+        elif srcNode.bl_idname == nodeId or nodeId == "":
+            if not isinstance(srcNode, bpy.types.NodeReroute):
+                nodes.append(srcNode)
         elif allNodes:
             for plug in srcNode.inputs:
                 nodes.extend(getInputNodes(plug,
@@ -51,11 +53,13 @@ def getOutputNodes(socket, nodeId="", allNodes=False):
     nodes = []
     for link in socket.links:
         dstNode = link.to_node
-        if dstNode.bl_idname == nodeId or nodeId == "":
-            nodes.append(dstNode)
-        elif isinstance(dstNode, bpy.types.NodeReroute):
+        # First check for reroutes.
+        if isinstance(dstNode, bpy.types.NodeReroute):
             nodes.extend(getOutputNodes(dstNode.outputs[0],
                                         nodeId=nodeId))
+        elif dstNode.bl_idname == nodeId or nodeId == "":
+            if not isinstance(dstNode, bpy.types.NodeReroute):
+                nodes.append(dstNode)
         elif allNodes:
             for plug in dstNode.outputs:
                 nodes.extend(getOutputNodes(plug,

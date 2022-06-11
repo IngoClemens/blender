@@ -3,17 +3,17 @@
 import bpy
 
 from . import common, node
-from ... import dev, var
+from ... import dev
 from ... core import driver
 from ... ui import preferences
 
 
-class RBFShapeKeyOutputNode(node.RBFNode):
-    """Shape key output node.
+class RBFCustomOutputNode(node.RBFNode):
+    """Custom property output node.
     """
-    bl_idname = "RBFShapeKeyOutputNode"
-    bl_label = "Shape Key"
-    bl_icon = 'SHAPEKEY_DATA'
+    bl_idname = "RBFCustomOutputNode"
+    bl_label = "Custom"
+    bl_icon = 'EMPTY_SINGLE_ARROW'
 
     # ------------------------------------------------------------------
     # Property callbacks
@@ -28,17 +28,17 @@ class RBFShapeKeyOutputNode(node.RBFNode):
         pass
 
     def setLabelCallback(self, context):
-        """Callback for updating the node label based on the shape key
+        """Callback for updating the node label based on the property
         selection.
 
         :param context: The current context.
         :type context: bpy.context
         """
-        common.shapeKeyLabelCallback(self)
+        common.customLabelCallback(self)
 
     def propItems(self, context):
         """Callback for the property drop down menu to collect the names
-        of all shape keys of the connected object.
+        of all custom properties of the connected object.
 
         :param context: The current context.
         :type context: bpy.context
@@ -46,7 +46,7 @@ class RBFShapeKeyOutputNode(node.RBFNode):
         :return: A list with tuple items for the enum property.
         :rtype: list(tuple(str))
         """
-        return common.shapeKeyItemsCallback(self, source=True)
+        return common.customItemsCallback(self, source=True)
 
     # ------------------------------------------------------------------
     # Properties
@@ -55,18 +55,12 @@ class RBFShapeKeyOutputNode(node.RBFNode):
     modeItems = [('LIST', "Auto", ""),
                  ('MANUAL', "Manual", "")]
     mode : bpy.props.EnumProperty(items=modeItems)
-    shapeName : bpy.props.StringProperty(name="", update=setLabelCallback)
-    shapeNameEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
+    propertyName : bpy.props.StringProperty(name="", update=setLabelCallback)
+    propertyEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
 
-    output : bpy.props.FloatProperty(update=updateCallback)
+    output : bpy.props.FloatVectorProperty(update=updateCallback)
     # The indices of the created drivers on the driven object.
-    # There seems to be a bug with the IntVectorProperty, because even
-    # though the documentation says that a size of 1 is possible the
-    # property fails to register.
-    # Therefore, the property is set to a size of two but with a
-    # different name. The actual value access is performed through a
-    # class property.
-    driverIndices : bpy.props.IntVectorProperty(size=2, default=(-1, -1))
+    driverIndex : bpy.props.IntVectorProperty(default=(-1, -1, -1))
     isDriver : bpy.props.BoolProperty(default=False)
 
     def init(self, context):
@@ -75,7 +69,7 @@ class RBFShapeKeyOutputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addInput("RBFPropertySocket", "Shape Key")
+        self.addInput("RBFPropertySocket", "Custom")
 
     def draw(self, context, layout):
         """Draw the content of the node.
@@ -85,10 +79,11 @@ class RBFShapeKeyOutputNode(node.RBFNode):
         :param layout: The current layout.
         :type layout: bpy.types.UILayout
         """
-        common.drawShapeKeyProperties(self, layout)
+        common.drawCustomProperties(self, layout)
 
         if preferences.getPreferences().developerMode:
-            layout.prop(self, "output")
+            col = layout.column(align=True)
+            col.prop(self, "output")
 
     def draw_buttons_ext(self, context, layout):
         """Draw node buttons in the sidebar.
@@ -100,66 +95,91 @@ class RBFShapeKeyOutputNode(node.RBFNode):
         """
         self.draw(context, layout)
 
-    @property
-    def driverIndex(self):
-        return [self.driverIndices[0]]
-
-    @driverIndex.setter
-    def driverIndex(self, values):
-        self.driverIndices = values
-
     # ------------------------------------------------------------------
     # Getter
     # ------------------------------------------------------------------
 
     def getProperties(self, obj):
-        """Return the name of the selected shape key.
+        """Return the name of the selected custom property.
 
         :param obj: The object to query.
         :type obj: bpy.types.Object
 
-        :return: The selected shape key name and the value as a tuple.
-        :rtype: tuple(str, float)
+        :return: A list with the selected custom property and the value
+                 as a tuple.
+        :rtype: list(tuple(str, float))
         """
-        return common.getShapeKeyProperties(self, obj)
+        return common.getCustomProperties(self, obj)
+
+    def getPropertyName(self):
+        """Return the name of the selected custom property.
+
+        :return: The name of the selected custom property.
+        :rtype: str
+        """
+        if self.mode == 'LIST':
+            if self.propertyEnum != 'NONE':
+                return self.propertyEnum
+        else:
+            if len(self.propertyName):
+                return self.propertyName
+
+        return ""
 
     def getOutputProperties(self):
         """Return the output property.
 
-        :return: A list with the node and the output index as a tuple.
+        :return: A list with the node and the output property indices as
+                 a tuple.
         :rtype: list(bpy.types.Node, int)
         """
-        return [(self, -1)]
+        result = []
+
+        for i in range(3):
+            if self.driverIndex[i] != -1:
+                result.append((self, i))
+
+        return result
 
     # ------------------------------------------------------------------
     # Driver
     # ------------------------------------------------------------------
 
     def createDriver(self, nodeGroup, driven, rbfNode):
-        """Create a driver for the shape key of the driven object.
+        """Create a driver for the property of the driven object.
 
-        :param nodeGroup: The node's node tree of the current RBF setup.
+        :param nodeGroup: The node tree of the current RBF setup.
         :type nodeGroup: bpy.types.NodeGroup
         :param driven: The driven object.
         :type driven: bpy.types.Object
         :param rbfNode: The current RBF node.
         :type rbfNode: bpy.types.Node
         """
-        # Clear the driver index.
-        self.driverIndices[0] = -1
+        # Clear the driver indices.
+        self.driverIndex = [-1, -1, -1]
         # Delete any existing driver.
         if rbfNode.active:
             self.deleteDriver(driven)
 
         props = self.getProperties(driven)
         if props:
-            shapeKeyName = driven.data.shape_keys.name
-            shapeKey = bpy.data.shape_keys[shapeKeyName]
-            dataPath = 'nodes["{}"].output'.format(self.name)
-            drivenProp = 'key_blocks["{}"].value'.format(props[0][0][9:])
-            driver.createNodeGroupDriver(nodeGroup, shapeKey, dataPath, drivenProp, -1)
-            self.driverIndices[0] = driver.getShapeKeyDriverIndex(dataPath)
-            self.isDriver = True
+            size = len(props)
+            index = 0
+            drivenIndex = -1
+            if size > 1:
+                drivenIndex = 0
+            propString = '["{}"]'.format(self.getPropertyName())
+
+            for i in range(size):
+                dataPath = 'nodes["{}"].output[{}]'.format(self.name, str(index))
+                driver.createNodeGroupDriver(nodeGroup, driven, dataPath, propString, drivenIndex)
+                # Get the index of the created driver.
+                self.driverIndex[index] = driver.getDriverIndex(driven, dataPath, propString, drivenIndex)
+                self.isDriver = True
+
+                if size > 1:
+                    index += 1
+                    drivenIndex += 1
 
     def deleteDriver(self, obj):
         """Delete the driver for the given object.
@@ -169,19 +189,25 @@ class RBFShapeKeyOutputNode(node.RBFNode):
         """
         props = self.getProperties(obj)
         if props:
-            shapeKeyName = obj.data.shape_keys.name
-            shapeKey = bpy.data.shape_keys[shapeKeyName]
-            drivenProp = 'key_blocks["{}"].value'.format(props[0][0])
-            result = shapeKey.driver_remove(drivenProp, -1)
-            dev.log("Delete driver: {} {} : {}".format(shapeKey, drivenProp, result))
+            size = len(props)
+            drivenIndex = -1
+            if size > 1:
+                drivenIndex = 0
+            propString = '["{}"]'.format(self.getPropertyName())
 
-    def enableDriver(self, driven, enable):
+            for i in range(size):
+                result = obj.driver_remove(propString, drivenIndex)
+                dev.log("Delete driver: {} {}[{}] : {}".format(obj, propString, drivenIndex, result))
+
+                if size > 1:
+                    drivenIndex += 1
+
+    def enableDriver(self, obj, enable):
         """Enable or disable the driver FCurves for the given object.
 
-        :param driven: The driven object.
-        :type driven: bpy.types.Object
+        :param obj: The driven object.
+        :type obj: bpy.types.Object
         :param enable: The enabled state of the driver FCurves.
         :type enable: bool
         """
-        obj = bpy.data.shape_keys[driven.data.shape_keys.name]
         driver.enableDriver(self, obj, enable)

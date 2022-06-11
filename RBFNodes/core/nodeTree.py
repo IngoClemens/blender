@@ -69,6 +69,7 @@ def createDefaultNodes(context):
     nodeGroup = getNodeTree(context)
     rbfNode = nodeGroup.nodes.new("RBFSolverNode")
     rbfNode.location = (0, 0)
+    rbfNode.width *= 1.3
 
     driver = nodeGroup.nodes.new("RBFObjectInputNode")
     driver.location = var.INPUT_OBJECT_OFFSET

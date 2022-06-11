@@ -8,7 +8,7 @@ from ... ui import preferences
 
 
 class RBFLocationOutputNode(node.RBFNode):
-    """Driver object source.
+    """Object location output node.
     """
     bl_idname = "RBFLocationOutputNode"
     bl_label = "Location"
@@ -86,8 +86,8 @@ class RBFLocationOutputNode(node.RBFNode):
     def getOutputProperties(self):
         """Return the selected output properties.
 
-        :return: A list with the selected output properties and their
-                 index as a tuple.
+        :return: A list with the node and the selected output property
+                 indices as a tuple.
         :rtype: list(bpy.types.Node, int)
         """
         return common.getTransformOutputProperties(self)

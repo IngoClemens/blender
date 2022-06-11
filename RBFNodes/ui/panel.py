@@ -5,6 +5,11 @@ import bpy
 from . import preferences
 from .. import var
 
+'''
+# Custom icons:
+from . icons import toolIcons
+icon_value=toolIcons.getIcon("tool_icon").icon_id
+'''
 
 # ----------------------------------------------------------------------
 # Panel
@@ -35,20 +40,20 @@ class RBFNODES_PT_RBF(bpy.types.Panel):
         box = self.layout.box()
         box.label(text="Create")
         col = box.column(align=True)
-        col.operator("rbfnodes.create_rbf")
+        col.operator("rbfnodes.create_rbf", icon='FILE_NEW')
         col.separator(factor=1.5)
-        col.operator("rbfnodes.create_pose")
+        col.operator("rbfnodes.create_pose", icon='POSE_HLT')
         col.separator(factor=1.5)
-        col.operator("rbfnodes.create_node_input")
-        col.operator("rbfnodes.create_node_output")
+        col.operator("rbfnodes.create_node_input", icon='IMPORT')
+        col.operator("rbfnodes.create_node_output", icon='EXPORT')
         col.separator(factor=1.5)
 
         box = self.layout.box()
         box.label(text="Activation")
         col = box.column(align=True)
-        col.operator("rbfnodes.activate_rbf")
+        col.operator("rbfnodes.activate_rbf", icon='QUIT')
         col.separator(factor=1.5)
-        col.operator("rbfnodes.reset_rbf")
+        col.operator("rbfnodes.reset_rbf", icon='CANCEL')
         col.separator(factor=1.5)
 
         if preferences.getPreferences().developerMode:

@@ -7,7 +7,7 @@ from ... import var
 
 
 class RBFRotationInputNode(node.RBFNode):
-    """Driver object source.
+    """Object rotation input node.
     """
     bl_idname = "RBFRotationInputNode"
     bl_label = "Rotation"

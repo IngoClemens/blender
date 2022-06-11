@@ -3,7 +3,7 @@
 import bpy
 
 from . import nodeTree, plugs
-from .. import var
+from .. import dev, var
 
 import json
 
@@ -48,17 +48,21 @@ def createPose(context):
         if not drivenData:
             return {'WARNING'}, "No driven object or properties defined"
 
-        if var.EXPOSE_DATA:
-            print("Driver Data:")
-            print(driverData)
-            print("Driven Data:")
-            print(drivenData)
+        dev.log("Driver Data:")
+        dev.log(driverData)
+        dev.log("Driven Data:")
+        dev.log(drivenData)
 
         # Get all pose nodes.
         poseNodes = nodeTree.getPoseNodes(rbfNode)
         # Create a pose index.
         index = lastPoseIndex(poseNodes)+1
         label = "Pose {}".format(index)
+
+        if len(poseNodes):
+            result = comparePoseSize(driverData, drivenData, poseNodes[-1])
+            if result is not None:
+                return result
 
         pos = nodeTree.sourceNodePosition(lastNode=None if not len(poseNodes) else poseNodes[-1],
                                           referenceNode=rbfNode,
@@ -73,12 +77,53 @@ def createPose(context):
 
         # Set the pose data.
         node.label = label
-        node.hide = True
         node.poseIndex = index
         node.driverData = json.dumps(driverData)
         node.drivenData = json.dumps(drivenData)
+        node.driverSize = poseDataSize(driverData)
+        node.drivenSize = poseDataSize(drivenData)
+        dev.log("Pose Size: Driver - {} | Driven - {}".format(node.driverSize, node.drivenSize))
+
     else:
         return {'WARNING'}, "No RBF node to add pose to"
+
+
+def poseDataSize(poseData):
+    """Return the number of values contained in the given pose data for
+    storing and comparing with new poses.
+
+    :param poseData: The pose data of the driver or driven object.
+    :type poseData: list
+
+    :return: The number of driver or driven pose values.
+    :rtype: int
+    """
+    count = 0
+    for name, data in poseData:
+        count += len(data)
+    return count
+
+
+def comparePoseSize(driverData, drivenData, node):
+    """Compare the number of diving and driven values with the values on
+    the given pose node. Return a warning if the numbers don't match.
+
+    :param driverData: The driving pose data.
+    :type driverData: list
+    :param drivenData: The driven pose data.
+    :type drivenData: list
+    :param node: The pose node to compare to.
+    :type node: bpy.type.Nodes
+
+    :return: A tuple with the warning message for the context or None.
+    :rtype: tuple or None
+    """
+    inSize = poseDataSize(driverData)
+    outSize = poseDataSize(drivenData)
+    if node.driverSize != inSize:
+        return {'WARNING'}, "The number of driver values differs from existing poses"
+    if node.drivenSize != outSize:
+        return {'WARNING'}, "The number of driven values differs from existing poses"
 
 
 def lastPoseIndex(nodes):
@@ -207,8 +252,8 @@ def getDriverData(node):
             items = dataItem[0].split(":")
             # Return the full node path as the object.
             obj = items[0]
-            # Make a tuple from the property path and the value.
-            values.append((items[1], dataItem[1]))
+            # Make a tuple from the property path, value and pose.
+            values.append((items[1], dataItem[1], dataItem[2]))
 
     return obj, values
 
@@ -247,8 +292,8 @@ def getDrivenData(node):
             items = dataItem[0].split(":")
             # Return the full node path as the object.
             obj = items[0]
-            # Make a tuple from the property path and the value.
-            values.append((items[1], dataItem[1]))
+            # Make a tuple from the property path, value and pose.
+            values.append((items[1], dataItem[1], dataItem[2]))
 
     return obj, values
 
@@ -276,17 +321,17 @@ def getDriverValues(rbfNode):
                         for inNode in plugs.getInputNodes(socket):
                             data = inNode.getProperties(obj)
                             if data:
-                                values.extend([value for prop, value in data])
+                                values.extend([value for prop, value, poseValue in data])
             elif node.bl_idname == "RBFNodeInputNode":
                 data = node.getProperties()
                 if data:
-                    values.extend([value for prop, value in data])
+                    values.extend([value for prop, value, poseValue in data])
 
     return values
 
 
 def getOutputProperties(rbfNode):
-    """Return all input values for all object nodes for the runtime
+    """Return all output values for all object nodes for the runtime
     weight calculation.
 
     :param rbfNode: The RBF node to get the pose data for.
@@ -357,15 +402,15 @@ def getPropertyCount(data):
     return count
 
 
-def recallPoseForObject(poseData, apply=True):
+def recallPoseForObject(poseData, asString=False):
     """Read the properties from the selected pose for the contained
     object and apply them.
 
     :param poseData: The pose data of the driver or driven object.
-    :type poseData: bpy.context
-    :param apply: True, if the values should get applied. False, to only
-                  build the command strings.
-    :type apply: bool
+    :type poseData: list
+    :param asString: False, if the values should get applied. True, to
+                     only build the command strings.
+    :type asString: bool
 
     :return: A list with command strings for recalling the pose.
     :rtype: list(str)
@@ -393,37 +438,25 @@ def recallPoseForObject(poseData, apply=True):
             objString = 'bpy.data.objects["{}"]'.format(nameItems[0])
 
         propArrayIndex = 0
-        for prop, value in data:
+
+        for prop, value, poseValue in data:
+
+            # Transforms
             if any(i in prop for i in transforms):
-                # Separate the property and index.
-                # Example: location[0]
-                items = prop[:-1].split("[")
-                # Get the current values as a list.
-                values = getattr(obj, items[0])
-                # Replace the current value at the stored index.
-                values[int(items[1])] = value
-                # Set the property.
-                if apply:
-                    setattr(obj, items[0], values)
-                lines.append("{}.{}[{}] = {}".format(objString, items[0], items[1], value))
+                lines.append(recallTransform(obj, objString, prop, value, asString))
+
+            # Twist
+            elif prop.startswith("twist_"):
+                lines.extend(recallTwist(obj, objString, poseValue, asString))
+
+            # Object property
+            elif prop.startswith("rna_property:"):
+                lines.append(recallProperty(obj, objString, prop, value, asString))
+
+            # Custom property
             elif prop.startswith("property:"):
-                # Separate the property and index.
-                # Example: location[0]
-                items = prop[9:-1].split("][")
-                # Single property: ["prop"]
-                if len(items) == 1:
-                    # Remove the remaining start bracket and
-                    # quotes to use just the string.
-                    if apply:
-                        obj[items[0][2:-1]] = value
-                    lines.append('{}["{}"] = {}'.format(objString, items[0][2:-1], value))
-                # Array property: ["prop"][0]
-                elif len(items) == 2:
-                    # Remove the remaining start bracket and
-                    # quotes to use just the string.
-                    if apply:
-                        obj[items[0][2:-1]][int(items[1])] = value
-                    lines.append('{}["{}"][{}] = {}'.format(objString, items[0][2:-1], items[1], value))
+                lines.append(recallCustom(obj, objString, prop, value, asString))
+
                 # Setting the custom property value doesn't update
                 # dependent drivers in the scene properly due to the
                 # lack of propagated updates in the Blender dependency
@@ -434,34 +467,247 @@ def recallPoseForObject(poseData, apply=True):
                 # by setting a common property.
                 if not isinstance(obj, bpy.types.PoseBone):
                     obj.hide_render = obj.hide_render
-            elif prop.startswith("shapeKey:"):
-                if apply:
-                    obj.data.shape_keys.key_blocks[prop[9:]].value = value
-                lines.append('{}.data.shape_keys.key_blocks["{}"].value = {}'.format(objString, prop[9:], value))
-            elif isNode:
-                # In case of a node the complete path to the node is
-                # passed in the object part and the property is the path
-                # of the socket.
-                # Example:
-                # bpy.data.materials["Material"].node_tree.nodes["Mix"]
-                # and
-                # inputs[1].default_value
 
-                # Separate the socket from the value.
-                plugItems = prop.split(".")
-                # Make the complete path to the socket an object.
-                plug = eval(".".join([nameItems[0], plugItems[0]]))
+            # Shape key
+            elif prop.startswith("shapeKey:"):
+                lines.append(recallShapeKey(obj, objString, prop, value, asString))
+
+            # Modifier
+            elif prop.startswith("modifier:"):
+                lines.append(recallModifier(obj, objString, prop, value, asString))
+
+            # Node
+            elif isNode:
+                lines.append(recallNode(prop, value, objString, propArray,
+                                        propArrayIndex, asString))
                 if propArray:
-                    if apply:
-                        plug.default_value[propArrayIndex] = value
-                    lines.append("{}.default_value[{}] = {}".format(".".join([nameItems[0], plugItems[0]]), propArrayIndex, value))
                     propArrayIndex += 1
-                else:
-                    if apply:
-                        plug.default_value = value
-                    lines.append("{}.default_value = {}".format(".".join([nameItems[0], plugItems[0]]), value))
 
     return lines
+
+
+def recallTransform(obj, objString, prop, value, asString):
+    """Set the transform value for the given object.
+
+    :param obj: The object to recall.
+    :type obj: bpy.types.Object
+    :param objString: The object string for the return command.
+    :type objString: str
+    :param prop: The property to recall.
+    :type prop: str
+    :param value: The property value to set.
+    :type value: float
+    :param asString: False, if the values should get applied. True, to
+                     only build the command strings.
+    :type asString: bool
+
+    :return: The command string for recalling the pose.
+    :rtype: str
+    """
+    # Separate the property and index.
+    # Example: location[0]
+    items = prop[:-1].split("[")
+    # Get the current values as a list.
+    values = getattr(obj, items[0])
+    # Replace the current value at the stored index.
+    values[int(items[1])] = value
+    # Set the property.
+    if not asString:
+        setattr(obj, items[0], values)
+    return "{}.{}[{}] = {}".format(objString, items[0], items[1], value)
+
+
+def recallTwist(obj, objString, poseValue, asString):
+    """Set the rotation for the given object.
+
+    :param obj: The object to recall.
+    :type obj: bpy.types.Object
+    :param objString: The object string for the return command.
+    :type objString: str
+    :param poseValue: The rotation value to recall.
+    :type poseValue: list(float)
+    :param asString: False, if the values should get applied. True, to
+                     only build the command strings.
+    :type asString: bool
+
+    :return: The list of command strings for recalling the pose.
+    :rtype: list(str)
+    """
+    if not asString:
+        setattr(obj, "rotation_quaternion", poseValue)
+    lines = []
+    for j in range(len(poseValue)):
+        lines.append("{}.rotation_quaternion[{}] = {}".format(objString, j, poseValue[j]))
+    return lines
+
+
+def recallProperty(obj, objString, prop, value, asString):
+    """Set the object property for the given object.
+
+    :param obj: The object to recall.
+    :type obj: bpy.types.Object
+    :param objString: The object string for the return command.
+    :type objString: str
+    :param prop: The property to recall.
+    :type prop: str
+    :param value: The property value to set.
+    :type value: float
+    :param asString: False, if the values should get applied. True, to
+                     only build the command strings.
+    :type asString: bool
+
+    :return: The command string for recalling the pose.
+    :rtype: str
+    """
+    prop = prop[13:]
+    indexString = ""
+    if "[" in prop:
+        # Separate the property and index.
+        # Example: color[0]
+        items = prop[:-1].split("[")
+        # Get the current values as a list.
+        values = getattr(obj, items[0])
+        # Replace the current value at the stored index.
+        values[int(items[1])] = value
+        # Convert a mathutils.Color instance to a float array.
+        vList = []
+        for i in range(3):
+            vList.append(values[i])
+        value = vList.copy()
+        prop = items[0]
+        indexString = "[{}]".format(items[1])
+    if not asString:
+        setattr(obj.data, prop, value)
+    return "{}.data.{}{} = {}".format(objString, prop, indexString, value)
+
+
+def recallCustom(obj, objString, prop, value, asString):
+    """Set the custom property for the given object.
+
+    :param obj: The object to recall.
+    :type obj: bpy.types.Object
+    :param objString: The object string for the return command.
+    :type objString: str
+    :param prop: The property to recall.
+    :type prop: str
+    :param value: The property value to set.
+    :type value: float
+    :param asString: False, if the values should get applied. True, to
+                     only build the command strings.
+    :type asString: bool
+
+    :return: The command string for recalling the pose.
+    :rtype: str
+    """
+    prop = prop[9:]
+    # Separate the property and index.
+    # Example: location[0]
+    items = prop[:-1].split("][")
+    # Single property: ["prop"]
+    if len(items) == 1:
+        # Remove the remaining start bracket and quotes to use just the
+        # string.
+        if not asString:
+            obj[items[0][2:-1]] = value
+        return '{}["{}"] = {}'.format(objString, items[0][2:-1], value)
+    # Array property: ["prop"][0]
+    elif len(items) == 2:
+        # Remove the remaining start bracket and quotes to use just the
+        # string.
+        if not asString:
+            obj[items[0][2:-1]][int(items[1])] = value
+        return '{}["{}"][{}] = {}'.format(objString, items[0][2:-1], items[1], value)
+    return ""
+
+
+def recallShapeKey(obj, objString, prop, value, asString):
+    """Set the shape key for the given object.
+
+    :param obj: The object to recall.
+    :type obj: bpy.types.Object
+    :param objString: The object string for the return command.
+    :type objString: str
+    :param prop: The property to recall.
+    :type prop: str
+    :param value: The property value to set.
+    :type value: float
+    :param asString: False, if the values should get applied. True, to
+                     only build the command strings.
+    :type asString: bool
+
+    :return: The command string for recalling the pose.
+    :rtype: str
+    """
+    if not asString:
+        obj.data.shape_keys.key_blocks[prop[9:]].value = value
+    return '{}.data.shape_keys.key_blocks["{}"].value = {}'.format(objString, prop[9:], value)
+
+
+def recallModifier(obj, objString, prop, value, asString):
+    """Set the modifier for the given object.
+
+    :param obj: The object to recall.
+    :type obj: bpy.types.Object
+    :param objString: The object string for the return command.
+    :type objString: str
+    :param prop: The modifier and property to recall.
+    :type prop: str
+    :param value: The property value to set.
+    :type value: float
+    :param asString: False, if the values should get applied. True, to
+                     only build the command strings.
+    :type asString: bool
+
+    :return: The command string for recalling the pose.
+    :rtype: str
+    """
+    # Separate the property and index.
+    # Example: modifier:SimpleDeform:angle
+    items = prop[9:].split(":")
+    if not asString:
+        setattr(obj.modifiers[items[0]], str(items[1]), value)
+    return '{}.modifiers["{}"].{} = {}'.format(objString, items[0], items[1], value)
+
+
+def recallNode(prop, value, objString, propArray, propArrayIndex, asString):
+    """Set the property for the given node.
+
+    :param prop: The property to recall.
+    :type prop: str
+    :param value: The property value to set.
+    :type value: float
+    :param objString: The object's string representation.
+    :type objString: str
+    :param propArray: True, if the property is an array.
+    :type propArray: bool
+    :param propArrayIndex: The index of the property.
+    :type propArrayIndex: int
+    :param asString: False, if the values should get applied. True, to
+                     only build the command strings.
+    :type asString: bool
+
+    :return: The command string for recalling the pose.
+    :rtype: str
+    """
+    # In case of a node the complete path to the node is passed in the
+    # object part and the property is the path of the socket.
+    # Example:
+    # bpy.data.materials["Material"].node_tree.nodes["Mix"]
+    # and
+    # inputs[1].default_value
+
+    # Separate the socket from the value.
+    plugItems = prop.split(".")
+    # Make the complete path to the socket an object.
+    plug = eval(".".join([objString, plugItems[0]]))
+    if propArray:
+        if not asString:
+            plug.default_value[propArrayIndex] = value
+        return "{}.default_value[{}] = {}".format(".".join([objString, plugItems[0]]), propArrayIndex, value)
+    else:
+        if not asString:
+            plug.default_value = value
+        return "{}.default_value = {}".format(".".join([objString, plugItems[0]]), value)
 
 
 class EditMode(object):
@@ -529,11 +775,10 @@ def updatePose():
     if not driverData or not drivenData:
         return
 
-    if var.EXPOSE_DATA:
-        print("Driver Data:")
-        print(driverData)
-        print("Driven Data:")
-        print(drivenData)
+    dev.log("Driver Data:")
+    dev.log(driverData)
+    dev.log("Driven Data:")
+    dev.log(drivenData)
 
     editCache.poseNode.driverData = json.dumps(driverData)
     editCache.poseNode.drivenData = json.dumps(drivenData)

@@ -8,12 +8,12 @@ from ... core import driver
 from ... ui import preferences
 
 
-class RBFPropertyOutputNode(node.RBFNode):
-    """Object property output node.
+class RBFModifierOutputNode(node.RBFNode):
+    """Object modifier output node.
     """
-    bl_idname = "RBFPropertyOutputNode"
-    bl_label = "Property"
-    bl_icon = 'PROPERTIES'
+    bl_idname = "RBFModifierOutputNode"
+    bl_label = "Modifier"
+    bl_icon = 'MODIFIER'
 
     # ------------------------------------------------------------------
     # Property callbacks
@@ -34,11 +34,11 @@ class RBFPropertyOutputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        common.propertyLabelCallback(self)
+        common.modifierLabelCallback(self)
 
-    def propItems(self, context):
-        """Callback for the property drop down menu to collect the names
-        of all object properties of the connected object.
+    def modItems(self, context):
+        """Callback for the modifier drop down menu to collect the names
+        of all object modifiers of the connected object.
 
         :param context: The current context.
         :type context: bpy.context
@@ -46,12 +46,25 @@ class RBFPropertyOutputNode(node.RBFNode):
         :return: A list with tuple items for the enum property.
         :rtype: list(tuple(str))
         """
-        return common.propertyItemsCallback(self, source=True)
+        return common.modifierItemsCallback(self, source=True)
+
+    def propItems(self, context):
+        """Callback for the property drop down menu to collect the names
+        of all modifier properties of the selected modifier.
+
+        :param context: The current context.
+        :type context: bpy.context
+
+        :return: A list with tuple items for the enum property.
+        :rtype: list(tuple(str))
+        """
+        return common.modifierPropertiesCallback(self, source=True)
 
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
 
+    modifierEnum : bpy.props.EnumProperty(name="", items=modItems, update=setLabelCallback)
     propertyEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
 
     output : bpy.props.FloatVectorProperty(update=updateCallback)
@@ -65,7 +78,7 @@ class RBFPropertyOutputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addInput("RBFPropertySocket", "Property")
+        self.addInput("RBFPropertySocket", "Modifier")
 
     def draw(self, context, layout):
         """Draw the content of the node.
@@ -75,7 +88,7 @@ class RBFPropertyOutputNode(node.RBFNode):
         :param layout: The current layout.
         :type layout: bpy.types.UILayout
         """
-        common.drawPropertyProperties(self, layout)
+        common.drawModifierProperties(self, layout)
 
         if preferences.getPreferences().developerMode:
             col = layout.column(align=True)
@@ -96,33 +109,32 @@ class RBFPropertyOutputNode(node.RBFNode):
     # ------------------------------------------------------------------
 
     def getProperties(self, obj):
-        """Return the name of the selected custom property.
+        """Return the name of the selected modifier property.
 
         :param obj: The object to query.
         :type obj: bpy.types.Object
 
-        :return: A list with the selected custom property and the value
-                 as a tuple.
+        :return: A list with the selected modifier property and the
+                 value as a tuple.
         :rtype: list(tuple(str, float))
         """
-        return common.getObjectProperties(self, obj)
+        return common.getModifierProperties(self, obj)
 
     def getPropertyName(self):
-        """Return the name of the selected custom property.
+        """Return the name of the selected modifier property.
 
-        :return: The name of the selected custom property.
+        :return: The name of the selected modifier property.
         :rtype: str
         """
-        if self.propertyEnum != 'NONE':
-            return self.propertyEnum
+        if self.modifierEnum != 'NONE' and self.propertyEnum != 'NONE':
+            return self.modifierEnum, self.propertyEnum
         else:
-            return ""
+            return "", ""
 
     def getOutputProperties(self):
         """Return the output property.
 
-        :return: A list with the node and the selected property indices
-                 as a tuple.
+        :return: A list with the node and the output index as a tuple.
         :rtype: list(bpy.types.Node, int)
         """
         result = []
@@ -160,13 +172,16 @@ class RBFPropertyOutputNode(node.RBFNode):
             drivenIndex = -1
             if size > 1:
                 drivenIndex = 0
-            propString = self.getPropertyName()
+            modName, propString = self.getPropertyName()
+            modifier = driven.modifiers[modName]
+            # The string which is used for querying the driver index.
+            modPropString = 'modifiers["{}"].{}'.format(modName, propString)
 
             for i in range(size):
                 dataPath = 'nodes["{}"].output[{}]'.format(self.name, str(index))
-                driver.createNodeGroupDriver(nodeGroup, driven.data, dataPath, propString, drivenIndex)
+                driver.createNodeGroupDriver(nodeGroup, modifier, dataPath, propString, drivenIndex)
                 # Get the index of the created driver.
-                self.driverIndex[index] = driver.getDriverIndex(driven.data, dataPath, propString, drivenIndex)
+                self.driverIndex[index] = driver.getDriverIndex(driven, dataPath, modPropString, drivenIndex)
                 self.isDriver = True
 
                 if size > 1:
@@ -185,11 +200,12 @@ class RBFPropertyOutputNode(node.RBFNode):
             drivenIndex = -1
             if size > 1:
                 drivenIndex = 0
-            propString = self.getPropertyName()
+            modName, propString = self.getPropertyName()
+            modifier = obj.modifiers[modName]
 
             for i in range(size):
-                result = obj.data.driver_remove(propString, drivenIndex)
-                dev.log("Delete driver: {} {}[{}] : {}".format(obj.data, propString, drivenIndex, result))
+                result = modifier.driver_remove(propString, drivenIndex)
+                dev.log("Delete driver: {} {}[{}] : {}".format(obj, propString, drivenIndex, result))
 
                 if size > 1:
                     drivenIndex += 1

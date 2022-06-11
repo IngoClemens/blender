@@ -6,7 +6,7 @@ from . import common, node
 
 
 class RBFLocationInputNode(node.RBFNode):
-    """Driver object source.
+    """Object location input node.
     """
     bl_idname = "RBFLocationInputNode"
     bl_label = "Location"

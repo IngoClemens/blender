@@ -2,8 +2,8 @@
 
 import bpy
 
-from . import nodeTree, plugs
-from .. import var
+from . import nodeTree
+from .. import dev
 
 
 def generateDrivers(nodeGroup, rbfNode):
@@ -27,9 +27,8 @@ def generateDrivers(nodeGroup, rbfNode):
             # outNode.hide = outNode.isDriver
 
             if outNode.isDriver:
-                if var.EXPOSE_DATA:
-                    print("Driver Indices for {}:".format(outNode.name))
-                    print([i for i in outNode.driverIndex])
+                dev.log("Driver Indices for {}:".format(outNode.name))
+                dev.log([i for i in outNode.driverIndex])
 
 
 def createNodeGroupDriver(nodeGroup, node, driverProp, drivenProp, index=-1):
@@ -77,7 +76,7 @@ def getTransformDriverIndex(obj, driverPath, drivenProp, propertyIndex):
     :return: The index of the driver in the data block.
     :rtype: int
     """
-    return getDriverIndex(obj, driverPath, ".{}".format(drivenProp), propertyIndex)
+    return getDriverIndex(obj, driverPath, drivenProp, propertyIndex)
 
 
 def getDriverIndex(obj, driverPath, drivenProp, propertyIndex):
@@ -102,6 +101,11 @@ def getDriverIndex(obj, driverPath, drivenProp, propertyIndex):
         # property, i.e. location or rotation_euler.
         # A pose bone needs a pose bone prefix with the name of the
         # bone.
+
+        # In case of a transform property a dot separator is required.
+        if not drivenProp.startswith("["):
+            drivenProp = ".{}".format(drivenProp)
+
         drivenProp = "".join(['pose.bones["{}"]'.format(obj.name), drivenProp])
         obj = obj.id_data
         driverBlock = obj.animation_data.drivers
@@ -171,7 +175,7 @@ def createTransformDriver(node, nodeGroup, driven, transform, rbfNode):
             dataPath = 'nodes["{}"].output[{}]'.format(node.name, str(index))
             createNodeGroupDriver(nodeGroup, driven, dataPath, transform, index)
             # Get the index of the created driver.
-            node.driverIndex[index] = getTransformDriverIndex(driven, dataPath, transform, index)
+            node.driverIndex[index] = getDriverIndex(driven, dataPath, transform, index)
             node.isDriver = True
 
 
@@ -189,8 +193,7 @@ def deleteTransformDriver(node, obj, transform):
     for axis, index in axes:
         if axis:
             result = obj.driver_remove(transform, index)
-            if var.EXPOSE_DATA:
-                print("Delete driver: {} {}[{}] : {}".format(obj, transform, index, result))
+            dev.log("Delete driver: {} {}[{}] : {}".format(obj, transform, index, result))
 
 
 def enableDriver(node, obj, enable):
@@ -205,8 +208,13 @@ def enableDriver(node, obj, enable):
     """
     if isinstance(obj, bpy.types.PoseBone):
         obj = obj.id_data
+    elif isinstance(obj, bpy.types.Object):
+        obj = obj.data
 
     for i in range(len(node.driverIndex)):
         index = node.driverIndex[i]
         if index != -1:
-            obj.animation_data.drivers[index].mute = not enable
+            try:
+                obj.animation_data.drivers[index].mute = not enable
+            except IndexError:
+                pass

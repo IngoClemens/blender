@@ -6,11 +6,11 @@ from . import common, node
 
 
 class RBFPropertyInputNode(node.RBFNode):
-    """Driver object source.
+    """Object property input node.
     """
     bl_idname = "RBFPropertyInputNode"
-    bl_label = "Custom"
-    bl_icon = 'EMPTY_SINGLE_ARROW'
+    bl_label = "Property"
+    bl_icon = 'PROPERTIES'
 
     # ------------------------------------------------------------------
     # Property callbacks
@@ -23,11 +23,11 @@ class RBFPropertyInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        common.customLabelCallback(self)
+        common.propertyLabelCallback(self)
 
     def propItems(self, context):
         """Callback for the property drop down menu to collect the names
-        of all custom properties of the connected object.
+        of all object properties of the connected object.
 
         :param context: The current context.
         :type context: bpy.context
@@ -35,16 +35,12 @@ class RBFPropertyInputNode(node.RBFNode):
         :return: A list with tuple items for the enum property.
         :rtype: list(tuple(str))
         """
-        return common.customItemsCallback(self, source=False)
+        return common.propertyItemsCallback(self, source=False)
 
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
 
-    modeItems = [('LIST', "Auto", ""),
-                 ('MANUAL', "Manual", "")]
-    mode : bpy.props.EnumProperty(items=modeItems)
-    propertyName : bpy.props.StringProperty(name="", update=setLabelCallback)
     propertyEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
 
     def init(self, context):
@@ -63,7 +59,7 @@ class RBFPropertyInputNode(node.RBFNode):
         :param layout: The current layout.
         :type layout: bpy.types.UILayout
         """
-        common.drawCustomProperties(self, layout)
+        common.drawPropertyProperties(self, layout)
 
     def draw_buttons_ext(self, context, layout):
         """Draw node buttons in the sidebar.
@@ -89,4 +85,4 @@ class RBFPropertyInputNode(node.RBFNode):
                  as a tuple.
         :rtype: list(tuple(str, float))
         """
-        return common.getCustomProperties(self, obj)
+        return common.getObjectProperties(self, obj)

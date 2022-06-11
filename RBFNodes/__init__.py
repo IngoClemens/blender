@@ -28,6 +28,11 @@ Node based RBF Solver.
 
 Changelog:
 
+0.3.0 - 2022-06-09
+- Various changes and improvements.
+- Added support for object properties and modifiers.
+- Added radius presets.
+
 0.2.0 - 2022-05-26
 - Merged all individual property sockets into one.
 
@@ -44,7 +49,7 @@ from . core import handler
 
 bl_info = {"name": "RBF Nodes",
            "author": "Ingo Clemens",
-           "version": (0, 2, 0),
+           "version": (0, 3, 0),
            "blender": (3, 1, 0),
            "category": "Animation",
            "location": "",

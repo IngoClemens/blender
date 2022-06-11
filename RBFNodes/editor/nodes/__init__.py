@@ -5,6 +5,8 @@ import bpy
 from . object_input import RBFObjectInputNode
 from . object_output import RBFObjectOutputNode
 from . pose import RBFPoseNode
+from . custom_input import RBFCustomInputNode
+from . custom_output import RBFCustomOutputNode
 from . property_input import RBFPropertyInputNode
 from . property_output import RBFPropertyOutputNode
 from . location_input import RBFLocationInputNode
@@ -15,6 +17,8 @@ from . scale_input import RBFScaleInputNode
 from . scale_output import RBFScaleOutputNode
 from . shapeKey_input import RBFShapeKeyInputNode
 from . shapeKey_output import RBFShapeKeyOutputNode
+from . modifier_input import RBFModifierInputNode
+from . modifier_output import RBFModifierOutputNode
 from . node_input import RBFNodeInputNode
 from . node_output import RBFNodeOutputNode
 from . rbf import RBFSolverNode
@@ -28,6 +32,8 @@ from . rbf import RBFSolverNode
 classes = [RBFObjectInputNode,
            RBFObjectOutputNode,
            RBFPoseNode,
+           RBFCustomInputNode,
+           RBFCustomOutputNode,
            RBFPropertyInputNode,
            RBFPropertyOutputNode,
            RBFLocationInputNode,
@@ -38,6 +44,8 @@ classes = [RBFObjectInputNode,
            RBFScaleOutputNode,
            RBFShapeKeyInputNode,
            RBFShapeKeyOutputNode,
+           RBFModifierInputNode,
+           RBFModifierOutputNode,
            RBFNodeInputNode,
            RBFNodeOutputNode,
            RBFSolverNode]

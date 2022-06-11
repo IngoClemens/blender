@@ -2,11 +2,11 @@
 
 import bpy
 
-from . import node
+from . import common, node
 
 
 class RBFObjectInputNode(node.RBFNode):
-    """Driver object source.
+    """Driver object input node.
     """
     bl_idname = "RBFObjectInputNode"
     bl_label = "Object"
@@ -36,11 +36,7 @@ class RBFObjectInputNode(node.RBFNode):
         :param layout: The current layout.
         :type layout: bpy.types.UILayout
         """
-        layout.prop_search(self, property="sceneObject", search_data=context.scene, search_property="objects", text="")
-        if self.sceneObject and self.sceneObject.type == 'ARMATURE':
-            armature = self.sceneObject.data
-            if armature:
-                layout.prop_search(self, property="bone", search_data=armature, search_property="bones", text="")
+        common.drawObjectProperties(self, context, layout)
 
     # ------------------------------------------------------------------
     # Getter
@@ -52,8 +48,4 @@ class RBFObjectInputNode(node.RBFNode):
         :return: The currently selected object.
         :rtype: bpy.types.Object
         """
-        if self.sceneObject:
-            if self.sceneObject.type == 'ARMATURE':
-                if self.bone:
-                    return self.sceneObject.pose.bones[self.bone]
-            return self.sceneObject
+        return common.getObjectFromNode(self)

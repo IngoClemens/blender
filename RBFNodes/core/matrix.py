@@ -2,6 +2,8 @@
 
 import math
 
+from .. import dev
+
 
 class Matrix(object):
     """Class for a two-dimensional matrix.
@@ -245,6 +247,35 @@ class Matrix(object):
         return vec
 
     # ------------------------------------------------------------------
+    # Mean and standard deviation
+    # ------------------------------------------------------------------
+
+    def mean(self):
+        """Return the mean from all values contained in the matrix.
+
+        :return: The mean value.
+        :rtype: float
+        """
+        value = 0.0
+        for i in range(self.rows):
+            for j in range(self.cols):
+                value += self.mat[i][j]
+        return value / (self.rows * self.cols)
+
+    def variance(self):
+        """Return the variance of all values.
+
+        :return: The variance value.
+        :rtype: float
+        """
+        mean = self.mean()
+        value = 0.0
+        for i in range(self.rows):
+            for j in range(self.cols):
+                value += pow(self.mat[i][j] - mean, 2)
+        return value / (self.rows * self.cols)
+
+    # ------------------------------------------------------------------
     # Gaussian elimination
     # ------------------------------------------------------------------
 
@@ -261,6 +292,7 @@ class Matrix(object):
         """
         # Make sure that the matrix is square.
         if self.rows != self.cols:
+            dev.log("Matrix rows and columns do not match")
             return []
 
         size = self.rows
@@ -291,6 +323,7 @@ class Matrix(object):
 
             # Check if the matrix is singular.
             if abs(self.mat[i][i]) < 0.0001:
+                dev.log("The matrix is singular")
                 return []
 
             # Perform the forward elimination.
@@ -313,6 +346,9 @@ class Matrix(object):
 def norm(vec):
     """Return the normalization factor for the given vector.
 
+    :param vec: The vector.
+    :type vec: list(float)
+
     :return: The normalization factor.
     :rtype: float
     """
@@ -325,6 +361,8 @@ def norm(vec):
 def normalizeVector(vec, factors=None):
     """Normalize the given vector.
 
+    :param vec: The vector to normalize.
+    :type vec: list(float)
     :param factors: The list of normalization factors for each vector
                     value.
     :type factors: list(float)

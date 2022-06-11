@@ -4,7 +4,7 @@ import bpy
 
 from . import node
 from ... core import matrix, plugs, rbf
-from ... import var
+from ... import dev, var
 
 import math
 
@@ -15,7 +15,7 @@ MAX_LEN = 32
 
 
 class RBFSolverNode(node.RBFNode):
-    """Driver object source.
+    """RBF node.
     """
     bl_idname = "RBFSolverNode"
     bl_label = "RBF"
@@ -35,7 +35,7 @@ class RBFSolverNode(node.RBFNode):
         :type context: bpy.context
         """
         if self.active_value:
-            rbf.initialize(context)
+            rbf.initialize(context, refresh=True)
 
     # ------------------------------------------------------------------
     # Properties
@@ -48,16 +48,19 @@ class RBFSolverNode(node.RBFNode):
                            ('MULTI_QUADRATIC', "Multi-Quadratic Biharmonic", ""),
                            ('INVERSE_MULTI_QUADRATIC', "Inverse Multi-Quadratic Biharmonic", "")]
     radius_items = [('MEAN', "Mean Distance", ""),
+                    ('VARIANCE', "Variance", ""),
+                    ('STANDARD_DEVIATION', "Standard Deviation", ""),
                     ('CUSTOM', "Custom", "")]
-    mode : bpy.props.EnumProperty(name="", items=interpolation_items, default='GAUSSIAN_1', update=rbfMode)
-    radiusType : bpy.props.EnumProperty(name="", items=radius_items, default='MEAN', update=rbfMode)
-    radius : bpy.props.FloatProperty(name="Radius", default=1.0, update=rbfMode)
+    mode : bpy.props.EnumProperty(name="Kernel", items=interpolation_items, default='GAUSSIAN_1', update=rbfMode)
+    radiusType : bpy.props.EnumProperty(name="Radius", items=radius_items, default='STANDARD_DEVIATION', update=rbfMode)
+    radius : bpy.props.FloatProperty(name="Radius", default=1.0, min=0, update=rbfMode)
     negativeWeights : bpy.props.BoolProperty(name="Negative Weights", default=True)
     active_value : bpy.props.BoolProperty(default=False)
 
     # Internal value for the RBF calculation.
     # Set during activation and used by the runtime calculation.
     meanDistance : bpy.props.FloatProperty(default=1.0)
+    variance : bpy.props.FloatProperty(default=1.0)
 
     poseMatrix0 : bpy.props.FloatVectorProperty(size=32)
     poseMatrix1 : bpy.props.FloatVectorProperty(size=32)
@@ -209,28 +212,25 @@ class RBFSolverNode(node.RBFNode):
     def reset(self):
         """Clear all stored data.
         """
-        if var.EXPOSE_DATA:
-            print("Resetting RBF node: {}".format(self.name))
+        dev.log("Resetting RBF node: {}".format(self.name))
         self.active_value = False
         self.meanDistance = 0.0
+        self.variance = 0.0
         self.poseMatrixRows = 0
         self.poseMatrixColumns = 0
         self.weightMatrixRows = 0
         self.weightMatrixColumns = 0
-        if var.EXPOSE_DATA:
-            print("Reset state")
+        dev.log("Reset state")
 
         values = [0] * MAX_LEN
         for i in range(32):
             self.setFloatVector(i, values, "poseMatrix")
             self.setFloatVector(i, values, "weightMatrix")
-        if var.EXPOSE_DATA:
-            print("Reset matrices")
+        dev.log("Reset matrices")
 
         self.use_custom_color = False
         self.color = var.COLOR_DEFAULT[:-1]
-        if var.EXPOSE_DATA:
-            print("Reset finished")
+        dev.log("Reset finished")
 
     def getRadius(self):
         """Return the current radius value.
@@ -241,6 +241,10 @@ class RBFSolverNode(node.RBFNode):
         """
         if self.radiusType == 'MEAN':
             return self.meanDistance
+        elif self.radiusType == 'VARIANCE':
+            return self.variance
+        elif self.radiusType == 'STANDARD_DEVIATION':
+            return math.sqrt(self.variance)
         else:
             return self.radius
 

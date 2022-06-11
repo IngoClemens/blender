@@ -69,6 +69,8 @@ class RBFPoseNode(node.RBFNode):
     poseIndex : bpy.props.IntProperty()
     driverData : bpy.props.StringProperty()
     drivenData : bpy.props.StringProperty()
+    driverSize : bpy.props.IntProperty()
+    drivenSize : bpy.props.IntProperty()
 
     def init(self, context):
         """Initialize the node and add the sockets.
@@ -86,10 +88,10 @@ class RBFPoseNode(node.RBFNode):
         :param layout: The current layout.
         :type layout: bpy.types.UILayout
         """
-        col = layout.column(align=True)
-        col.prop(self, "edit_pose", toggle=True)
-        col.separator(factor=1.0)
-        col.operator("rbfnodes.recall_pose").nodeName = self.name
+        row = layout.row(align=True)
+        row.prop(self, "edit_pose", toggle=True)
+        row.separator(factor=1.0)
+        row.operator("rbfnodes.recall_pose").nodeName = self.name
 
     def draw_buttons_ext(self, context, layout):
         """Draw node buttons in the sidebar.

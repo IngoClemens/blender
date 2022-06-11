@@ -5,7 +5,9 @@ import bpy
 from .. import var
 
 
+ANN_AUTO_LABEL = "Set the label for property and shape key nodes based on the property name"
 ANN_DEVELOPER = "Show developer extras"
+ANN_LOG_DATA = "Write the RBF data to the command output"
 
 
 def getPreferences():
@@ -23,9 +25,15 @@ class RBFNODESPreferences(bpy.types.AddonPreferences):
     """
     bl_idname = "RBFNodes"
 
-    developerMode: bpy.props.BoolProperty(name="Developer Mode",
-                                          description=ANN_DEVELOPER,
-                                          default=var.DEVELOPER_MODE)
+    autoLabel : bpy.props.BoolProperty(name="Auto Label Property Nodes",
+                                       description=ANN_AUTO_LABEL,
+                                       default=var.AUTO_LABEL)
+    developerMode : bpy.props.BoolProperty(name="Developer Mode",
+                                           description=ANN_DEVELOPER,
+                                           default=var.DEVELOPER_MODE)
+    logData : bpy.props.BoolProperty(name="Log RBF Data",
+                                     description=ANN_LOG_DATA,
+                                     default=var.EXPOSE_DATA)
 
     def draw(self, context):
         """Draw the panel and it's properties.
@@ -36,4 +44,8 @@ class RBFNODESPreferences(bpy.types.AddonPreferences):
         self.layout.use_property_split = True
 
         col = self.layout.column(align=True)
+        col.prop(self, "autoLabel")
+        col.separator(factor=1.5)
         col.prop(self, "developerMode")
+        if self.developerMode:
+            col.prop(self, "logData")

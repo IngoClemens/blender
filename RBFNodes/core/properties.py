@@ -2,6 +2,24 @@
 
 import bpy
 import idprop
+import mathutils
+
+
+def objectProperties(obj):
+    """Return a list with the object properties of the given object.
+
+    :param obj: The object to get the properties from.
+    :type obj: bpy.types.Object
+
+    :return: The list with the object properties.
+    :rtype: list(str)
+    """
+    props = []
+    if not isinstance(obj, bpy.types.PoseBone):
+        for prop, value in obj.data.bl_rna.properties.items():
+            if isinstance(value, bpy.types.FloatProperty):
+                props.append(prop)
+    return props
 
 
 def customProperties(obj):
@@ -47,6 +65,57 @@ def nodeProperties(node, fromInput=True):
     return props
 
 
+def objectModifiers(obj):
+    """Return a list with the modifiers of the given object.
+
+    :param obj: The object to get the modifiers from.
+    :type obj: bpy.types.Object
+
+    :return: The list with the object modifiers.
+    :rtype: list(str)
+    """
+    mods = []
+    for mod in obj.modifiers:
+        mods.append(mod.name)
+    return mods
+
+
+def modifierProperties(modifier):
+    """Return a list with the modifier properties of the given object.
+
+    :param modifier: The modifier to get the properties from.
+    :type modifier: bpy.types.Modifier
+
+    :return: The list with the modifier properties.
+    :rtype: list(str)
+    """
+    props = []
+    for prop, value in modifier.bl_rna.properties.items():
+        if isinstance(value, bpy.types.FloatProperty):
+            props.append(prop)
+    return props
+
+
+def expandObjectProperty(obj, name):
+    """Return the name of the property or names in case of an array
+    property.
+
+    :param obj: The object the property belongs to.
+    :type obj: bpy.types.Object
+    :param name: The name of the property
+    :type name: str
+
+    :return: A list with the property or property items.
+    :rtype: list(str)
+    """
+    value = eval("obj.data.{}".format(name))
+    if isinstance(value, mathutils.Color):
+        return [('rna_property:{}[{}]'.format(name, i), value[i], None)
+                for i in range(len(value))]
+    else:
+        return [('rna_property:{}'.format(name), value, None)]
+
+
 def expandProperty(obj, name):
     """Return the name of the property or names in case of an array
     property.
@@ -62,9 +131,10 @@ def expandProperty(obj, name):
     if name in customProperties(obj):
         value = eval("obj['{}']".format(name))
         if isinstance(value, idprop.types.IDPropertyArray):
-            return [('property:["{}"][{}]'.format(name, i), value[i]) for i in range(len(value))]
+            return [('property:["{}"][{}]'.format(name, i), value[i], None)
+                    for i in range(len(value))]
         else:
-            return [('property:["{}"]'.format(name), value)]
+            return [('property:["{}"]'.format(name), value, None)]
     else:
         return []
 
@@ -90,7 +160,7 @@ def expandNodeProperty(nodeString, plugString):
         # drivers, since the index needs to be passed separately.
         # Therefore, adding the index would be mainly for readability
         # when exposing the data but wouldn't have any practical use.
-        return [('{}:{}.default_value'.format(nodeString, plugString), value[j])
+        return [('{}:{}.default_value'.format(nodeString, plugString), value[j], None)
                 for j in range(len(value))]
     else:
-        return [('{}:{}.default_value'.format(nodeString, plugString), value)]
+        return [('{}:{}.default_value'.format(nodeString, plugString), value, None)]

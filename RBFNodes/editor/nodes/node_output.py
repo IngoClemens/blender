@@ -3,7 +3,7 @@
 import bpy
 
 from . import common, node
-from ... import var
+from ... import dev
 from ... core import driver
 from ... ui import preferences
 
@@ -12,7 +12,7 @@ ARRAY_SIZE = 4
 
 
 class RBFNodeOutputNode(node.RBFNode):
-    """Driver object source.
+    """Node tree output node.
     """
     bl_idname = "RBFNodeOutputNode"
     bl_label = "Node"
@@ -99,8 +99,8 @@ class RBFNodeOutputNode(node.RBFNode):
     def getOutputProperties(self):
         """Return the output property.
 
-        :return: A list with the output property and the index as a
-                 tuple.
+        :return: A list with the node and the output property indices as
+                 a tuple.
         :rtype: list(bpy.types.Node, int)
         """
         result = []
@@ -172,7 +172,7 @@ class RBFNodeOutputNode(node.RBFNode):
             if size > 1:
                 drivenIndex = 0
 
-            for prop, value in props:
+            for prop, value, poseValue in props:
                 obj, driven, propString, propStringLong = self._buildDriverItems(prop)
                 dataPath = 'nodes["{}"].output[{}]'.format(self.name, str(index))
                 driver.createNodeGroupDriver(nodeGroup, driven, dataPath, propString, drivenIndex)
@@ -197,11 +197,10 @@ class RBFNodeOutputNode(node.RBFNode):
             if size > 1:
                 drivenIndex = 0
 
-            for prop, value in props:
+            for prop, value, poseValue in props:
                 obj, driven, propString, propStringLong = self._buildDriverItems(prop)
                 result = obj.driver_remove(propStringLong, drivenIndex)
-                if var.EXPOSE_DATA:
-                    print("Delete driver: {} {}[{}] : {}".format(obj, propStringLong, drivenIndex, result))
+                dev.log("Delete driver: {} {}[{}] : {}".format(obj, propStringLong, drivenIndex, result))
 
                 if size > 1:
                     drivenIndex += 1
@@ -209,13 +208,14 @@ class RBFNodeOutputNode(node.RBFNode):
     def enableDriver(self, obj, enable):
         """Enable or disable the driver FCurves for the given object.
 
-        :param obj: The driven object.
+        :param obj: The driven object. Not used in case of the node
+                    ouput node.
         :type obj: bpy.types.Object
         :param enable: The enabled state of the driver FCurves.
         :type enable: bool
         """
         props = self.getProperties()
         if props:
-            for prop, value in props:
+            for prop, value, poseValue in props:
                 obj, driven, propString, propStringLong = self._buildDriverItems(prop)
                 driver.enableDriver(self, obj, enable)

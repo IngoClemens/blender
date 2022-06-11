@@ -6,7 +6,7 @@ from . import common, node
 
 
 class RBFNodeInputNode(node.RBFNode):
-    """Driver object source.
+    """Node tree input node.
     """
     bl_idname = "RBFNodeInputNode"
     bl_label = "Node"

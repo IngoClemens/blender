@@ -3,7 +3,7 @@
 import bpy
 
 from . import driver, matrix, nodeTree, plugs, poses
-from .. import var
+from .. import dev
 
 import json
 import math
@@ -11,7 +11,7 @@ import math
 MAX_SIZE = 1024
 
 
-def initialize(context):
+def initialize(context, refresh=False):
     """Pre-calculate the weight matrix based on the existing poses and
     activate the RBF node.
     This also creates the necessary drivers for the target object/s
@@ -19,6 +19,9 @@ def initialize(context):
 
     :param context: The current context.
     :type context: bpy.context
+    :param refresh: True, if only the RBF data should be updated. False,
+                    to also create the drivers from the outputs.
+    :type refresh: bool
 
     :return: None, or a tuple with the error type and message.
     :rtype: None or tuple(str, str)
@@ -46,16 +49,16 @@ def initialize(context):
         return result[0], result[1]
 
     # Create the drivers.
-    nodeGroup = nodeTree.getNodeTree(context)
-    result = driver.generateDrivers(nodeGroup, rbfNode)
-    if result:
-        return result[0], result[1]
+    if not refresh:
+        nodeGroup = nodeTree.getNodeTree(context)
+        result = driver.generateDrivers(nodeGroup, rbfNode)
+        if result:
+            return result[0], result[1]
 
     # Activate the RBF node.
     rbfNode.active = True
 
-    if var.EXPOSE_DATA:
-        print("RBF solver successfully initialized")
+    dev.log("RBF solver successfully initialized")
 
 
 def solveWeightMatrix(rbfNode):
@@ -103,11 +106,10 @@ def solveWeightMatrix(rbfNode):
     if inputMat_ext.rows * max(inputMat_ext.cols, outputMat.cols) > MAX_SIZE:
         return {'WARNING'}, "Maximum matrix size exceeded"
 
-    if var.EXPOSE_DATA:
-        print("Driver (with normalization row):")
-        print(inputMat_ext)
-        print("Driven:")
-        print(outputMat)
+    dev.log("Driver (with normalization row):")
+    dev.log(inputMat_ext)
+    dev.log("Driven:")
+    dev.log(outputMat)
 
     # Store the input matrix for the runtime calculation.
     rbfNode.setPoseMatrix(inputMat_ext)
@@ -117,12 +119,25 @@ def solveWeightMatrix(rbfNode):
     # ------------------------------------------------------------------
 
     # Create a distance matrix from all poses and calculate the mean
-    # distance for the rbf function.
-    distMat, meanDist = getDistances(inputMat)
-    rbfNode.meanDistance = meanDist
-    if var.EXPOSE_DATA:
-        print("Distance matrix:")
-        print(distMat)
+    # and standard deviation for the rbf function.
+    distMat = getDistances(inputMat)
+    rbfNode.meanDistance = distMat.mean()
+    rbfNode.variance = distMat.variance()
+    # Set the custom radius value to match the selected radius type.
+    # This overwrites the custom value but with the benefit of making
+    # any other radius type visible.
+    if rbfNode.radiusType != 'CUSTOM':
+        # Temporarily disable the RBF node to avoid an infinite loop,
+        # because the value change would again trigger the RBF
+        # initialization.
+        rbfNode.active_value = False
+        rbfNode.radius = rbfNode.getRadius()
+        rbfNode.active_value = True
+
+    dev.log("Distance matrix:")
+    dev.log(distMat)
+    dev.log("Mean distance: {}".format(rbfNode.meanDistance))
+    dev.log("Variance: {}".format(rbfNode.variance))
 
     # ------------------------------------------------------------------
     # Activations
@@ -130,9 +145,8 @@ def solveWeightMatrix(rbfNode):
 
     # Transform the distance matrix to include the activation values.
     distMat = getActivations(distMat, rbfNode.getRadius(), rbfNode.mode)
-    if var.EXPOSE_DATA:
-        print("Activations:")
-        print(distMat)
+    dev.log("Activations:")
+    dev.log(distMat)
 
     # ------------------------------------------------------------------
     # Solve
@@ -155,9 +169,8 @@ def solveWeightMatrix(rbfNode):
         for j in range(poseCount):
             weightMat[j, i] = w[j]
 
-    if var.EXPOSE_DATA:
-        print("Weight matrix:")
-        print(weightMat)
+    dev.log("Weight matrix:")
+    dev.log(weightMat)
 
     # ------------------------------------------------------------------
     # Store
@@ -165,8 +178,7 @@ def solveWeightMatrix(rbfNode):
 
     rbfNode.setWeightMatrix(weightMat)
 
-    if var.EXPOSE_DATA:
-        print("Weight matrix successfully created")
+    dev.log("Weight matrix successfully created")
 
     return True
 
@@ -208,29 +220,22 @@ def propertyDataToMatrix(nodes, isDriver=True):
 
 def getDistances(mat):
     """Build a matrix containing the distance values between all poses.
-    Based on all distances also calculate the mean distance which is
-    needed for the RBF calculation.
 
     :param mat: The matrix containing all poses.
     :type mat: Matrix
 
-    :return: A tuple with the distance matrix and the mean distance.
-    :rtype: tuple(Matrix, float)
+    :return: The distance matrix.
+    :rtype: Matrix
     """
     size = mat.rows
-
     distMat = matrix.Matrix(size, size)
-    value = 0.0
 
     for i in range(size):
         for j in range(size):
             dist = getRadius(mat.getRowVector(i), mat.getRowVector(j))
             distMat[i, j] = dist
-            value += dist
 
-    meanDist = value / (size*size)
-
-    return distMat, meanDist
+    return distMat
 
 
 def getRadius(vec1, vec2):
@@ -344,13 +349,15 @@ def getPoseWeights(rbfNode):
     norms = poseMat.getRowVector(poseSize)
     driverValues = matrix.normalizeVector(driverValues, factors=norms)
 
+    radius = rbfNode.getRadius()
+
     outValues = [0.0] * outSize
     for i in range(poseSize):
         poseValues = poseMat.getRowVector(i)
         dist = getRadius(poseValues, driverValues)
 
         for j in range(outSize):
-            outValues[j] += weightMat[i, j] * interpolateRbf(dist, rbfNode.getRadius(), rbfNode.mode)
+            outValues[j] += weightMat[i, j] * interpolateRbf(dist, radius, rbfNode.mode)
 
     # Get the output properties for setting their values.
     outProps = poses.getOutputProperties(rbfNode)

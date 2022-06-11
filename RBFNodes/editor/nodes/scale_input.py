@@ -6,7 +6,7 @@ from . import common, node
 
 
 class RBFScaleInputNode(node.RBFNode):
-    """Driver object source.
+    """Object scale input node.
     """
     bl_idname = "RBFScaleInputNode"
     bl_label = "Scale"

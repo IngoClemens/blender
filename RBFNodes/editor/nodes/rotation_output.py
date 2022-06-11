@@ -3,13 +3,13 @@
 import bpy
 
 from . import common, node
-from ... import var
+from ... import dev, var
 from ... core import driver
 from ... ui import preferences
 
 
 class RBFRotationOutputNode(node.RBFNode):
-    """Driver object source.
+    """Object rotation output node.
     """
     bl_idname = "RBFRotationOutputNode"
     bl_label = "Rotation"
@@ -91,23 +91,22 @@ class RBFRotationOutputNode(node.RBFNode):
     def getOutputProperties(self):
         """Return the selected output properties.
 
-        :return: A list with the selected output properties and their
-                 index as a tuple.
+        :return: A list with the node and the selected output property
+                 indices as a tuple.
         :rtype: list(bpy.types.Node, int)
         """
         result = []
 
-        shiftIndex = 0
-        if self.rotationMode != 'EULER':
-            if self.w_axis:
+        if self.rotationMode == 'EULER':
+            if self.x_axis:
                 result.append((self, 0))
-                shiftIndex = 1
-        if self.x_axis:
-            result.append((self, 0+shiftIndex))
-        if self.y_axis:
-            result.append((self, 1+shiftIndex))
-        if self.z_axis:
-            result.append((self, 2+shiftIndex))
+            if self.y_axis:
+                result.append((self, 1))
+            if self.z_axis:
+                result.append((self, 2))
+        else:
+            for i in range(4):
+                result.append((self, i))
 
         return result
 
@@ -145,7 +144,7 @@ class RBFRotationOutputNode(node.RBFNode):
                     dataPath = 'nodes["{}"].output[{}]'.format(self.name, str(index-shiftIndex))
                     driver.createNodeGroupDriver(nodeGroup, driven, dataPath, rotMode, index-shiftIndex)
                     # Get the index of the created driver.
-                    self.driverIndex[index] = driver.getTransformDriverIndex(driven, dataPath, rotMode, index-shiftIndex)
+                    self.driverIndex[index] = driver.getDriverIndex(driven, dataPath, rotMode, index-shiftIndex)
                     self.isDriver = True
 
     def deleteDriver(self, obj):
@@ -165,8 +164,7 @@ class RBFRotationOutputNode(node.RBFNode):
             if (self.rotationMode != 'EULER' and index == 0) or index > 0:
                 if axis:
                     result = obj.driver_remove(rotMode, index-shiftIndex)
-                    if var.EXPOSE_DATA:
-                        print("Delete driver: {} {}[{}] : {}".format(obj, rotMode, index, result))
+                    dev.log("Delete driver: {} {}[{}] : {}".format(obj, rotMode, index, result))
 
     def enableDriver(self, obj, enable):
         """Enable or disable the driver FCurves for the given object.

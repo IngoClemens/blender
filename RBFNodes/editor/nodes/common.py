@@ -4,6 +4,52 @@ import bpy
 
 from ... core import plugs, properties, shapeKeys
 from ... import var
+from ... ui import preferences
+
+
+# ----------------------------------------------------------------------
+# Object
+# ----------------------------------------------------------------------
+
+def drawObjectProperties(node, context, layout):
+    """Add the common object properties to the node.
+
+    :param node: The object node.
+    :type node: bpy.types.Node
+    :param context: The current context.
+    :type context: bpy.context
+    :param layout: The current layout.
+    :type layout: bpy.types.UILayout
+    """
+    layout.prop_search(node,
+                       property="sceneObject",
+                       search_data=context.scene,
+                       search_property="objects",
+                       text="")
+    if node.sceneObject and node.sceneObject.type == 'ARMATURE':
+        armature = node.sceneObject.data
+        if armature:
+            layout.prop_search(node,
+                               property="bone",
+                               search_data=armature,
+                               search_property="bones",
+                               text="")
+
+
+def getObjectFromNode(node):
+    """Return the selected object of the node.
+
+    :param node: The object node.
+    :type node: bpy.types.Node
+
+    :return: The currently selected object.
+    :rtype: bpy.types.Object
+    """
+    if node.sceneObject:
+        if node.sceneObject.type == 'ARMATURE':
+            if node.bone:
+                return node.sceneObject.pose.bones[node.bone]
+        return node.sceneObject
 
 
 # ----------------------------------------------------------------------
@@ -25,7 +71,8 @@ def drawTransformProperties(node, layout):
 
 
 def getLocationProperties(node, obj):
-    """Return the selected location properties for the given object.
+    """Return the selected location properties and their values for the
+    given object.
 
     :param node: The location node.
     :type node: bpy.types.Node
@@ -40,11 +87,11 @@ def getLocationProperties(node, obj):
     location = obj.location
 
     if node.x_axis:
-        result.append(("location[0]", location[0]))
+        result.append(("location[0]", location[0], None))
     if node.y_axis:
-        result.append(("location[1]", location[1]))
+        result.append(("location[1]", location[1], None))
     if node.z_axis:
-        result.append(("location[2]", location[2]))
+        result.append(("location[2]", location[2], None))
 
     return result
 
@@ -84,19 +131,20 @@ def drawRotationProperties(node, layout):
     :type layout: bpy.types.UILayout
     """
     layout.prop(node, "rotationMode")
-    # if node.rotationMode == 'QUATERNION':
-    #     layout.prop(node, "rotationType")
+    if node.rotationMode == 'QUATERNION' and node.bl_idname != "RBFRotationOutputNode":
+        layout.prop(node, "rotationType")
 
     row = layout.row(align=True)
-    if node.rotationMode != 'EULER':
-        row.prop(node, "w_axis")
-    row.prop(node, "x_axis")
-    row.prop(node, "y_axis")
-    row.prop(node, "z_axis")
+    if node.rotationMode == 'EULER':
+        # row.prop(node, "w_axis")
+        row.prop(node, "x_axis")
+        row.prop(node, "y_axis")
+        row.prop(node, "z_axis")
 
 
 def getRotationProperties(node, obj):
-    """Return the selected rotation properties for the given object.
+    """Return the selected rotation properties and their values for the
+    given object.
 
     :param node: The rotation node.
     :type node: bpy.types.Node
@@ -108,26 +156,56 @@ def getRotationProperties(node, obj):
     :rtype: list(tuple(str, float))
     """
     result = []
-    index = 0
 
     if node.rotationMode == 'EULER':
         rotation = obj.rotation_euler
-    elif node.rotationMode == 'QUATERNION':
-        rotation = obj.rotation_quaternion
-    else:
+        mode = var.ROTATIONS[node.rotationMode]
+        if node.x_axis:
+            result.append(("{}[{}]".format(mode, 0), rotation[0], None))
+        if node.y_axis:
+            result.append(("{}[{}]".format(mode, 1), rotation[1], None))
+        if node.z_axis:
+            result.append(("{}[{}]".format(mode, 2), rotation[2], None))
+    elif node.rotationMode == 'AXIS_ANGLE':
         rotation = obj.rotation_axis_angle
+        mode = var.ROTATIONS[node.rotationMode]
+        for i in range(4):
+            result.append(("{}[{}]".format(mode, i), rotation[i], None))
+    else:
+        rotation = obj.rotation_quaternion
+        if node.bl_idname == "RBFRotationOutputNode":
+            mode = var.ROTATIONS['QUATERNION']
+            values = [v for v in rotation]
+        else:
+            if node.rotationType == 'SWING_TWIST':
+                mode = var.ROTATIONS['QUATERNION']
+                values = [v for v in rotation]
+            elif node.rotationType == 'SWING':
+                swing, twist = rotation.to_swing_twist('X')
+                mode = var.ROTATIONS[node.rotationType]
+                values = [v for v in swing]
+            elif node.rotationType == 'TWIST_X':
+                swing, twist = rotation.to_swing_twist('X')
+                mode = var.ROTATIONS[node.rotationType]
+                values = [twist]
+            elif node.rotationType == 'TWIST_Y':
+                swing, twist = rotation.to_swing_twist('Y')
+                mode = var.ROTATIONS[node.rotationType]
+                values = [twist]
+            else:
+                swing, twist = rotation.to_swing_twist('Z')
+                mode = var.ROTATIONS[node.rotationType]
+                values = [twist]
 
-    if node.rotationMode != 'EULER':
-        if node.w_axis:
-            result.append(("{}[{}]".format(var.ROTATIONS[node.rotationMode], index), rotation[index]))
-        index = 1
-
-    if node.x_axis:
-        result.append(("{}[{}]".format(var.ROTATIONS[node.rotationMode], 0+index), rotation[0+index]))
-    if node.y_axis:
-        result.append(("{}[{}]".format(var.ROTATIONS[node.rotationMode], 1+index), rotation[1+index]))
-    if node.z_axis:
-        result.append(("{}[{}]".format(var.ROTATIONS[node.rotationMode], 2+index), rotation[2+index]))
+        for i in range(len(values)):
+            # For quaternions store every channel individually.
+            if len(values) > 1:
+                data = ("{}[{}]".format(mode, i), values[i], None)
+            # For a single twist axis store only the twist value but
+            # also add the quaternion values for restoring poses.
+            else:
+                data = (mode, values[i], [v for v in rotation])
+            result.append(data)
 
     return result
 
@@ -137,7 +215,8 @@ def getRotationProperties(node, obj):
 # ----------------------------------------------------------------------
 
 def getScaleProperties(node, obj):
-    """Return the selected scale properties for the given object.
+    """Return the selected scale properties and their values for the
+    given object.
 
     :param node: The scale node.
     :type node: bpy.types.Node
@@ -152,20 +231,123 @@ def getScaleProperties(node, obj):
     scale = obj.scale
 
     if node.x_axis:
-        result.append(("scale[0]", scale[0]))
+        result.append(("scale[0]", scale[0], None))
     if node.y_axis:
-        result.append(("scale[1]", scale[1]))
+        result.append(("scale[1]", scale[1], None))
     if node.z_axis:
-        result.append(("scale[2]", scale[2]))
+        result.append(("scale[2]", scale[2], None))
 
     return result
+
+
+# ----------------------------------------------------------------------
+# Object Property
+# ----------------------------------------------------------------------
+
+def propertyLabelCallback(node):
+    """Callback for updating the node label based on the property
+    selection.
+
+    :param node: The object property node.
+    :type node: bpy.types.Node
+    """
+    if preferences.getPreferences().autoLabel:
+        node.label = "Property: {}".format(node.propertyEnum)
+
+
+def listObjectProperties(node, source=True):
+    """Return a list with all object property names of the connected
+    object.
+
+    :param node: The object property node.
+    :type node: bpy.types.Node
+    :param source: True, if the object can be found on the source node.
+    :type source: bool
+
+    :return: A list with all object property names.
+    :rtype: list(str)
+    """
+    if source:
+        plug = node.inputs[0]
+    else:
+        plug = node.outputs[0]
+
+    obj = plugs.getObjectFromSocket(plug, source)
+    if obj:
+        return properties.objectProperties(obj)
+
+    return []
+
+
+def propertyItemsCallback(node, source=True):
+    """Callback for the property drop down menu to collect the names of
+    all object properties of the connected object.
+
+    :param node: The object property node.
+    :type node: bpy.types.Node
+    :param source: True, if the object can be found on the source node.
+    :type source: bool
+
+    :return: A list with tuple items for the enum property.
+    :rtype: list(tuple(str))
+    """
+    props = [('NONE', "––– Select –––", "")]
+
+    for prop in listObjectProperties(node, source):
+        props.append((prop, prop, ""))
+
+    return props
+
+
+def drawPropertyProperties(node, layout):
+    """Add the common object properties to the node.
+
+    :param node: The property node.
+    :type node: bpy.types.Node
+    :param layout: The current layout.
+    :type layout: bpy.types.UILayout
+    """
+    layout.prop(node, "propertyEnum")
+
+
+def getObjectProperties(node, obj):
+    """Return the selected object property and the value for the given
+    object.
+
+    :param node: The object property node.
+    :type node: bpy.types.Node
+    :param obj: The object to query.
+    :type obj: bpy.types.Object
+
+    :return: A list with the selected object property and the value as a
+             tuple.
+    :rtype: list(tuple(str, float))
+    """
+    if node.propertyEnum != 'NONE':
+        return properties.expandObjectProperty(obj, node.propertyEnum)
+
+    return []
 
 
 # ----------------------------------------------------------------------
 # Custom Property
 # ----------------------------------------------------------------------
 
-def getObjectProperties(node, source=True):
+def customLabelCallback(node):
+    """Callback for updating the node label based on the property
+    selection.
+
+    :param node: The custom property node.
+    :type node: bpy.types.Node
+    """
+    if preferences.getPreferences().autoLabel:
+        if node.mode == 'LIST':
+            node.label = "Custom: {}".format(node.propertyEnum)
+        else:
+            node.label = "Custom: {}".format(node.propertyName)
+
+
+def listCustomProperties(node, source=True):
     """Return a list with all custom property names of the connected
     object.
 
@@ -189,19 +371,6 @@ def getObjectProperties(node, source=True):
     return []
 
 
-def customLabelCallback(node):
-    """Callback for updating the node label based on the property
-    selection.
-
-    :param node: The custom property node.
-    :type node: bpy.types.Node
-    """
-    if node.mode == 'LIST':
-        node.label = node.propertyEnum
-    else:
-        node.label = node.propertyName
-
-
 def customItemsCallback(node, source=True):
     """Callback for the property drop down menu to collect the names of
     all custom properties of the connected object.
@@ -216,7 +385,7 @@ def customItemsCallback(node, source=True):
     """
     props = [('NONE', "––– Select –––", "")]
 
-    for prop in getObjectProperties(node, source):
+    for prop in listCustomProperties(node, source):
         props.append((prop, prop, ""))
 
     return props
@@ -225,7 +394,7 @@ def customItemsCallback(node, source=True):
 def drawCustomProperties(node, layout):
     """Add the common custom properties to the node.
 
-    :param node: The property node.
+    :param node: The custom property node.
     :type node: bpy.types.Node
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
@@ -238,7 +407,8 @@ def drawCustomProperties(node, layout):
 
 
 def getCustomProperties(node, obj):
-    """Return the name of the selected custom property.
+    """Return the selected custom property and the value for the given
+    object.
 
     :param node: The custom property node.
     :type node: bpy.types.Node
@@ -263,6 +433,20 @@ def getCustomProperties(node, obj):
 # Shape Key
 # ----------------------------------------------------------------------
 
+def shapeKeyLabelCallback(node):
+    """Callback for updating the node label based on the shape key
+    selection.
+
+    :param node: The shape key node.
+    :type node: bpy.types.Node
+    """
+    if preferences.getPreferences().autoLabel:
+        if node.mode == 'LIST':
+            node.label = "Shape Key: {}".format(node.shapeNameEnum)
+        else:
+            node.label = "Shape Key: {}".format(node.shapeName)
+
+
 def getObjectShapeKeys(node, source=True):
     """Return a list with all shape key names of the connected
     object.
@@ -284,19 +468,6 @@ def getObjectShapeKeys(node, source=True):
     if obj:
         return [k for k, v in shapeKeys.shapeKeyProperties(obj).items()]
     return []
-
-
-def shapeKeyLabelCallback(node):
-    """Callback for updating the node label based on the shape key
-    selection.
-
-    :param node: The shape key node.
-    :type node: bpy.types.Node
-    """
-    if node.mode == 'LIST':
-        node.label = node.shapeNameEnum
-    else:
-        node.label = node.shapeName
 
 
 def shapeKeyItemsCallback(node, source=True):
@@ -335,7 +506,8 @@ def drawShapeKeyProperties(node, layout):
 
 
 def getShapeKeyProperties(node, obj):
-    """Return the name of the selected shape key.
+    """Return the selected shape key property and the value for the
+    given object.
 
     :param node: The shape key node.
     :type node: bpy.types.Node
@@ -349,12 +521,153 @@ def getShapeKeyProperties(node, obj):
         if node.shapeNameEnum != 'NONE':
             name = "shapeKey:{}".format(node.shapeNameEnum)
             value = obj.data.shape_keys.key_blocks[node.shapeNameEnum].value
-            return [(name, value)]
+            return [(name, value, None)]
     else:
         if len(node.name):
             name = "shapeKey:{}".format(node.shapeName)
             value = obj.data.shape_keys.key_blocks[node.shapeName].value
-            return [(name, value)]
+            return [(name, value, None)]
+
+    return []
+
+
+# ----------------------------------------------------------------------
+# Modifiers
+# ----------------------------------------------------------------------
+
+def modifierLabelCallback(node):
+    """Callback for updating the node label based on the modifier
+    selection.
+
+    :param node: The modifier node.
+    :type node: bpy.types.Node
+    """
+    if preferences.getPreferences().autoLabel:
+        modifier = ""
+        prop = ""
+        if node.modifierEnum != 'NONE':
+            modifier = node.modifierEnum
+        if node.propertyEnum != 'NONE':
+            prop = node.propertyEnum
+        node.label = "Modifier: {}".format(".".join((modifier, prop)))
+
+
+def listModifiers(node, source=True):
+    """Return a list with all modifiers of the connected object.
+
+    :param node: The modifier node.
+    :type node: bpy.types.Node
+    :param source: True, if the object can be found on the source node.
+    :type source: bool
+
+    :return: A list with all modifier names.
+    :rtype: list(str)
+    """
+    if source:
+        plug = node.inputs[0]
+    else:
+        plug = node.outputs[0]
+
+    obj = plugs.getObjectFromSocket(plug, source)
+    if obj:
+        return properties.objectModifiers(obj)
+
+    return []
+
+
+def modifierItemsCallback(node, source=True):
+    """Callback for the modifier drop down menu to collect the names of
+    all modifiers of the connected object.
+
+    :param node: The modifier node.
+    :type node: bpy.types.Node
+    :param source: True, if the object can be found on the source node.
+    :type source: bool
+
+    :return: A list with tuple items for the enum property.
+    :rtype: list(tuple(str))
+    """
+    mods = [('NONE', "––– Select –––", "")]
+
+    for mod in listModifiers(node, source):
+        mods.append((mod, mod, ""))
+
+    return mods
+
+
+def listModifierProperties(node, source=True):
+    """Return a list with all modifier property names of the connected
+    object.
+
+    :param node: The modifier node.
+    :type node: bpy.types.Node
+    :param source: True, if the object can be found on the source node.
+    :type source: bool
+
+    :return: A list with all modifier property names.
+    :rtype: list(str)
+    """
+    if source:
+        plug = node.inputs[0]
+    else:
+        plug = node.outputs[0]
+
+    obj = plugs.getObjectFromSocket(plug, source)
+    if obj and node.modifierEnum != 'NONE':
+        return properties.modifierProperties(obj.modifiers[node.modifierEnum])
+
+    return []
+
+
+def modifierPropertiesCallback(node, source=True):
+    """Callback for the property drop down menu to collect the names of
+    all modifier properties of the connected object.
+
+    :param node: The modifier node.
+    :type node: bpy.types.Node
+    :param source: True, if the object can be found on the source node.
+    :type source: bool
+
+    :return: A list with tuple items for the enum property.
+    :rtype: list(tuple(str))
+    """
+    props = [('NONE', "––– Select –––", "")]
+
+    for prop in listModifierProperties(node, source):
+        props.append((prop, prop, ""))
+
+    return props
+
+
+def drawModifierProperties(node, layout):
+    """Add the modifier properties to the node.
+
+    :param node: The modifier node.
+    :type node: bpy.types.Node
+    :param layout: The current layout.
+    :type layout: bpy.types.UILayout
+    """
+    layout.prop(node, "modifierEnum")
+    if node.modifierEnum != 'NONE':
+        layout.prop(node, "propertyEnum")
+
+
+def getModifierProperties(node, obj):
+    """Return the selected modifer and property and the value for the
+    given object.
+
+    :param node: The modifier node.
+    :type node: bpy.types.Node
+    :param obj: The object to query.
+    :type obj: bpy.types.Object
+
+    :return: A list with the selected modifier property and the value as
+             a tuple.
+    :rtype: list(tuple(str, float))
+    """
+    if node.modifierEnum != 'NONE' and node.propertyEnum != 'NONE':
+        value = eval('obj.modifiers["{}"].{}'.format(node.modifierEnum, node.propertyEnum))
+        return [("modifier:{}:{}".format(node.modifierEnum, node.propertyEnum), value, None)]
 
     return []
 
@@ -423,7 +736,8 @@ def setPropertyPlugName(node, context):
         node.plugName = ""
 
     # Set the label
-    node.label = ": ".join([node.nodeName, node.propertyEnum])
+    if preferences.getPreferences().autoLabel:
+        node.label = ": ".join([node.nodeName, node.propertyEnum])
 
 
 def drawNodeProperties(node, layout):
@@ -442,7 +756,8 @@ def drawNodeProperties(node, layout):
 
 
 def getNodeProperties(node):
-    """Return the name of the selected node property.
+    """Return the selected node property and the value for the given
+    object.
 
     :param node: The node.
     :type node: bpy.types.Node

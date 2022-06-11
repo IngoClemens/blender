@@ -5,29 +5,29 @@ import bpy
 from . import common, node
 
 
-class RBFShapeKeyInputNode(node.RBFNode):
-    """Shape key input node.
+class RBFCustomInputNode(node.RBFNode):
+    """Custom property input node.
     """
-    bl_idname = "RBFShapeKeyInputNode"
-    bl_label = "Shape Key"
-    bl_icon = 'SHAPEKEY_DATA'
+    bl_idname = "RBFCustomInputNode"
+    bl_label = "Custom"
+    bl_icon = 'EMPTY_SINGLE_ARROW'
 
     # ------------------------------------------------------------------
     # Property callbacks
     # ------------------------------------------------------------------
 
     def setLabelCallback(self, context):
-        """Callback for updating the node label based on the shape key
+        """Callback for updating the node label based on the property
         selection.
 
         :param context: The current context.
         :type context: bpy.context
         """
-        common.shapeKeyLabelCallback(self)
+        common.customLabelCallback(self)
 
     def propItems(self, context):
         """Callback for the property drop down menu to collect the names
-        of all shape keys of the connected object.
+        of all custom properties of the connected object.
 
         :param context: The current context.
         :type context: bpy.context
@@ -35,7 +35,7 @@ class RBFShapeKeyInputNode(node.RBFNode):
         :return: A list with tuple items for the enum property.
         :rtype: list(tuple(str))
         """
-        return common.shapeKeyItemsCallback(self, source=False)
+        return common.customItemsCallback(self, source=False)
 
     # ------------------------------------------------------------------
     # Properties
@@ -44,8 +44,8 @@ class RBFShapeKeyInputNode(node.RBFNode):
     modeItems = [('LIST', "Auto", ""),
                  ('MANUAL', "Manual", "")]
     mode : bpy.props.EnumProperty(items=modeItems)
-    shapeName : bpy.props.StringProperty(name="", update=setLabelCallback)
-    shapeNameEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
+    propertyName : bpy.props.StringProperty(name="", update=setLabelCallback)
+    propertyEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
 
     def init(self, context):
         """Initialize the node and add the sockets.
@@ -53,7 +53,7 @@ class RBFShapeKeyInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFPropertySocket", "Shape Key")
+        self.addOutput("RBFPropertySocket", "Custom")
 
     def draw(self, context, layout):
         """Draw the content of the node.
@@ -63,7 +63,7 @@ class RBFShapeKeyInputNode(node.RBFNode):
         :param layout: The current layout.
         :type layout: bpy.types.UILayout
         """
-        common.drawShapeKeyProperties(self, layout)
+        common.drawCustomProperties(self, layout)
 
     def draw_buttons_ext(self, context, layout):
         """Draw node buttons in the sidebar.
@@ -80,12 +80,13 @@ class RBFShapeKeyInputNode(node.RBFNode):
     # ------------------------------------------------------------------
 
     def getProperties(self, obj):
-        """Return the name of the selected shape key.
+        """Return the name of the selected custom property.
 
         :param obj: The object to query.
         :type obj: bpy.types.Object
 
-        :return: The selected shape key name and the value as a tuple.
-        :rtype: tuple(str, float)
+        :return: A list with the selected custom property and the value
+                 as a tuple.
+        :rtype: list(tuple(str, float))
         """
-        return common.getShapeKeyProperties(self, obj)
+        return common.getCustomProperties(self, obj)

@@ -5,14 +5,6 @@ import bpy
 from .. core import dev, rbf, nodeTree, poses
 
 
-'''
-class RBF_Nodes_Properties(bpy.types.PropertyGroup):
-    """Property group class to make the properties globally available.
-    """
-    pass
-'''
-
-
 class RBFNODES_OT_CreateRBF(bpy.types.Operator):
     """Operator class for creating a new RBF node tree.
     """

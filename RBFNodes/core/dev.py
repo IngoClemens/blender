@@ -3,6 +3,7 @@
 import bpy
 
 from . import nodeTree, poses
+from .. import dev
 
 import json
 
@@ -15,13 +16,13 @@ def dumpPose(context):
     """
     node = context.active_node
     if node and node.bl_idname == "RBFPoseNode":
-        print("Pose: {}".format(node.name))
-        print("Driver:")
-        lines = poses.recallPoseForObject(json.loads(node.driverData), False)
-        print("\n".join(lines))
-        print("Driven:")
-        lines = poses.recallPoseForObject(json.loads(node.drivenData), False)
-        print("\n".join(lines))
+        dev.log("# Pose: {}".format(node.name))
+        dev.log("# Driver:")
+        lines = poses.recallPoseForObject(json.loads(node.driverData), True)
+        dev.log("\n".join(lines))
+        dev.log("# Driven:")
+        lines = poses.recallPoseForObject(json.loads(node.drivenData), True)
+        dev.log("\n".join(lines))
 
 
 def dumpRBF(context):
@@ -31,4 +32,4 @@ def dumpRBF(context):
     :type context: bpy.context
     """
     rbfNode = nodeTree.getRBFNode(context)
-    print(rbfNode.getWeightMatrix())
+    dev.log(rbfNode.getWeightMatrix())

@@ -1,8 +1,10 @@
 # <pep8 compliant>
 
 import bpy
+import bpy.utils.previews
 
 from . import operators, panel, preferences
+# from . icons import toolIcons
 
 
 # ----------------------------------------------------------------------
@@ -22,23 +24,20 @@ classes = [preferences.RBFNODESPreferences,
            operators.RBFNODES_OT_DumpRBF,
            panel.RBFNODES_PT_RBF]
 
-# Excluded:
-# operators.RBF_Nodes_Properties
-
 
 def register():
     """Register the panel and operators.
     """
+    # toolIcons.create()
+
     for cls in classes:
         bpy.utils.register_class(cls)
-
-    # bpy.types.Scene.rbf_nodes = bpy.props.PointerProperty(type=operators.RBF_Nodes_Properties)
 
 
 def unregister():
     """Unregister the panel and operators.
     """
+    # toolIcons.delete()
+
     for cls in classes:
         bpy.utils.unregister_class(cls)
-
-    # del bpy.types.Scene.rbf_nodes
