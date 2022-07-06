@@ -20,6 +20,11 @@ One-button tool to quickly set up driving relationships between one or more prop
 
 [Documentation](https://github.com/IngoClemens/blender/wiki/Rapid-SDK)
 
+## RBF Nodes
+Node-based RBF solver for driving multiple properties with multiple driver values.
+
+[Documentation](https://github.com/IngoClemens/blender/wiki/RBF-Nodes)
+
 ## Thumb Mate
 Create customizable thumbnail previews for object assets in the asset browser.
 
