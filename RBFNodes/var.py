@@ -36,7 +36,7 @@ INPUT_OBJECT_OFFSET = (-300, 100)
 OUTPUT_OBJECT_OFFSET = (330, 100)
 FIRST_POSE_OFFSET = (-300, -300)
 POSE_OFFSET = (0, -95)
-FIRST_NODE_OFFSET = (-300, -50)
+FIRST_NODE_OFFSET = (-330, -50)
 NODE_OFFSET = (0, -50)
 
 # ----------------------------------------------------------------------

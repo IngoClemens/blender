@@ -22,13 +22,14 @@ Copyright (C) 2022, Ingo Clemens, brave rabbit, www.braverabbit.com
 
 Description:
 
-Node based RBF Solver.
+Node-based RBF solver for driving multiple properties with multiple
+driver values.
 
 ------------------------------------------------------------------------
 
 Changelog:
 
-0.3.0 - 2022-06-09
+0.3.0 - 2022-07-06
 - Various changes and improvements.
 - Added support for object properties and modifiers.
 - Added radius presets.
@@ -52,10 +53,10 @@ bl_info = {"name": "RBF Nodes",
            "version": (0, 3, 0),
            "blender": (3, 1, 0),
            "category": "Animation",
-           "location": "",
-           "description": "",
+           "location": "Editors > RBF Nodes Editor",
+           "description": "Node-based RBF solver for driving properties",
            "warning": "",
-           "doc_url": "",
+           "doc_url": "https://github.com/IngoClemens/blender/wiki/RBF-Nodes",
            "tracker_url": ""}
 
 
