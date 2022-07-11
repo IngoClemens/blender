@@ -37,7 +37,7 @@ OUTPUT_OBJECT_OFFSET = (330, 100)
 FIRST_POSE_OFFSET = (-300, -300)
 POSE_OFFSET = (0, -95)
 FIRST_NODE_OFFSET = (-330, -50)
-NODE_OFFSET = (0, -50)
+NODE_OFFSET = (0, -60)
 
 # ----------------------------------------------------------------------
 # Enum properties
@@ -59,3 +59,18 @@ ROTATION_TYPE = [('SWING', "Swing", "", "", 1),
                  ('TWIST_Y', "Twist Y", "", "", 3),
                  ('TWIST_Z', "Twist Z", "", "", 4),
                  ('SWING_TWIST', "Swing Twist", "", "", 5)]
+
+# ----------------------------------------------------------------------
+# Matrix sizes
+# ----------------------------------------------------------------------
+# The maximum number of values per vector array. This number is fixed
+# as defined by Blender.
+MAX_LEN = 32
+# The number of concatenating arrays for storing pose and weight
+# matrices.
+# This number needs to be edited when the lists of floatVectorProperties
+# are getting extended.
+NUM_ARRAYS = 32
+# The maximum number of values which can be stored by concatenating the
+# floatVectorProperties.
+MAX_SIZE = MAX_LEN * NUM_ARRAYS

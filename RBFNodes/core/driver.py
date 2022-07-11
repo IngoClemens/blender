@@ -195,6 +195,9 @@ def deleteTransformDriver(node, obj, transform):
             result = obj.driver_remove(transform, index)
             dev.log("Delete driver: {} {}[{}] : {}".format(obj, transform, index, result))
 
+    # Clear the driver indices.
+    node.driverIndex = [-1, -1, -1]
+
 
 def enableDriver(node, obj, enable):
     """Enable or disable the driver FCurves for the given object.

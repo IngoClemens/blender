@@ -29,6 +29,16 @@ driver values.
 
 Changelog:
 
+0.4.0 - 2022-07-11
+- Improved error messages when the number of storable values gets
+  exceeded.
+- Added an error label to the RBF node when activating the RBF fails.
+- Added a short description to assist extending the number of pose
+  values.
+- Added a constant to define the number of properties to store the pose
+  and weight values for better proceduralism.
+- Fixed: A pose cannot be edited after the RBF has been reset.
+
 0.3.0 - 2022-07-06
 - Various changes and improvements.
 - Added support for object properties and modifiers.
@@ -50,7 +60,7 @@ from . core import handler
 
 bl_info = {"name": "RBF Nodes",
            "author": "Ingo Clemens",
-           "version": (0, 3, 0),
+           "version": (0, 4, 0),
            "blender": (3, 1, 0),
            "category": "Animation",
            "location": "Editors > RBF Nodes Editor",

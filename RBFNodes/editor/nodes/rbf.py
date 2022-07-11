@@ -9,11 +9,6 @@ from ... import dev, var
 import math
 
 
-# The maximum number of values per vector array. This number is fixed
-# as defined by Blender.
-MAX_LEN = 32
-
-
 class RBFSolverNode(node.RBFNode):
     """RBF node.
     """
@@ -94,6 +89,11 @@ class RBFSolverNode(node.RBFNode):
     poseMatrix29 : bpy.props.FloatVectorProperty(size=32)
     poseMatrix30 : bpy.props.FloatVectorProperty(size=32)
     poseMatrix31 : bpy.props.FloatVectorProperty(size=32)
+    # Add additional floatVectorProperties here if the default capacity
+    # is not efficient.
+    # Important:
+    # Also extend the number of weightMatrix properties below.
+    # Update the NUM_ARRAYS constant in var.py accordingly.
 
     poseMatrixRows : bpy.props.IntProperty()
     poseMatrixColumns : bpy.props.IntProperty()
@@ -130,6 +130,11 @@ class RBFSolverNode(node.RBFNode):
     weightMatrix29 : bpy.props.FloatVectorProperty(size=32)
     weightMatrix30 : bpy.props.FloatVectorProperty(size=32)
     weightMatrix31 : bpy.props.FloatVectorProperty(size=32)
+    # Add additional floatVectorProperties here if the default capacity
+    # is not efficient.
+    # Important:
+    # Also extend the number of poseMatrix properties above.
+    # Update the NUM_ARRAYS constant in var.py accordingly.
 
     weightMatrixRows : bpy.props.IntProperty()
     weightMatrixColumns : bpy.props.IntProperty()
@@ -201,8 +206,10 @@ class RBFSolverNode(node.RBFNode):
         """
         if state:
             color = [i*0.55 for i in var.COLOR_GREEN[:-1]]
+            self.resetLabel()
         else:
             color = [i*0.55 for i in var.COLOR_RED[:-1]]
+            self.suffixLabel("Error")
 
         self.use_custom_color = True
         self.color = color
@@ -220,10 +227,11 @@ class RBFSolverNode(node.RBFNode):
         self.poseMatrixColumns = 0
         self.weightMatrixRows = 0
         self.weightMatrixColumns = 0
+        self.resetLabel()
         dev.log("Reset state")
 
-        values = [0] * MAX_LEN
-        for i in range(32):
+        values = [0] * var.MAX_LEN
+        for i in range(var.NUM_ARRAYS):
             self.setFloatVector(i, values, "poseMatrix")
             self.setFloatVector(i, values, "weightMatrix")
         dev.log("Reset matrices")
@@ -247,6 +255,25 @@ class RBFSolverNode(node.RBFNode):
             return math.sqrt(self.variance)
         else:
             return self.radius
+
+    def suffixLabel(self, suffix):
+        """Extend the current node label with the given suffix.
+
+        :param suffix: The suffix string to add.
+        :type suffix: str
+        """
+        current = self.label
+        if not len(current):
+            current = self.bl_label
+        self.label = "{}: {}".format(current, suffix)
+
+    def resetLabel(self):
+        """Reset the label by removing the suffix.
+        """
+        current = self.label.split(":")[0]
+        if current == self.bl_label:
+            current = ""
+        self.label = current
 
     # ------------------------------------------------------------------
     # Matrix storage
@@ -288,16 +315,16 @@ class RBFSolverNode(node.RBFNode):
         # The complete number of values to store.
         size = len(values)
         # The number of vector arrays required.
-        arrayCount = math.ceil(size / MAX_LEN)
+        arrayCount = math.ceil(size / var.MAX_LEN)
         # The number of values required to fill all arrays.
-        fullSize = arrayCount * MAX_LEN
+        fullSize = arrayCount * var.MAX_LEN
         # Extend the value list to fill all arrays.
         values.extend([0] * (fullSize - size))
 
         arrayIndex = 0
-        for i in range(0, size, MAX_LEN):
+        for i in range(0, size, var.MAX_LEN):
             # Store the partial matrix in one of the vector arrays.
-            self.setFloatVector(arrayIndex, values[i:i + MAX_LEN], name)
+            self.setFloatVector(arrayIndex, values[i:i + var.MAX_LEN], name)
             # Increment the vector property index.
             arrayIndex += 1
 
@@ -341,7 +368,7 @@ class RBFSolverNode(node.RBFNode):
 
         allValues = []
         # The number of vector arrays to read from.
-        arrayCount = math.ceil(size / MAX_LEN)
+        arrayCount = math.ceil(size / var.MAX_LEN)
         for a in range(arrayCount):
             allValues.extend(self.getFloatVector(a, name))
 

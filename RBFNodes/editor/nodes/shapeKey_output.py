@@ -175,6 +175,9 @@ class RBFShapeKeyOutputNode(node.RBFNode):
             result = shapeKey.driver_remove(drivenProp, -1)
             dev.log("Delete driver: {} {} : {}".format(shapeKey, drivenProp, result))
 
+        # Clear the driver index.
+        self.driverIndices[0] = -1
+
     def enableDriver(self, driven, enable):
         """Enable or disable the driver FCurves for the given object.
 

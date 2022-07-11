@@ -166,6 +166,9 @@ class RBFRotationOutputNode(node.RBFNode):
                     result = obj.driver_remove(rotMode, index-shiftIndex)
                     dev.log("Delete driver: {} {}[{}] : {}".format(obj, rotMode, index, result))
 
+        # Clear the driver indices.
+        self.driverIndex = [-1, -1, -1, -1]
+
     def enableDriver(self, obj, enable):
         """Enable or disable the driver FCurves for the given object.
 

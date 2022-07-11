@@ -210,6 +210,9 @@ class RBFModifierOutputNode(node.RBFNode):
                 if size > 1:
                     drivenIndex += 1
 
+        # Clear the driver indices.
+        self.driverIndex = [-1, -1, -1]
+
     def enableDriver(self, obj, enable):
         """Enable or disable the driver FCurves for the given object.
 

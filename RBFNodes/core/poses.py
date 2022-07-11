@@ -84,6 +84,12 @@ def createPose(context):
         node.drivenSize = poseDataSize(drivenData)
         dev.log("Pose Size: Driver - {} | Driven - {}".format(node.driverSize, node.drivenSize))
 
+        if (len(poseNodes) + 1) * node.driverSize > var.MAX_SIZE:
+            return {'WARNING'}, "Too many poses or input values"
+
+        if len(poseNodes) * node.drivenSize > var.MAX_SIZE:
+            return {'WARNING'}, "Too many poses or output values"
+
     else:
         return {'WARNING'}, "No RBF node to add pose to"
 

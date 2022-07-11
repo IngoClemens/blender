@@ -3,12 +3,10 @@
 import bpy
 
 from . import driver, matrix, nodeTree, plugs, poses
-from .. import dev
+from .. import dev, var
 
 import json
 import math
-
-MAX_SIZE = 1024
 
 
 def initialize(context, refresh=False):
@@ -103,8 +101,11 @@ def solveWeightMatrix(rbfNode):
     # not exceeded.
     # The maximum size is defined by the 32 vector array properties of
     # the RBF node which only can store 32 float values per array.
-    if inputMat_ext.rows * max(inputMat_ext.cols, outputMat.cols) > MAX_SIZE:
-        return {'WARNING'}, "Maximum matrix size exceeded"
+    if inputMat_ext.rows * inputMat_ext.cols > var.MAX_SIZE:
+        return {'WARNING'}, "Maximum pose matrix size exceeded"
+
+    if outputMat.rows * outputMat.cols > var.MAX_SIZE:
+        return {'WARNING'}, "Maximum weight matrix size exceeded"
 
     dev.log("Driver (with normalization row):")
     dev.log(inputMat_ext)
