@@ -61,6 +61,9 @@ frame padding.
 
 Changelog:
 
+0.2.0 - 2022-11-03
+      - Added support for creating collection asset previews.
+
 0.1.0 - 2022-03-24
       - First public release
 
@@ -69,7 +72,7 @@ Changelog:
 
 bl_info = {"name": "Thumb Mate",
            "author": "Ingo Clemens",
-           "version": (0, 1, 0),
+           "version": (0, 2, 0),
            "blender": (3, 0, 0),
            "category": "Import-Export",
            "location": "Asset Browser",
@@ -109,7 +112,8 @@ ROTATION = 0
 PADDING = 5
 
 
-ANN_RENDER_OPERATOR = "Render custom preview for the selected objects or active collection"
+ANN_RENDER_OPERATOR = "Render a custom preview for the selected objects or active collection"
+ANN_COLLECTION_OPERATOR = "Render a custom preview for the active collection"
 ANN_UPDATE_OPERATOR = "Create a custom preview for the selected data-block"
 ANN_PATH = ("The path containing HDRI images to be used for the rendering environment.\n"
             "The default is the built-in world images path.")
@@ -156,17 +160,40 @@ def currentSelection():
     if sel:
         return sel
     else:
-        col = bpy.context.view_layer.active_layer_collection
-        if col:
-            # If the selected collection is the master scene collection
-            # it cannot be queried directly since it's of type
-            # LayerCollection.
-            # In this case get the wrapped collection which then can
-            # be queried just like any other collection.
-            if type(col) is bpy.types.LayerCollection:
-                col = col.collection
+        col = activeCollection()
+        if col is not None:
             # Filter only mesh objects.
-            return [o for o in col.all_objects if o.type == 'MESH']
+            return collectionMeshes(col)
+
+
+def activeCollection():
+    """Return the currently active collection.
+
+    :return: The active collection.
+    :rtype: bpy.types.Collection or None
+    """
+    col = bpy.context.view_layer.active_layer_collection
+    if col:
+        # If the selected collection is the master scene collection
+        # it cannot be queried directly since it's of type
+        # LayerCollection.
+        # In this case get the wrapped collection which then can
+        # be queried just like any other collection.
+        if type(col) is bpy.types.LayerCollection:
+            return col.collection
+        return col
+
+
+def collectionMeshes(collection):
+    """Return the list of mesh objects of the given collection.
+
+    :param collection: The collection to get the meshes from.
+    :type collection: bpy.types.Collection
+
+    :return: The list of mesh objects of the collection.
+    :rtype: list(bpy.types.Object)
+    """
+    return [o for o in collection.all_objects if o.type == 'MESH']
 
 
 def environmentImagesPath():
@@ -257,7 +284,7 @@ def outputPath():
     """
     scenePath = bpy.data.filepath
     # If the scene hasn't been saved yet the path is empty.
-    # Returning an empty path promps the user for saving the scene.
+    # Returning an empty path prompts the user for saving the scene.
     if not scenePath:
         return
     renderPath = os.path.join(os.path.dirname(scenePath), "{}_thumbs".format(NAME))
@@ -419,7 +446,7 @@ def createWorld(filePath):
     # Create a new world and make it current.
     world = bpy.data.worlds.new(WORLD_NAME)
     bpy.context.scene.world = world
-    world.use_nodes= True
+    world.use_nodes = True
 
     # Create the necessary shading nodes for the environment map.
     coord = world.node_tree.nodes.new(type="ShaderNodeTexCoord")
@@ -464,8 +491,9 @@ def cleanupWorld():
 def renderPreviews(objects, imagePath):
     """Create the preview images for the given objects.
 
-    :param objects: The list of objects to create previews for.
-    :type objects: list(bpy.types.Object)
+    :param objects: The list of objects or collections to create
+                    previews for.
+    :type objects: list(bpy.types.Object) or list(bpy.types.Collection)
     :param imagePath: The render output path.
     :type imagePath: str
 
@@ -483,11 +511,11 @@ def renderPreviews(objects, imagePath):
 
         for obj in objects:
             # Select the current object that the camera can focus on it.
-            obj.select_set(True)
-            bpy.context.view_layer.objects.active = obj
-
-            # Set the object to be renderable.
-            obj.hide_render = False
+            if isinstance(obj, bpy.types.Collection):
+                for mesh in collectionMeshes(obj):
+                    setObjectRenderable(mesh, True)
+            else:
+                setObjectRenderable(obj, True)
 
             # Frame the selection and adjust the focal length to allow
             # for a safe framing area.
@@ -506,8 +534,11 @@ def renderPreviews(objects, imagePath):
             cache.values["camera"].data.lens = prefs.focal_value
 
             # Deselect the object and hide it from rendering.
-            obj.select_set(False)
-            obj.hide_render = True
+            if isinstance(obj, bpy.types.Collection):
+                for mesh in collectionMeshes(obj):
+                    setObjectRenderable(mesh, False)
+            else:
+                setObjectRenderable(obj, False)
 
         # Reset the previous render state for all objects.
         resetRenderable(renderState)
@@ -519,7 +550,8 @@ def renderPreviews(objects, imagePath):
         try:
             override = bpy.context.copy()
         except TypeError:
-            return ({'ERROR'}, "An error occurred while trying to access the context for loading the custom preview")
+            return ({'ERROR'}, ("An error occurred while trying to access the context " +
+                                "for loading the custom preview"))
 
         for obj in objects:
             if not obj.asset_data:
@@ -545,15 +577,15 @@ def setupRender():
     # Discontinue if it cannot be found.
     envPath = prefs.path_value
     if not envPath:
-        return ({'WARNING'}, "No environment images path defined")
+        return {'WARNING'}, "No environment images path defined"
 
     # Discontinue if there is no output path defined.
     renderPath = outputPath()
     if not renderPath:
-        return ({'WARNING'}, "The scene needs to be saved before rendering")
+        return {'WARNING'}, "The scene needs to be saved before rendering"
 
     if prefs.image_value == 'NONE':
-        return ({'WARNING'}, "No environment image defined")
+        return {'WARNING'}, "No environment image defined"
 
     setRenderSettings(os.path.join(renderPath, IMAGE_NAME))
     createCamera()
@@ -579,7 +611,8 @@ def createAssetPreview(objects):
     currently active collection.
 
     :param objects: The object or list of objects to process.
-    :type objects: list(bpy.types.Object)
+    :type objects: bpy.types.Object or bpy.types.Collection or
+                   list(bpy.types.Object)
     """
     if not type(objects) is list:
         objects = [objects]
@@ -588,7 +621,7 @@ def createAssetPreview(objects):
     if objects:
         # Return if there is no 3d view available.
         if not get3dView():
-            return ({'WARNING'}, "No 3d view found")
+            return {'WARNING'}, "No 3d view found"
 
         result = setupRender()
         # If the resulting path contains an error no rendering is
@@ -605,8 +638,32 @@ def createAssetPreview(objects):
 
         # Restore the selection.
         for obj in objects:
-            obj.select_set(True)
-            bpy.context.view_layer.objects.active = obj
+            if isinstance(obj, bpy.types.Object):
+                obj.select_set(True)
+                bpy.context.view_layer.objects.active = obj
+            elif isinstance(obj, bpy.types.Collection):
+                # Deselect all collection meshes.
+                for mesh in collectionMeshes(obj):
+                    mesh.select_set(False)
+            else:
+                pass
+
+
+def setObjectRenderable(obj, state):
+    """Set the given object to the given renderable state. If the render
+    state is True, the object gets also selected.
+
+    :param obj: The object to set the renderable state for.
+    :type obj: boy.types.Object
+    :param state: True, if the object should be set to renderable.
+    :type state: bool
+    """
+    obj.select_set(state)
+    # Only make the object active if it's also selected.
+    if state:
+        bpy.context.view_layer.objects.active = obj
+    # Set the object to be renderable.
+    obj.hide_render = not state
 
 
 # ----------------------------------------------------------------------
@@ -638,6 +695,31 @@ class THUMBMATE_OT_renderPreview(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class THUMBMATE_OT_renderCollectionPreview(bpy.types.Operator):
+    """Operator class for rendering a custom preview image for the
+    active collection.
+    """
+    bl_idname = "thumbmate.render_collection_preview"
+    bl_label = "Render collection asset preview"
+    bl_description = ANN_COLLECTION_OPERATOR
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        collection = activeCollection()
+        if collection is not None:
+            result = createAssetPreview(collection)
+            if result:
+                self.report(result[0], result[1])
+                return {'CANCELLED'}
+
+        return {'FINISHED'}
+
+
 class THUMBMATE_OT_updatePreview(AssetBrowserMetadataOperator, bpy.types.Operator):
     """Operator class for rendering a custom preview image for the
     currently selected asset.
@@ -650,7 +732,8 @@ class THUMBMATE_OT_updatePreview(AssetBrowserMetadataOperator, bpy.types.Operato
     def execute(self, context):
         active_asset = SpaceAssetInfo.get_active_asset(context)
         # Only render the image if the asset is a mesh.
-        if active_asset.id_data.type == 'MESH':
+        if (isinstance(active_asset.id_data, bpy.types.Collection) or
+                active_asset.id_data.type == 'MESH'):
             result = createAssetPreview(active_asset.id_data)
             if result:
                 self.report(result[0], result[1])
@@ -670,7 +753,10 @@ class THUMBMATE_MT_menu(bpy.types.Menu):
     def draw(self, context):
         self.layout.operator(THUMBMATE_OT_renderPreview.bl_idname,
                              text="Render Selected Objects",
-                             icon="RENDER_RESULT")
+                             icon="OUTLINER_OB_MESH")
+        self.layout.operator(THUMBMATE_OT_renderCollectionPreview.bl_idname,
+                             text="Render Selected Collection",
+                             icon="OUTLINER_COLLECTION")
         self.layout.operator(THUMBMATE_OT_updatePreview.bl_idname,
                              text="Update Selected Asset",
                              icon="RENDER_STILL")
@@ -841,6 +927,7 @@ class THUMBMATEPreferences(bpy.types.AddonPreferences):
 
 # Collect all classes in a list for easier access.
 classes = [THUMBMATE_OT_renderPreview,
+           THUMBMATE_OT_renderCollectionPreview,
            THUMBMATE_OT_updatePreview,
            THUMBMATE_MT_menu,
            metadataPanelOverride(),
