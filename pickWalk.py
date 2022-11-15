@@ -51,6 +51,12 @@ Ctrl + Alt + Left/Right Arrow: Select Opposite. When in mesh edit mode
 
 Changelog:
 
+0.6.0 - 2022-10-15
+      - Moved the keymaps from 3d view generic to 3d view.
+      - Included up/down arrow to also walk over curve points.
+      - Improvements to querying the current selection.
+      - Minor typo fixes and code cleanup.
+
 0.5.0 - 2022-02-17
       - Improved walking order for top level objects of a collection.
 
@@ -79,7 +85,7 @@ Changelog:
 
 bl_info = {"name": "PickWalk",
            "author": "Ingo Clemens",
-           "version": (0, 5, 0),
+           "version": (0, 6, 0),
            "blender": (2, 93, 0),
            "category": "Interface",
            "location": "3D View, Outliner, Graph Editor, Dope Sheet",
@@ -183,11 +189,14 @@ def currentSelection():
     :return: The list of selected objects.
     :rtype: bpy.data.objects
     """
-    if bpy.context.object.type == 'ARMATURE':
-        if bpy.context.object.mode == 'POSE':
-            return bpy.context.selected_pose_bones
-        elif bpy.context.object.mode == 'EDIT':
-            return bpy.context.selected_bones
+    if bpy.context.object:
+        if bpy.context.object.type == 'ARMATURE':
+            if bpy.context.object.mode == 'POSE':
+                return bpy.context.selected_pose_bones
+            elif bpy.context.object.mode == 'EDIT':
+                return bpy.context.selected_bones
+            else:
+                return bpy.context.selected_objects
         else:
             return bpy.context.selected_objects
     else:
@@ -200,11 +209,14 @@ def deselectAll():
     Object selection depends on the type of object and the current mode,
     armatures in particular.
     """
-    if bpy.context.object.type == 'ARMATURE':
-        if bpy.context.object.mode == 'POSE':
-            bpy.ops.pose.select_all(action='DESELECT')
-        elif bpy.context.object.mode == 'EDIT':
-            bpy.ops.armature.select_all(action='DESELECT')
+    if bpy.context.object:
+        if bpy.context.object.type == 'ARMATURE':
+            if bpy.context.object.mode == 'POSE':
+                bpy.ops.pose.select_all(action='DESELECT')
+            elif bpy.context.object.mode == 'EDIT':
+                bpy.ops.armature.select_all(action='DESELECT')
+            else:
+                bpy.ops.object.select_all(action='DESELECT')
         else:
             bpy.ops.object.select_all(action='DESELECT')
     else:
@@ -268,7 +280,7 @@ def sideIdentifier(name):
     # The first item is for prefix/suffix use, the second for use in a
     # regular expression, in case it's a special character which needs
     # escaping.
-    separator = [("_", "_"), (".", "\.")]
+    separator = [(r"_", r"_"), (r".", r"\.")]
 
     for sep in separator:
         # First only the prefixes and suffixes get processed because
@@ -582,7 +594,7 @@ class Cycle(object):
                         status[self.obj[obj]["vertex"][i]] = (i, True)
 
             # If the selected vertex isn't yet included add it to the
-            # list and collect it's data.
+            # list and collect its data.
             if not exists:
                 self.obj[obj]["vertex"].append(vert.index)
                 linked = []
@@ -709,7 +721,7 @@ def walkMeshComponents(context, x=1, y=0, extend=False, cycle=False, toNext=True
         # The list of vertices to select. The vertices cannot be
         # selected directly because the loop goes through the current
         # selection and changing the selection affects the loop.
-        # Therefore the vertices to select are stored and the resulting
+        # Therefore, the vertices to select are stored and the resulting
         # selection is set afterwards.
         selection = []
         cycleSelection = []
@@ -947,7 +959,8 @@ class PICKWALK_OT_hierarchyUp(bpy.types.Operator):
         if walkComponents(context,
                           x=0,
                           y=1,
-                          extend=self.extend):
+                          extend=self.extend,
+                          toNext=True):
             return {'FINISHED'}
 
         selection = currentSelection()
@@ -991,7 +1004,8 @@ class PICKWALK_OT_hierarchyDown(bpy.types.Operator):
         if walkComponents(context,
                           x=0,
                           y=-1,
-                          extend=self.extend):
+                          extend=self.extend,
+                          toNext=False):
             return {'FINISHED'}
 
         selection = currentSelection()
@@ -1105,7 +1119,7 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
-    uiArea = [{"name": '3D View Generic', "space": 'VIEW_3D'},
+    uiArea = [{"name": '3D View', "space": 'VIEW_3D'},
               {"name": 'Outliner', "space": 'OUTLINER'},
               {"name": 'Graph Editor', "space": 'GRAPH_EDITOR'},
               {"name": 'Dopesheet', "space": 'DOPESHEET_EDITOR'}]
@@ -1115,58 +1129,104 @@ def register():
     if kc:
         for area in uiArea:
             km = kc.keymaps.new(name=area["name"], space_type=area["space"])
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyUp.bl_idname, type='UP_ARROW', value='PRESS', ctrl=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyUp.bl_idname,
+                                      type='UP_ARROW',
+                                      value='PRESS',
+                                      ctrl=True)
             kmi.properties.extend = False
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyDown.bl_idname, type='DOWN_ARROW', value='PRESS', ctrl=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyDown.bl_idname,
+                                      type='DOWN_ARROW',
+                                      value='PRESS',
+                                      ctrl=True)
             kmi.properties.extend = False
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyLeft.bl_idname, type='LEFT_ARROW', value='PRESS', ctrl=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyLeft.bl_idname,
+                                      type='LEFT_ARROW',
+                                      value='PRESS',
+                                      ctrl=True)
             kmi.properties.extend = False
             kmi.properties.switchSide = False
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyRight.bl_idname, type='RIGHT_ARROW', value='PRESS', ctrl=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyRight.bl_idname,
+                                      type='RIGHT_ARROW',
+                                      value='PRESS',
+                                      ctrl=True)
             kmi.properties.extend = False
             kmi.properties.switchSide = False
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyUp.bl_idname, type='UP_ARROW', value='PRESS', ctrl=True, shift=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyUp.bl_idname,
+                                      type='UP_ARROW',
+                                      value='PRESS',
+                                      ctrl=True,
+                                      shift=True)
             kmi.properties.extend = True
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyDown.bl_idname, type='DOWN_ARROW', value='PRESS', ctrl=True, shift=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyDown.bl_idname,
+                                      type='DOWN_ARROW',
+                                      value='PRESS',
+                                      ctrl=True,
+                                      shift=True)
             kmi.properties.extend = True
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyLeft.bl_idname, type='LEFT_ARROW', value='PRESS', ctrl=True, shift=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyLeft.bl_idname,
+                                      type='LEFT_ARROW',
+                                      value='PRESS',
+                                      ctrl=True,
+                                      shift=True)
             kmi.properties.extend = True
             kmi.properties.switchSide = False
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyRight.bl_idname, type='RIGHT_ARROW', value='PRESS', ctrl=True, shift=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyRight.bl_idname,
+                                      type='RIGHT_ARROW',
+                                      value='PRESS',
+                                      ctrl=True,
+                                      shift=True)
             kmi.properties.extend = True
             kmi.properties.switchSide = False
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyLeft.bl_idname, type='LEFT_ARROW', value='PRESS', ctrl=True, alt=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyLeft.bl_idname,
+                                      type='LEFT_ARROW',
+                                      value='PRESS',
+                                      ctrl=True,
+                                      alt=True)
             kmi.properties.extend = False
             kmi.properties.switchSide = True
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyRight.bl_idname, type='RIGHT_ARROW', value='PRESS', ctrl=True, alt=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyRight.bl_idname,
+                                      type='RIGHT_ARROW',
+                                      value='PRESS',
+                                      ctrl=True,
+                                      alt=True)
             kmi.properties.extend = False
             kmi.properties.switchSide = True
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyLeft.bl_idname, type='LEFT_ARROW', value='PRESS', ctrl=True, alt=True, shift=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyLeft.bl_idname,
+                                      type='LEFT_ARROW',
+                                      value='PRESS',
+                                      ctrl=True,
+                                      alt=True,
+                                      shift=True)
             kmi.properties.extend = True
             kmi.properties.switchSide = True
             addon_keymaps.append((km, kmi))
 
-            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyRight.bl_idname, type='RIGHT_ARROW', value='PRESS', ctrl=True, alt=True, shift=True)
+            kmi = km.keymap_items.new(PICKWALK_OT_hierarchyRight.bl_idname,
+                                      type='RIGHT_ARROW',
+                                      value='PRESS',
+                                      ctrl=True,
+                                      alt=True,
+                                      shift=True)
             kmi.properties.extend = True
             kmi.properties.switchSide = True
             addon_keymaps.append((km, kmi))
