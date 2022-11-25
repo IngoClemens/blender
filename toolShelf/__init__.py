@@ -36,6 +36,15 @@ editor.
 
 Changelog:
 
+0.10.0 - 2022-11-25
+       - Property placeholders for single properties can now also be
+         PROP1, to be consistent with the formatting for multiple
+         properties.
+       - Added a basic spell check for string and boolean property
+         types.
+       - Fixed that entries ending with a colon caused the tool to fail.
+       - Added Substance3DInBlender to the black list of add-ons.
+
 0.9.0 - 2022-02-10
       - Added an option to set a group to be expanded by default.
       - Added undo capability to operator buttons.
@@ -85,17 +94,6 @@ Changelog:
 ------------------------------------------------------------------------
 """
 
-bl_info = {"name": "Tool Shelf",
-           "author": "Ingo Clemens",
-           "version": (0, 9, 0),
-           "blender": (2, 92, 0),
-           "category": "Interface",
-           "location": "View3D",
-           "description": "Save scripts as buttons and organize them in groups for easy access",
-           "warning": "",
-           "doc_url": "https://www.braverabbit.com/toolShelf",
-           "tracker_url": ""}
-
 import bpy
 import bpy.utils.previews
 import addon_utils
@@ -109,6 +107,18 @@ import os
 import re
 import sys
 import types
+
+bl_info = {"name": "Tool Shelf",
+           "author": "Ingo Clemens",
+           "version": (0, 10, 0),
+           "blender": (2, 92, 0),
+           "category": "Interface",
+           "location": "View3D",
+           "description": "Save scripts as buttons and organize them in groups for easy access",
+           "warning": "",
+           "doc_url": "https://www.braverabbit.com/toolShelf",
+           "tracker_url": ""}
+
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +159,7 @@ sys.path.append(SCRIPTS_PATH)
 
 # Define the alphanumeric regex pattern for the operator class name and
 # idname.
-ALPHANUM = re.compile("[\W]", re.UNICODE)
+ALPHANUM = re.compile("\W", re.UNICODE)
 BRACKETS = re.compile("[\[\]()<>]")
 
 # ----------------------------------------------------------------------
@@ -194,13 +204,14 @@ ADD_ON_BLACKLIST = ["animation_animall", "blender_id", "blenderkit", "curve_assi
                     "curve_tools", "greasepencil_tools", "io_export_paper_model", "io_mesh_atomic",
                     "magic_uv", "materials_library_vx", "mesh_auto_mirror", "mesh_bsurfaces",
                     "mesh_tools", "object_boolean_tools", "object_collection_manager",
-                    "space_view3d_3d_navigation", "space_view3d_pie_menus"]
+                    "space_view3d_3d_navigation", "space_view3d_pie_menus", "Substance3DInBlender"]
 
 # ----------------------------------------------------------------------
 # 1. Read the configuration.
 # Get all panel and button relevant data from the config.json file.
 # Because the panel is build dynamically all steps depend on this file.
 # ----------------------------------------------------------------------
+
 
 def createDir(dirPath):
     """Create the given folder if it doesn't exist.
@@ -505,6 +516,53 @@ def hasProperty(command):
     return "valueName" in command and len(command["valueName"])
 
 
+def matchString(string, searchString, minMatch):
+    """Check, if the given string is a rough match to the search string.
+    If the given number of characters match, return the search string.
+    Otherwise, the original string is returned.
+
+    :param: string: The string to match against the search string.
+    :type string: str
+    :param searchString: The string to match against.
+    :type searchString: str
+    :param minMatch: The number of characters which are needed for a
+                     match.
+    :type minMatch: int
+
+    :return: The matched or unmatched string.
+    :rtype: str
+    """
+    count = 0
+    for i in string:
+        if i.lower() in searchString:
+            count += 1
+    if count >= minMatch:
+        return searchString
+    return string
+
+
+def correctString(string):
+    """Correct typographic errors for the words 'string', 'true',
+    'false'.
+
+    :param: string: The string to correct.
+    :type string: str
+
+    :return: The corrected string.
+    :rtype: str
+    """
+    result = matchString(string, "string", 3)
+    if result == "string":
+        return result
+    result = matchString(string, "true", 3)
+    if result == "true":
+        return result
+    result = matchString(string, "false", 3)
+    if result == "false":
+        return result
+    return string
+
+
 def stringToValue(string):
     """Return the value as the type defined by the given string.
 
@@ -514,8 +572,11 @@ def stringToValue(string):
     :return: The typed value.
     :rtype: bool/int/float
     """
-    if string in ["True", "False"]:
-        return string == "True"
+    # Spell-check the property value string.
+    string = correctString(string)
+
+    if string in ["true", "false"]:
+        return string.title() == "True"
     elif len(string.split(".")) > 1:
         return float(string)
     elif string.lower() == "string":
@@ -578,7 +639,7 @@ class ToolProperty(object):
             # values.
             self.names = self.propertyName()
             # The values for the properties.
-            self.values = [i.strip() for i in self.data["value"].split(";")]
+            self.values = [i.strip() for i in self.data["value"].rstrip(";").split(";")]
             # Create the name of the callback function if required.
             if "valueCallback" in self.data and self.data["valueCallback"]:
                 self.callback = self.callbackName()
@@ -597,9 +658,9 @@ class ToolProperty(object):
             valueItems = self.values[i].replace(" ", "").split(",")
             # The values can be split up to three elements: value, min,
             # max.
-            # It's not necessary to always include all values. Therefore
-            # it's possible to have only a value, or a value with a min
-            # setting.
+            # It's not necessary to always include all values.
+            # Therefore, it's possible to have only a value, or a value
+            # with a min setting.
             # But in order to include a max value a min value needs to
             # be given as well.
             value = stringToValue(valueItems[0]) if len(valueItems) else 0
@@ -696,7 +757,7 @@ class ToolProperty(object):
 
         isRow = False
         count = 0
-        for label in self.data["valueName"].split(";"):
+        for label in self.data["valueName"].rstrip(";").split(";"):
             if label[0] in ["[", "("] and not isRow:
                 isRow = True
             elif label[-1] in ["]", ")"] and isRow:
@@ -793,14 +854,13 @@ class ToolProperty(object):
         """
         return self.labels[index][2]
 
-
     def enumData(self, enumString):
         """Return the name and icon for the given enum property item.
 
         :param enumString: The string of the enum item as defined in the
-                           the configuration. This can only be the enum
-                           name or the name and icon name, separated by
-                           the @ symbol.
+                           configuration. This can only be the enum name
+                           or the name and icon name, separated by the
+                           @ symbol.
         :type enumString: str
 
         :return: A tuple with the name of the enum item and the icon.
@@ -830,9 +890,15 @@ def replacePropertyPlaceholder(cmdString, propNames):
     """
     for i in range(len(propNames)):
         propString = "context.scene.tool_shelf.{}".format(propNames[i])
-        placeholder = "PROP"
-        if len(propNames) > 1:
-            placeholder = "PROP{}".format(i+1)
+        if len(propNames) == 1:
+            # Starting with version 0.10.0 the placeholder for a single
+            # property can now also be PROP1 for consisteny.
+            # Even though PROP is still maintained for compatibility.
+            placeholder = "PROP"
+            if "PROP1" in cmdString:
+                placeholder = "PROP1"
+        else:
+            placeholder = "PROP{}".format(i + 1)
         cmdString = cmdString.replace(placeholder, propString)
 
     return cmdString
@@ -1025,7 +1091,7 @@ def registerIcons(icons, filePath):
                 # the image already exists.
                 try:
                     pcoll.load(iconIdName(icon), imagePath, 'IMAGE', True)
-                except:
+                except (Exception,):
                     pass
 
     return pcoll
@@ -1254,7 +1320,7 @@ def getAddOnItems():
     tooltip.
 
     This method is exists standalone to be able to get the add-on data
-    independent from the enum property callback.
+    independent of the enum property callback.
 
     :return: A list with tuples representing the enum property items.
     :rtype: list(tuple(str, str, str))
@@ -1300,11 +1366,11 @@ def importItems(self, context):
 
     tool_shelf = context.scene.tool_shelf
 
-    # If the path to the configuration file is valid get it's data.
+    # If the path to the configuration file is valid get its data.
     # This is necessary because when the script gets reloaded in
     # mid-action while an item in the list is selected an error gets
     # reported that the last list selection cannot be found anymore.
-    # Therefore it's best to keep the list updated.
+    # Therefore, it's best to keep the list updated.
     CONFIG_DATA_IMPORT.config = jsonRead(tool_shelf.file_value)
 
     # Cancel if no groups have been defined.
@@ -1314,9 +1380,9 @@ def importItems(self, context):
     # Build the enum items from the config file.
     # To visually separate groups and tools the latter are indented by
     # two white spaces.
-    # In order to be able to find the tool to import and it's containing
-    # group the item identifier contains the group and tool name
-    # separated by three underscores.
+    # In order to be able to find the tool to import, and it's
+    # containing group the item identifier contains the group and tool
+    # name separated by three underscores.
     for group in CONFIG_DATA_IMPORT.config["groups"]:
         tools.append((group["name"], group["name"], ""))
         for cmd in group["commands"]:
@@ -1624,7 +1690,7 @@ def buildPanelProperty(button, parent, exists):
     if count and not exists:
         # If the current tool doesn't belong to a set add the box
         # layout.
-        # The box layout for a set has been setup before iterating
+        # The box layout for a set has been set up before iterating
         # through the button commands.
         if "set" not in button:
             draw.append("box = self.layout.box()")
@@ -1955,7 +2021,6 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                                          description=ANN_IMPORT_ITEM,
                                          items=importItems)
 
-
     # ------------------------------------------------------------------
     # General operator methods.
     # ------------------------------------------------------------------
@@ -1972,7 +2037,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
         # Add/Edit mode
         # --------------------------------------------------------------
         if mode == 'ADD' or mode == 'EDIT':
-            # If no name if provided cancel the operation.
+            # If no name is provided cancel the operation.
             if not len(self.name_value):
                 self.report({'WARNING'}, "No name defined")
                 return {'CANCELLED'}
@@ -2023,7 +2088,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                 # Edit the group name.
                 # ------------------------------------------------------
                 if mode == 'EDIT' and self.button_value == 'NONE':
-                    # If no name if provided cancel the operation.
+                    # If no name is provided cancel the operation.
                     if not len(self.name_value):
                         self.report({'WARNING'}, "No name defined")
                         return {'CANCELLED'}
@@ -2050,7 +2115,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                             return {'CANCELLED'}
 
                     # Check, if the image exists in the icons folder.
-                    for image in self.image_value.split(";"):
+                    for image in self.image_value.rstrip(";").split(";"):
                         if (not image.startswith("'") and image.split(".")[-1] == "png" and
                                 not os.path.exists(os.path.join(ICONS_PATH, image))):
                             self.report({'WARNING'}, "The image doesn't exist in the path: "
@@ -2081,8 +2146,8 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                             self.report({'WARNING'}, "A property name and/or default value is missing")
                             return {'CANCELLED'}
 
-                        names = self.property_name_value.split(";")
-                        values = self.property_value_value.split(";")
+                        names = self.property_name_value.rstrip(";").split(";")
+                        values = self.property_value_value.rstrip(";").split(";")
                         if len(names) != len(values):
                             self.report({'WARNING'}, "The number of properties and values does not match")
                             return {'CANCELLED'}
@@ -2405,10 +2470,10 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
 
         return {'FINISHED'}
 
-
 # ----------------------------------------------------------------------
 # 7. Set up the operators for additional actions.
 # ----------------------------------------------------------------------
+
 
 class TOOLSHELF_OT_MoveItemUp(bpy.types.Operator):
     """Operator class for moving an item up in the list.
@@ -2482,6 +2547,7 @@ class TOOLSHELF_OT_MoveItemDown(bpy.types.Operator):
 # Helper methods
 # ----------------------------------------------------------------------
 
+
 def getGroupIndex(data, name):
     """Get the index of the currently selected group.
 
@@ -2533,14 +2599,14 @@ def processCommand(cmd):
     :rtype: str or None
     """
     if len(cmd):
-        cmdItems = cmd.split(";")
+        cmdItems = cmd.rstrip(";").split(";")
         for i in range(len(cmdItems)):
             # Add the bpy import if the given command requires it.
             if "bpy." in cmdItems[i] and "import bpy" not in cmdItems[i]:
                 cmdItems[i] = "import bpy\n{}".format(cmdItems[i])
         return ";".join(cmdItems)
     # If no command is provided get the content of the current text
-    # editor or it's selection.
+    # editor, or it's selection.
     else:
         textIndex = currentTextIndex()
         if textIndex is None:
@@ -2589,9 +2655,9 @@ def splitSetCommandString(setName, columns, labels, commands, tip, icons, iconOn
              labels and commands don't match.
     :rtype: list(dict) or None
     """
-    labelItems = labels.split(";")
-    commandItems = commands.split(";")
-    iconItems = icons.split(";")
+    labelItems = labels.rstrip(";").split(";")
+    commandItems = commands.rstrip(";").split(";")
+    iconItems = icons.rstrip(";").split(";")
 
     # The number of button labels and commands has to match.
     if len(labelItems) != len(commandItems):
@@ -2603,7 +2669,7 @@ def splitSetCommandString(setName, columns, labels, commands, tip, icons, iconOn
 
     # If icons are missing add empty entries.
     if not len(iconItems):
-        iconItems = [""] * len(labelItems)-1
+        iconItems = [""] * len(labelItems) - 1
     if len(iconItems) < len(labelItems):
         for i in range(len(iconItems), len(labelItems)):
             iconItems.append("")
