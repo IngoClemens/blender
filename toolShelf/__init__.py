@@ -36,6 +36,12 @@ editor.
 
 Changelog:
 
+0.11.0 - 2023-03-24
+       - Added the option to open a file browser to provide a file path
+         for the operator via the BROWSER_GET_FILE placeholder.
+         Because of a current Blender bug only files can be selected,
+         not folders.
+       - Fixed that expanded enum properties are not displayed anymore.
 0.10.0 - 2022-11-25
        - Property placeholders for single properties can now also be
          PROP1, to be consistent with the formatting for multiple
@@ -97,6 +103,7 @@ Changelog:
 import bpy
 import bpy.utils.previews
 import addon_utils
+from bpy_extras.io_utils import ImportHelper
 
 import copy
 import inspect
@@ -110,7 +117,7 @@ import types
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 10, 0),
+           "version": (0, 11, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -532,11 +539,16 @@ def matchString(string, searchString, minMatch):
     :return: The matched or unmatched string.
     :rtype: str
     """
+    # If the string is longer than the search string by two characters
+    # declare it as unmatched.
+    if len(string) - 2 > len(searchString):
+        return string
+
     count = 0
     for i in string:
         if i.lower() in searchString:
             count += 1
-    if count >= minMatch:
+    if count >= minMatch and count <= len(searchString):
         return searchString
     return string
 
@@ -849,7 +861,7 @@ class ToolProperty(object):
         :param index: The index of the property.
         :type index: int
 
-        :return: True, if the enum should eb expanded.
+        :return: True, if the enum should be expanded.
         :rtype: bool
         """
         return self.labels[index][2]
@@ -936,6 +948,8 @@ def buildOperatorClass(data, group, propCls):
     # be referenced when the class gets build.
     execute = ["def execute(self, context):"]
 
+    classItems = (bpy.types.Operator, )
+
     # If the operator contains a property register it within the
     # operator.
     execute.extend(propCls.properties)
@@ -948,18 +962,28 @@ def buildOperatorClass(data, group, propCls):
     # operator.
     elif not len(propCls.callback):
         cmd = replacePropertyPlaceholder(data["command"], propCls.names)
+
+        # If the file browser should be included in the operator add the
+        # in-built mix-in class ImportHelper to open the file browser
+        # and get access to the selected path.
+        # Also replace the placeholder with the call to open the file
+        # browser.
+        if "BROWSER_GET_FILE" in cmd:
+            classItems = (bpy.types.Operator, ImportHelper)
+            cmd = cmd.replace("BROWSER_GET_FILE", "self.properties.filepath")
+
         execute.append("{}".format(cmd.replace("\n", "\n    ")))
 
     execute.append("return {'FINISHED'}")
 
     # Register the method within the module.
     module = types.ModuleType("operatorExecute")
-    exec("\n    ".join(execute), module.__dict__)
     # print("\n    ".join(execute))
+    exec("\n    ".join(execute), module.__dict__)
 
     # Create the class.
     toolClass = type(getOperatorClassName(data, group),
-                     (bpy.types.Operator, ),
+                     classItems,
                      {"bl_idname": getIdName(data, group),
                       "bl_label": data["name"],
                       "bl_description": data["tooltip"],
@@ -2544,6 +2568,49 @@ class TOOLSHELF_OT_MoveItemDown(bpy.types.Operator):
 
 
 # ----------------------------------------------------------------------
+# Operators for getting file paths.
+# ----------------------------------------------------------------------
+
+
+class TOOLSHELF_OT_BrowseFilePath(bpy.types.Operator, ImportHelper):
+    """Open a file browser and return the selected file path.
+    """
+    bl_idname = "toolshelf.browse_file_path"
+    bl_label = "Select File"
+
+    # The callback function to execute when the browser window gets
+    # closed with the selected file item.
+    callback = None
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        filepath = self.properties.filepath
+        # Run the callback function if it's defined.
+        if self.callback:
+            self.callback(filepath)
+        return {'FINISHED'}
+
+
+def getFilePath(callback):
+    """Call the operator for opening a file browser dialog to get a file
+    selection.
+
+    This function is provided with a callback function from the caller.
+    This callback function is necessary to return the selected file path
+    to the caller.
+
+    :param callback: The function to return the selected file path to.
+    :type callback: func
+    """
+    bpy.ops.toolshelf.browse_file_path('INVOKE_DEFAULT')
+    TOOLSHELF_OT_BrowseFilePath.callback = lambda self, filepath: callback(self.filepath)
+
+
+# ----------------------------------------------------------------------
 # Helper methods
 # ----------------------------------------------------------------------
 
@@ -2839,6 +2906,7 @@ CLASSES = [Tool_Shelf_Properties,
            TOOLSHELF_OT_Editor,
            TOOLSHELF_OT_MoveItemUp,
            TOOLSHELF_OT_MoveItemDown,
+           TOOLSHELF_OT_BrowseFilePath,
            VIEW3D_PT_ToolShelf_Main,
            VIEW3D_PT_ToolShelf_Sub]
 CLASSES.extend(CMD_CLASSES)
