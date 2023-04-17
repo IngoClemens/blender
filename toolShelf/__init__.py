@@ -1,6 +1,6 @@
 """
 toolShelf
-Copyright (C) 2021-2022, Ingo Clemens, brave rabbit, www.braverabbit.com
+Copyright (C) 2021-2023, Ingo Clemens, brave rabbit, www.braverabbit.com
 
     GNU GENERAL PUBLIC LICENSE Version 3
 
@@ -36,6 +36,8 @@ editor.
 
 Changelog:
 
+0.12.0 - 2023-04-17
+       - Included a new option to add a color property.
 0.11.0 - 2023-03-24
        - Added the option to open a file browser to provide a file path
          for the operator via the BROWSER_GET_FILE placeholder.
@@ -117,7 +119,7 @@ import types
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens",
-           "version": (0, 11, 0),
+           "version": (0, 12, 0),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",
@@ -168,6 +170,26 @@ sys.path.append(SCRIPTS_PATH)
 # idname.
 ALPHANUM = re.compile("\W", re.UNICODE)
 BRACKETS = re.compile("[\[\]()<>]")
+
+COLOR_LABELS = ["rgb", "color", "colour"]
+
+# Define the pattern to replace the value delimiter for any max/min
+# values of color properties.
+COLOR_PATTERN = r"\(([^)]*)\)"
+def replaceColorSeparator(values):
+    """Replace the comma-seaprators in the given value string with
+    single dashes.
+
+        in:  color, (1.0, 0.5, 0.3), (0.5, 0.4, 0.2)
+        out: color,(1.0-0.5-0.3),(0.5-0.4-0.2)
+
+    :param values: The value string to convert.
+    :type values: str
+
+    :return: The converted values string.
+    :rtype: str
+    """
+    return "(" + re.sub(r"[,\s]+", "-", values.group(1)) + ")"
 
 # ----------------------------------------------------------------------
 # Descriptions and tooltips
@@ -587,16 +609,38 @@ def stringToValue(string):
     # Spell-check the property value string.
     string = correctString(string)
 
+    if isinstance(string, str):
+        if string[0] in ["{", "}", "[", "]", "/", "\\", "$", "§", "&"]:
+            return None
+
     if string in ["true", "false"]:
         return string.title() == "True"
+    elif string.startswith("("):
+        items = string[1:-1].split("-")
+        values = []
+        for item in items:
+            try:
+                values.append(float(item))
+            except ValueError:
+                break
+        if len(values) == 3:
+            return "({})".format(",".join([str(v) for v in values]))
+        return ""
     elif len(string.split(".")) > 1:
         return float(string)
     elif string.lower() == "string":
         return "string"
+    elif string.lower() in COLOR_LABELS:
+        return "color"
     elif len(string.split(":")) > 1:
         return "enum"
     else:
-        return int(string)
+        value = None
+        try:
+            value = int(string)
+        except ValueError:
+            pass
+        return value
 
 
 def listToEnumItemsString(items):
@@ -667,6 +711,15 @@ class ToolProperty(object):
             # Values
             # ----------------------------------------------------------
 
+            # Check, if the color property is given a default value.
+            # In this case the comma-separator of the values needs to be
+            # replaced so that the value/min/max comma-splitting can be
+            # performed.
+            for label in COLOR_LABELS:
+                if self.values[i].lower().startswith(label):
+                    self.values[i] = re.sub(COLOR_PATTERN, replaceColorSeparator, self.values[i])
+                    break
+
             valueItems = self.values[i].replace(" ", "").split(",")
             # The values can be split up to three elements: value, min,
             # max.
@@ -681,7 +734,7 @@ class ToolProperty(object):
 
             valueString = ", default={}".format(value)
             minString = ""
-            if minValue is not None:
+            if minValue is not None and not isinstance(minValue, str):
                 minString = ", min={}".format(minValue)
             maxString = ""
             if maxValue is not None:
@@ -698,6 +751,14 @@ class ToolProperty(object):
                 propString = "IntProperty"
             elif isinstance(value, float):
                 propString = "FloatProperty"
+            elif value == "color":
+                propString = "FloatVectorProperty"
+                default = "(0.25, 0.25, 0.25)"
+                if minValue is not None and len(minValue):
+                    default = minValue
+                valueString = ", subtype='COLOR', default={}, min=0.0, max=1.0".format(default)
+                minString = ""
+                maxString = ""
             elif value == "string":
                 propString = "StringProperty"
                 valueString = ""
@@ -2568,49 +2629,6 @@ class TOOLSHELF_OT_MoveItemDown(bpy.types.Operator):
 
 
 # ----------------------------------------------------------------------
-# Operators for getting file paths.
-# ----------------------------------------------------------------------
-
-
-class TOOLSHELF_OT_BrowseFilePath(bpy.types.Operator, ImportHelper):
-    """Open a file browser and return the selected file path.
-    """
-    bl_idname = "toolshelf.browse_file_path"
-    bl_label = "Select File"
-
-    # The callback function to execute when the browser window gets
-    # closed with the selected file item.
-    callback = None
-
-    def execute(self, context):
-        """Execute the operator.
-
-        :param context: The current context.
-        :type context: bpy.context
-        """
-        filepath = self.properties.filepath
-        # Run the callback function if it's defined.
-        if self.callback:
-            self.callback(filepath)
-        return {'FINISHED'}
-
-
-def getFilePath(callback):
-    """Call the operator for opening a file browser dialog to get a file
-    selection.
-
-    This function is provided with a callback function from the caller.
-    This callback function is necessary to return the selected file path
-    to the caller.
-
-    :param callback: The function to return the selected file path to.
-    :type callback: func
-    """
-    bpy.ops.toolshelf.browse_file_path('INVOKE_DEFAULT')
-    TOOLSHELF_OT_BrowseFilePath.callback = lambda self, filepath: callback(self.filepath)
-
-
-# ----------------------------------------------------------------------
 # Helper methods
 # ----------------------------------------------------------------------
 
@@ -2906,7 +2924,6 @@ CLASSES = [Tool_Shelf_Properties,
            TOOLSHELF_OT_Editor,
            TOOLSHELF_OT_MoveItemUp,
            TOOLSHELF_OT_MoveItemDown,
-           TOOLSHELF_OT_BrowseFilePath,
            VIEW3D_PT_ToolShelf_Main,
            VIEW3D_PT_ToolShelf_Sub]
 CLASSES.extend(CMD_CLASSES)
