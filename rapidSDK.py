@@ -79,9 +79,14 @@ Manual command:
 
 from rapidSDK import rapidSDK
 rapidSDK.execute()
+
 ------------------------------------------------------------------------
 
 Changelog:
+
+0.10.0 - 2023-04-23
+- Fixed that driving armature properties are not correctly respected
+    when updating a relationship.
 
 0.9.0 - 2022-05-11
 - Added support for object modifiers.
@@ -150,7 +155,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 9, 0),
+           "version": (0, 10, 0),
            "blender": (2, 93, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -1440,7 +1445,7 @@ def getDriverData(driver, targetObj):
             #          pose.bones["main_ctrl"]["FK"]
             attr = target.data_path.replace("'", "\"")
             bone = ""
-            if getattr(target.id, "type", "") == 'ARMATURE':
+            if attr.startswith("pose.bones") and getattr(target.id, "type", "") == 'ARMATURE':
                 # Remove the leading pose bone part and the possible
                 # period separator.
                 attr = attr[attr.find("]")+1:]
