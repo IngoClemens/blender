@@ -29,23 +29,50 @@ driver values.
 
 Changelog:
 
+1.0.0 - 2023-06-08
+      - Because of some necessary changes new RBF setups are not
+        compatible with older versions of the add-on. A message appears
+        when loading a scene which contains an older setup and the side
+        panel of the RBF editor also displays a message.
+        The setup is updated when the RBF solver gets reset.
+      - When adding a new pose with additional shape keys default values
+        are added to existing poses. This works for shape keys only
+        because a value of zero can be assumed for all other poses. It
+        does not work with other properties.
+      - Updated node names to differentiate between inputs and outputs.
+      - Activating the RBF sets all input and output nodes to
+        non-editable to prevent changes during the active state.
+      - Improved the interpolation when using quaternion-based rotation.
+      - Improved error message when a decomposition error occurs.
+      - Added a search and replace option in the developer section to
+        edit driver and driven data for poses.
+      - Removed quaternion based rotation sub-types.
+      - Fixed that the quaternion output rotation properties are
+        depending on the selected euler axes.
+      - Fixed that shape key drivers remain when resetting the RBF.
+      - Fixed that the individual shape-key block name of a duplicated
+        mesh isn't respected when activating the RBF.
+      - Fixed that the RBF calculation is using driver values with an
+        offset of one frame when used in an animation.
+
 0.4.0 - 2022-07-11
-- Improved error messages when the number of storable values gets
-  exceeded.
-- Added an error label to the RBF node when activating the RBF fails.
-- Added a short description to assist extending the number of pose
-  values.
-- Added a constant to define the number of properties to store the pose
-  and weight values for better proceduralism.
-- Fixed: A pose cannot be edited after the RBF has been reset.
+      - Improved error messages when the number of storable values gets
+        exceeded.
+      - Added an error label to the RBF node when activating the RBF
+        fails.
+      - Added a short description to assist extending the number of pose
+        values.
+      - Added a constant to define the number of properties to store the
+        pose and weight values for better proceduralism.
+      - Fixed: A pose cannot be edited after the RBF has been reset.
 
 0.3.0 - 2022-07-06
-- Various changes and improvements.
-- Added support for object properties and modifiers.
-- Added radius presets.
+      - Various changes and improvements.
+      - Added support for object properties and modifiers.
+      - Added radius presets.
 
 0.2.0 - 2022-05-26
-- Merged all individual property sockets into one.
+      - Merged all individual property sockets into one.
 
 0.1.0 - 2022-03-24
 
@@ -60,7 +87,7 @@ from . core import handler
 
 bl_info = {"name": "RBF Nodes",
            "author": "Ingo Clemens",
-           "version": (0, 4, 0),
+           "version": (1, 0, 0),
            "blender": (3, 1, 0),
            "category": "Animation",
            "location": "Editors > RBF Nodes Editor",
@@ -80,7 +107,8 @@ def register():
     editor.register()
     ui.register()
 
-    bpy.app.handlers.frame_change_pre.append(handler.refresh)
+    bpy.app.handlers.frame_change_post.append(handler.refresh)
+    bpy.app.handlers.load_post.append(handler.verifyVersion)
     if not bpy.app.background:
         bpy.app.handlers.depsgraph_update_post.append(handler.refresh)
 
@@ -91,7 +119,8 @@ def unregister():
     editor.unregister()
     ui.unregister()
 
-    bpy.app.handlers.frame_change_pre.remove(handler.refresh)
+    bpy.app.handlers.frame_change_post.remove(handler.refresh)
+    bpy.app.handlers.load_post.remove(handler.verifyVersion)
     if not bpy.app.background:
         bpy.app.handlers.depsgraph_update_post.remove(handler.refresh)
 

@@ -9,7 +9,7 @@ class RBFPropertyInputNode(node.RBFNode):
     """Object property input node.
     """
     bl_idname = "RBFPropertyInputNode"
-    bl_label = "Property"
+    bl_label = "Property Input"
     bl_icon = 'PROPERTIES'
 
     # ------------------------------------------------------------------

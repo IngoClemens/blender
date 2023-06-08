@@ -11,7 +11,7 @@ class RBFScaleOutputNode(node.RBFNode):
     """Object scale output node.
     """
     bl_idname = "RBFScaleOutputNode"
-    bl_label = "Scale"
+    bl_label = "Scale Output"
     bl_icon = 'FIXED_SIZE'
 
     # ------------------------------------------------------------------

@@ -3,7 +3,7 @@
 import bpy
 
 from . import node
-from ... core import poses, rbf
+from ... core import poses, rbf, utils
 
 
 class SkipCallback(object):
@@ -28,7 +28,7 @@ class RBFPoseNode(node.RBFNode):
     # ------------------------------------------------------------------
 
     def toggleEditPose(self, context):
-        """Callback for toggling the edit pose check box.
+        """Callback for toggling the edit pose checkbox.
         Enabling puts the current pose into edit mode, disabling stores
         the adjusted pose values.
 
@@ -40,13 +40,13 @@ class RBFPoseNode(node.RBFNode):
                 result = poses.editPose(context, self)
                 if result:
                     poses.editMode.state = True
-                # If entering edit mode is not possible toggle the check
-                # box state back.
+                # If entering edit mode is not possible toggle the
+                # checkbox state back.
                 else:
                     skip.state = True
                     self.edit_pose = False
-            # If another pose is already in edit mode toggle the check
-            # box state back.
+            # If another pose is already in edit mode toggle the
+            # checkbox state back.
             else:
                 skip.state = True
                 self.edit_pose = False
@@ -72,6 +72,8 @@ class RBFPoseNode(node.RBFNode):
     driverSize : bpy.props.IntProperty()
     drivenSize : bpy.props.IntProperty()
 
+    version : bpy.props.StringProperty()
+
     def init(self, context):
         """Initialize the node and add the sockets.
 
@@ -79,6 +81,7 @@ class RBFPoseNode(node.RBFNode):
         :type context: bpy.context
         """
         self.addOutput("RBFPoseSocket", "Pose")
+        utils.setVersion(self)
 
     def draw(self, context, layout):
         """Draw the content of the node.

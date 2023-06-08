@@ -9,7 +9,7 @@ class RBFModifierInputNode(node.RBFNode):
     """Object modifier input node.
     """
     bl_idname = "RBFModifierInputNode"
-    bl_label = "Modifier"
+    bl_label = "Modifier Input"
     bl_icon = 'MODIFIER'
 
     # ------------------------------------------------------------------

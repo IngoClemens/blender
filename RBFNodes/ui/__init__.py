@@ -22,6 +22,9 @@ classes = [preferences.RBFNODESPreferences,
            operators.RBFNODES_OT_ResetRBF,
            operators.RBFNODES_OT_DumpPose,
            operators.RBFNODES_OT_DumpRBF,
+           operators.RBFNODES_OT_SearchReplacePoseDriverData,
+           operators.RBFNODES_OT_SearchReplacePoseDrivenData,
+           panel.RBF_Nodes_Properties,
            panel.RBFNODES_PT_RBF]
 
 
@@ -33,6 +36,8 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
 
+    bpy.types.WindowManager.rbf_nodes = bpy.props.PointerProperty(type=panel.RBF_Nodes_Properties)
+
 
 def unregister():
     """Unregister the panel and operators.
@@ -41,3 +46,5 @@ def unregister():
 
     for cls in classes:
         bpy.utils.unregister_class(cls)
+
+    del bpy.types.Scene.rbfnodes

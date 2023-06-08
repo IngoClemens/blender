@@ -9,7 +9,7 @@ class RBFLocationInputNode(node.RBFNode):
     """Object location input node.
     """
     bl_idname = "RBFLocationInputNode"
-    bl_label = "Location"
+    bl_label = "Location Input"
     bl_icon = 'ORIENTATION_LOCAL'
 
     # ------------------------------------------------------------------

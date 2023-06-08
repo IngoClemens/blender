@@ -9,7 +9,7 @@ class RBFScaleInputNode(node.RBFNode):
     """Object scale input node.
     """
     bl_idname = "RBFScaleInputNode"
-    bl_label = "Scale"
+    bl_label = "Scale Input"
     bl_icon = 'FIXED_SIZE'
 
     # ------------------------------------------------------------------

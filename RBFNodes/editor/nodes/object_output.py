@@ -9,7 +9,7 @@ class RBFObjectOutputNode(node.RBFNode):
     """Driver object output node.
     """
     bl_idname = "RBFObjectOutputNode"
-    bl_label = "Object"
+    bl_label = "Object Output"
     bl_icon = 'OBJECT_DATA'
 
     # ------------------------------------------------------------------

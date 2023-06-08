@@ -1,9 +1,11 @@
 # <pep8 compliant>
 
+
 # ----------------------------------------------------------------------
 # Global names
 # ----------------------------------------------------------------------
 NAME = "RBF Nodes"
+VERSION = (1, 0, 0)
 NODE_TREE_TYPE = "RBFNodesNodeTree"
 CATEGORIES_ID = "RBFNODES_TREE_NODE_CATEGORIES"
 
@@ -44,21 +46,11 @@ NODE_OFFSET = (0, -60)
 # ----------------------------------------------------------------------
 ROTATIONS = {'EULER': "rotation_euler",
              'QUATERNION': "rotation_quaternion",
-             'AXIS_ANGLE': "rotation_axis_angle",
-             'SWING': "swing",
-             'TWIST_X': "twist_x",
-             'TWIST_Y': "twist_y",
-             'TWIST_Z': "twist_z"}
+             'AXIS_ANGLE': "rotation_axis_angle"}
 
 ROTATION_MODE = [('EULER', "Euler", "", "", 1),
                  ('QUATERNION', "Quaternion", "", "", 2),
                  ('AXIS_ANGLE', "Axis Angle", "", "", 3)]
-
-ROTATION_TYPE = [('SWING', "Swing", "", "", 1),
-                 ('TWIST_X', "Twist X", "", "", 2),
-                 ('TWIST_Y', "Twist Y", "", "", 3),
-                 ('TWIST_Z', "Twist Z", "", "", 4),
-                 ('SWING_TWIST', "Swing Twist", "", "", 5)]
 
 # ----------------------------------------------------------------------
 # Matrix sizes

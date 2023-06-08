@@ -2,10 +2,11 @@
 
 import bpy
 
-from . import nodeTree, plugs
+from . import nodeTree, plugs, utils
 from .. import dev, var
 
 import json
+from mathutils import Quaternion
 
 
 class EditMode(object):
@@ -60,9 +61,18 @@ def createPose(context):
         label = "Pose {}".format(index)
 
         if len(poseNodes):
-            result = comparePoseSize(driverData, drivenData, poseNodes[-1])
+            # Compare, if the number of driver properties matches.
+            result = comparePoseSize(driverData, poseNodes[-1], isDriver=True)
             if result is not None:
                 return result
+
+            # Check for the difference in driven pose values.
+            newPoseData = getPoseDataDifference(drivenData, poseNodes[-1])
+            if len(newPoseData):
+                # Add new shape key properties to existing poses.
+                result = appendShapeKeyPoseData(newPoseData, poseNodes)
+                if result is not None:
+                    return result
 
         pos = nodeTree.sourceNodePosition(lastNode=None if not len(poseNodes) else poseNodes[-1],
                                           referenceNode=rbfNode,
@@ -110,25 +120,98 @@ def poseDataSize(poseData):
     return count
 
 
-def comparePoseSize(driverData, drivenData, node):
-    """Compare the number of diving and driven values with the values on
-    the given pose node. Return a warning if the numbers don't match.
+def comparePoseSize(poseData, node, isDriver=True):
+    """Compare the number of new pose values with the values on the
+    given pose node. Return a warning if the numbers don't match.
 
-    :param driverData: The driving pose data.
-    :type driverData: list
-    :param drivenData: The driven pose data.
-    :type drivenData: list
+    :param poseData: The new pose data.
+    :type poseData: list
     :param node: The pose node to compare to.
     :type node: bpy.type.Nodes
+    :param isDriver: True, if the data of the driver should be compared.
+    :type isDriver: bool
 
     :return: A tuple with the warning message for the context or None.
     :rtype: tuple or None
     """
-    inSize = poseDataSize(driverData)
-    outSize = poseDataSize(drivenData)
-    if node.driverSize != inSize:
-        return {'WARNING'}, "The number of driver values differs from existing poses"
-    if node.drivenSize != outSize:
+    newSize = poseDataSize(poseData)
+    if isDriver:
+        if node.driverSize != newSize:
+            return {'WARNING'}, "The number of driver values differs from existing poses"
+    else:
+        if node.drivenSize != newSize:
+            return {'WARNING'}, "The number of driven values differs from existing poses"
+
+
+def getPoseDataDifference(newData, node):
+    """Return a list with the pose data differences between the new pose
+    and the stored data of the given node.
+
+    :param newData: The new pose data.
+    :type newData: list
+    :param node: The pose node to compare to.
+    :type node: bpy.type.Nodes
+
+    :return: A list with the driven name and properties in case the data
+             sets are different.
+    :rtype: list(tuple(str, list(tuple(str, float, float/None))))
+    """
+    lastData = json.loads(node.drivenData)
+    diffData = []
+    for newName, newProps in newData:
+        for lastName, lastProps in lastData:
+            if newName == lastName:
+                diffProps = []
+                for newProp in newProps:
+                    if newProp[0] not in [p[0] for p in lastProps]:
+                        diffProps.append(newProp)
+                if len(diffProps):
+                    diffData.append((newName, diffProps))
+    return diffData
+
+
+def isShapeKeyData(poseData):
+    """Return, if the given pose data only contains shape keys.
+
+    :param poseData: The new pose data.
+    :type poseData: list
+
+    :return: True, if the data set only contains shape keys.
+    :rtype: bool
+    """
+    for name, data in poseData:
+        for prop in data:
+            if not prop[0].startswith("shapeKey"):
+                return False
+    return True
+
+
+def appendShapeKeyPoseData(poseData, nodes):
+    """Append the new shape key pose data to all existing poses.
+
+    :param poseData: The new pose data.
+    :type poseData: list
+    :param nodes: The list of currently connected poses.
+    :type nodes: list(bpy.type.Nodes)
+
+    :return: A tuple with the warning message for the context or None.
+    :rtype: tuple or None
+    """
+    # Check that the new pose data only contains shape keys.
+    if isShapeKeyData(poseData):
+        # Add the default shape key value to each node.
+        for node in nodes:
+            drivenData = json.loads(node.drivenData)
+            for name, props in poseData:
+                for drivenName, drivenProps in drivenData:
+                    if name == drivenName:
+                        # For every shape key build a new data tuple and
+                        # append it to the existing driven data set.
+                        for prop in props:
+                            drivenProps.append((prop[0], 0.0, None))
+                        node.drivenData = json.dumps(drivenData)
+                        dev.log("Added new shape key to existing pose: {} ({})".format(node.label, node.name))
+    else:
         return {'WARNING'}, "The number of driven values differs from existing poses"
 
 
@@ -168,17 +251,24 @@ def recallPose(context, nodeName):
     recallPoseForObject(json.loads(node.drivenData))
 
 
-def getPoseInputData(rbfNode):
+def getPoseInputData(rbfNode, editable=True):
     """Return all input properties and their values which define the
     current pose.
 
     :param rbfNode: The RBF node to get the pose data for.
     :type rbfNode: bpy.types.Node
+    :param editable: Defines the editable state of the input nodes.
+                     The nodes are not editable when the RBF is active.
+                     When creating a new pose the RBF is inactive and
+                     the nodes can be editable.
+    :type editable: bool
 
     :return: A list with the driver properties.
     :rtype: list
     """
     driver = []
+
+    nodeTree.setInputNodesEditable(rbfNode, state=editable)
 
     nodeTypes = ["RBFObjectInputNode", "RBFNodeInputNode"]
 
@@ -196,17 +286,24 @@ def getPoseInputData(rbfNode):
     return driver
 
 
-def getPoseOutputData(rbfNode):
+def getPoseOutputData(rbfNode, editable=True):
     """Return all output properties and their values which define the
     current pose.
 
     :param rbfNode: The RBF node to get the pose data for.
     :type rbfNode: bpy.types.Node
+    :param editable: Defines the editable state of the input nodes.
+                     The nodes are not editable when the RBF is active.
+                     When creating a new pose the RBF is inactive and
+                     the nodes can be editable.
+    :type editable: bool
 
     :return: A list with the driven properties.
     :rtype: list
     """
     driven = []
+
+    nodeTree.setOutputNodesEditable(rbfNode, state=editable)
 
     nodeTypes = ["RBFObjectOutputNode", "RBFNodeOutputNode"]
 
@@ -421,7 +518,8 @@ def recallPoseForObject(poseData, asString=False):
     :return: A list with command strings for recalling the pose.
     :rtype: list(str)
     """
-    transforms = ["location", "rotation_euler", "rotation_quaternion", "rotation_axis_angle", "scale"]
+    transforms = ["location", "rotation_euler", "rotation_axis_angle", "scale"]
+    rotations = ["rotation_quaternion", "swing"]
 
     lines = []
 
@@ -451,9 +549,21 @@ def recallPoseForObject(poseData, asString=False):
             if any(i in prop for i in transforms):
                 lines.append(recallTransform(obj, objString, prop, value, asString))
 
+            # Quaternion
+            elif any(i in prop for i in rotations):
+                # Before version 1.0.0 stored quaternion poses have no
+                # exponential map equivalent and therefore, the
+                # poseValue is None.
+                if prop.startswith("swing"):
+                    prop = prop.replace("swing", "rotation_quaternion")
+                if poseValue is None:
+                    lines.append(recallTransform(obj, objString, prop, value, asString))
+                else:
+                    lines.append(recallTransform(obj, objString, prop, poseValue, asString))
+
             # Twist
             elif prop.startswith("twist_"):
-                lines.extend(recallTwist(obj, objString, poseValue, asString))
+                lines.append(recallTwist(obj, objString, poseValue, asString))
 
             # Object property
             elif prop.startswith("rna_property:"):
@@ -520,7 +630,10 @@ def recallTransform(obj, objString, prop, value, asString):
     # Set the property.
     if not asString:
         setattr(obj, items[0], values)
-    return "{}.{}[{}] = {}".format(objString, items[0], items[1], value)
+    return "{}.{}[{}] = {}".format(objString,
+                                   items[0],
+                                   items[1],
+                                   round(value, 3))
 
 
 def recallTwist(obj, objString, poseValue, asString):
@@ -543,7 +656,9 @@ def recallTwist(obj, objString, poseValue, asString):
         setattr(obj, "rotation_quaternion", poseValue)
     lines = []
     for j in range(len(poseValue)):
-        lines.append("{}.rotation_quaternion[{}] = {}".format(objString, j, poseValue[j]))
+        lines.append("{}.rotation_quaternion[{}] = {}".format(objString,
+                                                              j,
+                                                              round(poseValue[j], 3)))
     return lines
 
 
@@ -584,7 +699,10 @@ def recallProperty(obj, objString, prop, value, asString):
         indexString = "[{}]".format(items[1])
     if not asString:
         setattr(obj.data, prop, value)
-    return "{}.data.{}{} = {}".format(objString, prop, indexString, value)
+    return "{}.data.{}{} = {}".format(objString,
+                                      prop,
+                                      indexString,
+                                      [round(v, 3) for v in value])
 
 
 def recallCustom(obj, objString, prop, value, asString):
@@ -615,14 +733,19 @@ def recallCustom(obj, objString, prop, value, asString):
         # string.
         if not asString:
             obj[items[0][2:-1]] = value
-        return '{}["{}"] = {}'.format(objString, items[0][2:-1], value)
+        return '{}["{}"] = {}'.format(objString,
+                                      items[0][2:-1],
+                                      round(value, 3))
     # Array property: ["prop"][0]
     elif len(items) == 2:
         # Remove the remaining start bracket and quotes to use just the
         # string.
         if not asString:
             obj[items[0][2:-1]][int(items[1])] = value
-        return '{}["{}"][{}] = {}'.format(objString, items[0][2:-1], items[1], value)
+        return '{}["{}"][{}] = {}'.format(objString,
+                                          items[0][2:-1],
+                                          items[1],
+                                          round(value, 3))
     return ""
 
 
@@ -646,7 +769,9 @@ def recallShapeKey(obj, objString, prop, value, asString):
     """
     if not asString:
         obj.data.shape_keys.key_blocks[prop[9:]].value = value
-    return '{}.data.shape_keys.key_blocks["{}"].value = {}'.format(objString, prop[9:], value)
+    return '{}.data.shape_keys.key_blocks["{}"].value = {}'.format(objString,
+                                                                   prop[9:],
+                                                                   round(value, 3))
 
 
 def recallModifier(obj, objString, prop, value, asString):
@@ -672,7 +797,10 @@ def recallModifier(obj, objString, prop, value, asString):
     items = prop[9:].split(":")
     if not asString:
         setattr(obj.modifiers[items[0]], str(items[1]), value)
-    return '{}.modifiers["{}"].{} = {}'.format(objString, items[0], items[1], value)
+    return '{}.modifiers["{}"].{} = {}'.format(objString,
+                                               items[0],
+                                               items[1],
+                                               round(value, 3))
 
 
 def recallNode(prop, value, objString, propArray, propArrayIndex, asString):
@@ -704,16 +832,21 @@ def recallNode(prop, value, objString, propArray, propArrayIndex, asString):
 
     # Separate the socket from the value.
     plugItems = prop.split(".")
-    # Make the complete path to the socket an object.
+    # Make the complete path to the socket and object.
     plug = eval(".".join([objString, plugItems[0]]))
     if propArray:
         if not asString:
             plug.default_value[propArrayIndex] = value
-        return "{}.default_value[{}] = {}".format(".".join([objString, plugItems[0]]), propArrayIndex, value)
+        return "{}.default_value[{}] = {}".format(".".join([objString,
+                                                            plugItems[0]]),
+                                                  propArrayIndex,
+                                                  round(value, 3))
     else:
         if not asString:
             plug.default_value = value
-        return "{}.default_value = {}".format(".".join([objString, plugItems[0]]), value)
+        return "{}.default_value = {}".format(".".join([objString,
+                                                        plugItems[0]]),
+                                              round(value, 3))
 
 
 class EditMode(object):
@@ -769,8 +902,8 @@ def updatePose():
             outNode.enableDriver(obj, True)
 
     # Get the current pose data from the object properties.
-    driverData = getPoseInputData(editCache.rbfNode)
-    drivenData = getPoseOutputData(editCache.rbfNode)
+    driverData = getPoseInputData(editCache.rbfNode, editable=not editCache.rbfNode.active)
+    drivenData = getPoseOutputData(editCache.rbfNode, editable=not editCache.rbfNode.active)
     # If the second tuple item is a string an error has occurred.
     # In this case the driverData is the error type and the driven
     # data is the message.
@@ -791,3 +924,113 @@ def updatePose():
 
     editCache.rbfNode = None
     editCache.poseNode = None
+
+
+def upgradePoseNodes(rbfNode):
+    """Upgrade all pose nodes from version 0.4.0 to the current version.
+
+    The upgrade is called when resetting the RBF upon a version mismatch
+    of the RBF node or resetting the setup in general.
+
+    The upgrade is necessary because version 0.4.0 doesn't use the
+    exponential map representation of a quaternion. The new pose data
+    stores both the exponential map and the quaternion values to be able
+    to restore the poses with the quaternion values.
+
+    :param rbfNode: The RBF node to evaluate.
+    :type rbfNode: bpy.types.Node
+    """
+    # Get the pose nodes of the current solver.
+    poseNodes = nodeTree.getPoseNodes(rbfNode)
+    if not len(poseNodes):
+        return
+
+    for i, node in enumerate(poseNodes):
+        if not utils.verifyVersion(node):
+            dev.log("Upgrading pose node: {} ({})".format(node.label, node.name))
+
+            driverData = json.loads(node.driverData)
+            convertQuaternionToExponentialMap(driverData)
+            node.driverData = json.dumps(driverData)
+
+            drivenData = json.loads(node.drivenData)
+            convertQuaternionToExponentialMap(drivenData)
+            node.drivenData = json.dumps(drivenData)
+
+            dev.log("Pose data set: {} ({})".format(node.label, node.name))
+
+            utils.setVersion(node)
+            dev.log("Version: {}".format(utils.getVersion(node)))
+
+
+def convertQuaternionToExponentialMap(poseData):
+    """Evaluate the given pose data and convert the contained quaternion
+    values to an exponential map.
+
+    :param poseData: The pose data of the driver or driven object.
+    :type poseData: list
+    """
+    quatBlockEnd = -1
+
+    for i in range(len(poseData)):
+        name, data = poseData[i]
+        for j in range(len(data)):
+            # Mark the end of the quaternion block.
+            if j > quatBlockEnd:
+                quatBlockEnd = -1
+
+            if data[j][0].startswith("rotation_quaternion"):
+                if quatBlockEnd == -1:
+                    quat = Quaternion((data[j][1], data[j+1][1], data[j+2][1], data[j+3][1]))
+                    expMap = list(quat.to_exponential_map()) + [0]
+                    for k, v in enumerate(expMap):
+                        data[j+k][2] = data[j+k][1]
+                        data[j+k][1] = v
+                    # Store, where the quaternion block ends.
+                    quatBlockEnd = j + 3
+                # If the current index is within the quaternion block
+                # skip to the next index.
+                else:
+                    continue
+
+
+def replaceData(context, searchString="", replaceString="", driver=True):
+    """Evaluate the pose data in all poses and replace the search string
+    with the replace string.
+
+    :param context: The current context.
+    :type context: bpy.context
+    :param searchString: The string to search for.
+    :type searchString: str
+    :param replaceString: The string to replace with.
+    :type replaceString: str
+    :param driver: True, if the driver pose data should be edited.
+    :type driver: bool
+    """
+    if not len(searchString):
+        return {'INFO'}, "No string to search for"
+
+    rbfNode = nodeTree.getRBFNode(context)
+    if rbfNode is None:
+        return {'WARNING'}, "No RBF node found in node tree"
+
+    # Get the pose nodes of the current solver.
+    poseNodes = nodeTree.getPoseNodes(rbfNode)
+    if not len(poseNodes):
+        return {'WARNING'}, "No pose nodes found in node tree"
+
+    for node in poseNodes:
+        if driver:
+            data = node.driverData
+        else:
+            data = node.drivenData
+
+        count = data.count(searchString)
+        data = data.replace(searchString, replaceString)
+
+        if driver:
+            node.driverData = data
+        else:
+            node.drivenData = data
+
+    return {'INFO'}, "Replaced {} occurrences in {} pose nodes".format(count, len(poseNodes))

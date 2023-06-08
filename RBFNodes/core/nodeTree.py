@@ -2,7 +2,7 @@
 
 import bpy
 
-from . import plugs
+from . import plugs, utils
 from .. import var
 
 from operator import itemgetter
@@ -24,10 +24,11 @@ def getNodeTree(context):
     :type context: bpy.context
 
     :return: The node group.
-    :rtype: bpy.types.NodeGroup
+    :rtype: bpy.types.NodeGroup or None
     """
     tree = context.space_data.node_tree
-    return bpy.data.node_groups[tree.name]
+    if tree is not None:
+        return bpy.data.node_groups[tree.name]
 
 
 def getSceneTrees():
@@ -68,6 +69,7 @@ def createDefaultNodes(context):
     """
     nodeGroup = getNodeTree(context)
     rbfNode = nodeGroup.nodes.new("RBFSolverNode")
+    utils.setVersion(rbfNode)
     rbfNode.location = (0, 0)
     rbfNode.width *= 1.3
 
@@ -115,9 +117,10 @@ def getRBFNode(context):
         return rbfNodes[0]
     else:
         nodeGroup = getNodeTree(context)
-        nodes = getRBFFromTree(nodeGroup)
-        if len(nodes) == 1:
-            return nodes[0]
+        if nodeGroup is not None:
+            nodes = getRBFFromTree(nodeGroup)
+            if len(nodes) == 1:
+                return nodes[0]
 
 
 def getRBFFromTree(nodeGroup):
@@ -432,3 +435,41 @@ def getRBFOutputNodes(rbfNode):
         rbfOutput["NodeOutput"] = outNodes
 
     return rbfOutput
+
+
+def setInputNodesEditable(rbfNode, state=True):
+    """Set the editable state of the input nodes of the given RBF node.
+
+    :param rbfNode: The RBF node to get the input nodes from.
+    :type rbfNode: bpy.types.Node
+    :param state: True, if the nodes should be editable.
+    :type state: bool
+    """
+    nodeTypes = ["RBFObjectInputNode", "RBFNodeInputNode"]
+
+    for i, nodeType in enumerate(nodeTypes):
+        for node in plugs.getInputNodes(rbfNode.inputs[i], nodeId=nodeType):
+            node.editable = state
+            if node.bl_idname == "RBFObjectInputNode":
+                for socket in node.inputs:
+                    for inNode in plugs.getInputNodes(socket):
+                        inNode.editable = state
+
+
+def setOutputNodesEditable(rbfNode, state=True):
+    """Set the editable state of the output nodes of the given RBF node.
+
+    :param rbfNode: The RBF node to get the output nodes from.
+    :type rbfNode: bpy.types.Node
+    :param state: True, if the nodes should be editable.
+    :type state: bool
+    """
+    nodeTypes = ["RBFObjectOutputNode", "RBFNodeOutputNode"]
+
+    for i, nodeType in enumerate(nodeTypes):
+        for node in plugs.getOutputNodes(rbfNode.outputs[i], nodeId=nodeType):
+            node.editable = state
+            if node.bl_idname == "RBFObjectOutputNode":
+                for socket in node.outputs:
+                    for outNode in plugs.getOutputNodes(socket):
+                        outNode.editable = state

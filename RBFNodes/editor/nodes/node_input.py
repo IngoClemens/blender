@@ -9,7 +9,7 @@ class RBFNodeInputNode(node.RBFNode):
     """Node tree input node.
     """
     bl_idname = "RBFNodeInputNode"
-    bl_label = "Node"
+    bl_label = "Node Input"
     bl_icon = 'NODETREE'
 
     # ------------------------------------------------------------------

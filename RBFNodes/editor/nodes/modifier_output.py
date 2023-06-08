@@ -12,7 +12,7 @@ class RBFModifierOutputNode(node.RBFNode):
     """Object modifier output node.
     """
     bl_idname = "RBFModifierOutputNode"
-    bl_label = "Modifier"
+    bl_label = "Modifier Output"
     bl_icon = 'MODIFIER'
 
     # ------------------------------------------------------------------

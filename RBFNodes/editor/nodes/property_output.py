@@ -12,7 +12,7 @@ class RBFPropertyOutputNode(node.RBFNode):
     """Object property output node.
     """
     bl_idname = "RBFPropertyOutputNode"
-    bl_label = "Property"
+    bl_label = "Property Output"
     bl_icon = 'PROPERTIES'
 
     # ------------------------------------------------------------------
@@ -205,4 +205,4 @@ class RBFPropertyOutputNode(node.RBFNode):
         :param enable: The enabled state of the driver FCurves.
         :type enable: bool
         """
-        driver.enableDriver(self, obj, enable)
+        driver.enableDriver(self, obj, enable, isDataBlock=True)

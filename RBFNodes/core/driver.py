@@ -28,7 +28,7 @@ def generateDrivers(nodeGroup, rbfNode):
 
             if outNode.isDriver:
                 dev.log("Driver Indices for {}:".format(outNode.name))
-                dev.log([i for i in outNode.driverIndex])
+                dev.log(", ".join([str(i) for i in outNode.driverIndex]))
 
 
 def createNodeGroupDriver(nodeGroup, node, driverProp, drivenProp, index=-1):
@@ -127,10 +127,12 @@ def getDriverIndex(obj, driverPath, drivenProp, propertyIndex):
     return -1
 
 
-def getShapeKeyDriverIndex(driverPath):
+def getShapeKeyDriverIndex(name, driverPath):
     """Return the index of the driver for the given object which matches
     the given driver data path and driven property and index.
 
+    :param name: The name of the object's shape key data block.
+    :type name: str
     :param driverPath: The data path of the driver as displayed in the
                        driver window.
     :type driverPath: str
@@ -138,7 +140,7 @@ def getShapeKeyDriverIndex(driverPath):
     :return: The index of the driver in the data block.
     :rtype: int
     """
-    for i, drv in enumerate(bpy.data.shape_keys["Key"].animation_data.drivers):
+    for i, drv in enumerate(bpy.data.shape_keys[name].animation_data.drivers):
         for v in drv.driver.variables:
             for target in v.targets:
                 if target.data_path == driverPath:
@@ -199,7 +201,7 @@ def deleteTransformDriver(node, obj, transform):
     node.driverIndex = [-1, -1, -1]
 
 
-def enableDriver(node, obj, enable):
+def enableDriver(node, obj, enable, isDataBlock=False):
     """Enable or disable the driver FCurves for the given object.
 
     :param node: The node.
@@ -208,11 +210,15 @@ def enableDriver(node, obj, enable):
     :type obj: bpy.types.Object
     :param enable: The enabled state of the driver FCurves.
     :type enable: bool
+    :param isDataBlock: True, if the data block of the object is the
+                        target of the driver.
+    :type isDataBlock: bool
     """
     if isinstance(obj, bpy.types.PoseBone):
         obj = obj.id_data
     elif isinstance(obj, bpy.types.Object):
-        obj = obj.data
+        if isDataBlock:
+            obj = obj.data
 
     for i in range(len(node.driverIndex)):
         index = node.driverIndex[i]

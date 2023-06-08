@@ -12,7 +12,7 @@ class RBFRotationOutputNode(node.RBFNode):
     """Object rotation output node.
     """
     bl_idname = "RBFRotationOutputNode"
-    bl_label = "Rotation"
+    bl_label = "Rotation Output"
     bl_icon = 'ORIENTATION_GIMBAL'
 
     # ------------------------------------------------------------------
@@ -33,7 +33,6 @@ class RBFRotationOutputNode(node.RBFNode):
     z_axis : bpy.props.BoolProperty(name="Z", default=False)
 
     rotationMode : bpy.props.EnumProperty(name="", items=var.ROTATION_MODE, default='EULER')
-    rotationType : bpy.props.EnumProperty(name="", items=var.ROTATION_TYPE, default='SWING_TWIST')
 
     output : bpy.props.FloatVectorProperty(size=4, update=updateCallback)
     # The indices of the created drivers on the driven object.
@@ -132,11 +131,12 @@ class RBFRotationOutputNode(node.RBFNode):
 
         rotMode = var.ROTATIONS[self.rotationMode]
 
-        axes = [(self.w_axis, 0), (self.x_axis, 1), (self.y_axis, 2), (self.z_axis, 3)]
-
-        shiftIndex = 0
         if self.rotationMode == 'EULER':
+            axes = [(self.w_axis, 0), (self.x_axis, 1), (self.y_axis, 2), (self.z_axis, 3)]
             shiftIndex = 1
+        else:
+            axes = [(True, 0), (True, 1), (True, 2), (True, 3)]
+            shiftIndex = 0
 
         for axis, index in axes:
             if (self.rotationMode != 'EULER' and index == 0) or index > 0:
@@ -155,10 +155,12 @@ class RBFRotationOutputNode(node.RBFNode):
         """
         rotMode = var.ROTATIONS[self.rotationMode]
 
-        axes = [(self.w_axis, 0), (self.x_axis, 1), (self.y_axis, 2), (self.z_axis, 3)]
-        shiftIndex = 0
         if self.rotationMode == 'EULER':
+            axes = [(self.w_axis, 0), (self.x_axis, 1), (self.y_axis, 2), (self.z_axis, 3)]
             shiftIndex = 1
+        else:
+            axes = [(True, 0), (True, 1), (True, 2), (True, 3)]
+            shiftIndex = 0
 
         for axis, index in axes:
             if (self.rotationMode != 'EULER' and index == 0) or index > 0:

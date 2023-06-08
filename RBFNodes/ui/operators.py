@@ -220,3 +220,61 @@ class RBFNODES_OT_DumpRBF(bpy.types.Operator):
         """
         dev.dumpRBF(context)
         return {'FINISHED'}
+
+
+class RBFNODES_OT_SearchReplacePoseDriverData(bpy.types.Operator):
+    """Operator class for editing pose driver data via search and
+    replace.
+    """
+    bl_idname = "rbfnodes.search_replace_pose_driver_data"
+    bl_label = "Edit Driver"
+    bl_description = "Search and replace pose driver data of all poses."
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # ------------------------------------------------------------------
+    # General operator methods.
+    # ------------------------------------------------------------------
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        props = context.window_manager.rbf_nodes
+
+        result = poses.replaceData(context=context,
+                                   searchString=props.search_value,
+                                   replaceString=props.replace_value,
+                                   driver=True)
+        self.report(result[0], result[1])
+        return {'FINISHED'}
+
+
+class RBFNODES_OT_SearchReplacePoseDrivenData(bpy.types.Operator):
+    """Operator class for editing pose driven data via search and
+    replace.
+    """
+    bl_idname = "rbfnodes.search_replace_pose_driven_data"
+    bl_label = "Edit Driven"
+    bl_description = "Search and replace pose driven data of all poses."
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # ------------------------------------------------------------------
+    # General operator methods.
+    # ------------------------------------------------------------------
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        props = context.window_manager.rbf_nodes
+
+        result = poses.replaceData(context=context,
+                                   searchString=props.search_value,
+                                   replaceString=props.replace_value,
+                                   driver=False)
+        self.report(result[0], result[1])
+        return {'FINISHED'}

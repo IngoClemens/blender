@@ -10,6 +10,8 @@ class RBFNode(bpy.types.Node):
     """
     bl_width_default = 155
 
+    editable : bpy.props.BoolProperty(default=True)
+
     @classmethod
     def poll(cls, nodeTree):
         """Make the node only visible to the RBF node tree.

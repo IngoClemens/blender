@@ -1,6 +1,7 @@
 # <pep8 compliant>
 
 import math
+import mathutils
 
 from .. import dev
 
@@ -287,13 +288,13 @@ class Matrix(object):
         :param w: The list of weights to be generated.
         :type w: list(float)
 
-        :return: The list of weights.
-        :rtype: list(float)
+        :return: The list of weights and an error message, if any.
+        :rtype: tuple(list(float), None or str)
         """
         # Make sure that the matrix is square.
         if self.rows != self.cols:
             dev.log("Matrix rows and columns do not match")
-            return []
+            return [], "The number of poses between input and output is different"
 
         size = self.rows
 
@@ -324,7 +325,8 @@ class Matrix(object):
             # Check if the matrix is singular.
             if abs(self.mat[i][i]) < 0.0001:
                 dev.log("The matrix is singular")
-                return []
+                return [], ("The pose at index {} has no unique values and " +
+                            "is similar to another pose").format(i)
 
             # Perform the forward elimination.
             for j in range(i + 1, size):
@@ -340,7 +342,7 @@ class Matrix(object):
                 value += self.mat[x][j] * w[j]
             w[x] = (y[x] - value) / self.mat[x][x]
 
-        return w
+        return w, None
 
 
 def norm(vec):
@@ -433,3 +435,69 @@ def _conformValue(value, numSize):
         items[1] = "{}{}".format(items[1], " "*(4-len(items[1])))
 
     return ".".join(items)
+
+
+# ----------------------------------------------------------------------
+# Custom functions for converting a quaternion to an exponential map and
+# back.
+# The functions are not used because Blender provides these by default.
+# But they are included for reference.
+# ----------------------------------------------------------------------
+
+
+def quaternionToExponentialMap(quat):
+    """Calculate the exponential map representation of the given
+    quaternion.
+
+    :param quat: The rotation quaternion.
+    :type quat: list(float) or Quaternion
+
+    :return: The exponential map of the quaternion with the rotation
+             axis values already multiplied by the rotation angle.
+    :rtype: list(float)
+    """
+    w, x, y, z = q
+
+    vec = [x, y, z]
+
+    # Calculate the normalisation factor.
+    normFactor = math.sqrt(sum([pow(i, 2) for i in vec]))
+
+    # Check, if the quaternion is close to zero to avoid division by
+    # zero.
+    if normFactor < 1e-8:
+        return [0, 0, 0]
+
+    # Calculate the rotation angle.
+    phi = 2 * math.atan2(normFactor, w)
+
+    # Calculate the rotation axis.
+    axis = [i / normFactor for i in vec]
+
+    return [i * phi for i in axis]
+
+
+def exponentialMapToQuaternion(expMap):
+    """Convert the given exponential map back to a quaternion.
+
+    The exponential map has the rotation axis values already multiplied
+    by the rotation angle.
+
+    :param expMap: The exponential map.
+    :type expMap: list(float)
+
+    :return: The converted quaternion.
+    :rtype: Quaternion
+    """
+    angle = math.sqrt(expMap[0]**2 + expMap[1]**2 + expMap[2]**2)
+    factor = 1.0 / angle
+    normVec = [i * factor for i in expMap]
+
+    if angle != 0:
+        phi = 0.5 * angle
+        factor = math.sin(phi)
+        vec = [i * factor for i in normVec]
+
+        return mathutils.Quaternion([math.cos(phi), vec[0], vec[1], vec[2]])
+    else:
+        return mathutils.Quaternion()

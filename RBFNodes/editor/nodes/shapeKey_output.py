@@ -12,7 +12,7 @@ class RBFShapeKeyOutputNode(node.RBFNode):
     """Shape key output node.
     """
     bl_idname = "RBFShapeKeyOutputNode"
-    bl_label = "Shape Key"
+    bl_label = "Shape Key Output"
     bl_icon = 'SHAPEKEY_DATA'
 
     # ------------------------------------------------------------------
@@ -156,9 +156,9 @@ class RBFShapeKeyOutputNode(node.RBFNode):
             shapeKeyName = driven.data.shape_keys.name
             shapeKey = bpy.data.shape_keys[shapeKeyName]
             dataPath = 'nodes["{}"].output'.format(self.name)
-            drivenProp = 'key_blocks["{}"].value'.format(props[0][0][9:])
+            drivenProp = 'key_blocks["{}"].value'.format(props[0][0].split(":")[1])
             driver.createNodeGroupDriver(nodeGroup, shapeKey, dataPath, drivenProp, -1)
-            self.driverIndices[0] = driver.getShapeKeyDriverIndex(dataPath)
+            self.driverIndices[0] = driver.getShapeKeyDriverIndex(shapeKeyName, dataPath)
             self.isDriver = True
 
     def deleteDriver(self, obj):
@@ -168,10 +168,11 @@ class RBFShapeKeyOutputNode(node.RBFNode):
         :type obj: bpy.types.Object
         """
         props = self.getProperties(obj)
+        # [('shapeKey:Key 1', 0.0, None)]
         if props:
             shapeKeyName = obj.data.shape_keys.name
             shapeKey = bpy.data.shape_keys[shapeKeyName]
-            drivenProp = 'key_blocks["{}"].value'.format(props[0][0])
+            drivenProp = 'key_blocks["{}"].value'.format(props[0][0].split(":")[1])
             result = shapeKey.driver_remove(drivenProp, -1)
             dev.log("Delete driver: {} {} : {}".format(shapeKey, drivenProp, result))
 

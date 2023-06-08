@@ -3,9 +3,10 @@
 import bpy
 
 from . import node
-from ... core import matrix, plugs, rbf
+from ... core import matrix, plugs, rbf, utils
 from ... import dev, var
 
+import json
 import math
 
 
@@ -51,6 +52,8 @@ class RBFSolverNode(node.RBFNode):
     radius : bpy.props.FloatProperty(name="Radius", default=1.0, min=0, update=rbfMode)
     negativeWeights : bpy.props.BoolProperty(name="Negative Weights", default=True)
     active_value : bpy.props.BoolProperty(default=False)
+
+    version : bpy.props.StringProperty()
 
     # Internal value for the RBF calculation.
     # Set during activation and used by the runtime calculation.
@@ -150,6 +153,8 @@ class RBFSolverNode(node.RBFNode):
         self.addInput("RBFObjectSocket", "Objects", link_limit=0)
         self.addInput("RBFNodeSocket", "Nodes", link_limit=0)
         self.addInput("RBFPoseSocket", "Poses", link_limit=0)
+        utils.setVersion(self)
+        dev.log("Version: {}".format(utils.getVersion(self)))
 
     def draw(self, context, layout):
         """Draw the content of the node.
@@ -238,6 +243,9 @@ class RBFSolverNode(node.RBFNode):
 
         self.use_custom_color = False
         self.color = var.COLOR_DEFAULT[:-1]
+
+        utils.setVersion(self)
+        dev.log("Version: {}".format(utils.getVersion(self)))
         dev.log("Reset finished")
 
     def getRadius(self):

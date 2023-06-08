@@ -9,7 +9,7 @@ class RBFShapeKeyInputNode(node.RBFNode):
     """Shape key input node.
     """
     bl_idname = "RBFShapeKeyInputNode"
-    bl_label = "Shape Key"
+    bl_label = "Shape Key Input"
     bl_icon = 'SHAPEKEY_DATA'
 
     # ------------------------------------------------------------------

@@ -9,7 +9,7 @@ class RBFCustomInputNode(node.RBFNode):
     """Custom property input node.
     """
     bl_idname = "RBFCustomInputNode"
-    bl_label = "Custom"
+    bl_label = "Custom Input"
     bl_icon = 'EMPTY_SINGLE_ARROW'
 
     # ------------------------------------------------------------------

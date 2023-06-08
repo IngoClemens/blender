@@ -11,7 +11,7 @@ class RBFLocationOutputNode(node.RBFNode):
     """Object location output node.
     """
     bl_idname = "RBFLocationOutputNode"
-    bl_label = "Location"
+    bl_label = "Location Output"
     bl_icon = 'ORIENTATION_LOCAL'
 
     # ------------------------------------------------------------------

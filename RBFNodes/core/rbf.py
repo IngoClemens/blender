@@ -7,6 +7,7 @@ from .. import dev, var
 
 import json
 import math
+from mathutils import Quaternion
 
 
 def initialize(context, refresh=False):
@@ -29,9 +30,9 @@ def initialize(context, refresh=False):
         return {'WARNING'}, "No RBF node exists in the node tree"
 
     # Check, if all nodes are set up correctly. This can easily be done
-    # by getting the pose data as when creating a pose.
-    driverData = poses.getPoseInputData(rbfNode)
-    drivenData = poses.getPoseOutputData(rbfNode)
+    # by getting the pose data, like when creating a pose.
+    driverData = poses.getPoseInputData(rbfNode, editable=False)
+    drivenData = poses.getPoseOutputData(rbfNode, editable=False)
     # If the second tuple item is a string an error has occurred.
     # In this case the driverData is the error type and the driven
     # data is the message.
@@ -137,8 +138,8 @@ def solveWeightMatrix(rbfNode):
 
     dev.log("Distance matrix:")
     dev.log(distMat)
-    dev.log("Mean distance: {}".format(rbfNode.meanDistance))
-    dev.log("Variance: {}".format(rbfNode.variance))
+    dev.log("Mean distance: {}".format(round(rbfNode.meanDistance, 3)))
+    dev.log("Variance: {}".format(round(rbfNode.variance, 3)))
 
     # ------------------------------------------------------------------
     # Activations
@@ -163,9 +164,9 @@ def solveWeightMatrix(rbfNode):
         w = []
         for j in range(poseCount):
             w.append(0)
-        w = solveMat.solve(y, w)
-        if not len(w):
-            return {'WARNING'}, "Decomposition error"
+        w, message = solveMat.solve(y, w)
+        if message is not None:
+            return {'WARNING'}, "Decomposition error. {}".format(message)
 
         for j in range(poseCount):
             weightMat[j, i] = w[j]
@@ -330,6 +331,12 @@ def getPoseWeights(rbfNode):
     process as it just gets the distances of the driver to the stored
     poses and calculates the weighted output values based on the weight
     matrix built during initialization.
+
+    :param rbfNode: The RBF node to evaluate.
+    :type rbfNode: bpy.types.Node
+
+    :return: A tuple if there was an error.
+    :rtype: None or tuple
     """
     # Get the stored pose matrix from the RBF node.
     poseMat = rbfNode.getPoseMatrix()
@@ -347,6 +354,11 @@ def getPoseWeights(rbfNode):
     # Get the current driver values and normalize them with the stored
     # norm factors.
     driverValues = poses.getDriverValues(rbfNode)
+    # Break, if there are no driver values.
+    # A possible case is when the driving object is currently replaced.
+    if not driverValues:
+        return
+
     norms = poseMat.getRowVector(poseSize)
     driverValues = matrix.normalizeVector(driverValues, factors=norms)
 
@@ -363,15 +375,42 @@ def getPoseWeights(rbfNode):
     # Get the output properties for setting their values.
     outProps = poses.getOutputProperties(rbfNode)
 
+    if outSize != len(outProps):
+        rbfNode.active = False
+        return ["Number of pose and driven properties don't match.",
+                "Possible causes are Blender version differences."]
+
+    quatBlockEnd = -1
     for i in range(outSize):
+        # Mark the end of the quaternion block.
+        if i > quatBlockEnd:
+            quatBlockEnd = -1
+
         node, index = outProps[i]
         value = outValues[i]
         if value < 0.0 and not rbfNode.negativeWeights:
             value = 0.0
+
+        # If the RBF output is a single value, set it.
         if isinstance(node.output, float):
             node.output = value
         else:
-            node.output[index] = value
+            # If the RBF output is a quaternion convert the exponential
+            # map to a quaternion and set all output values at once.
+            if node.bl_idname == "RBFRotationOutputNode" and node.rotationMode != 'EULER':
+                if quatBlockEnd == -1:
+                    quat = Quaternion((outValues[i], outValues[i+1], outValues[i+2]))
+                    for j, v in enumerate(quat):
+                        node.output[j] = v
+                    # Store, where the quaternion block ends.
+                    quatBlockEnd = i + 3
+                # If the current index is within the quaternion block
+                # skip to the next index.
+                else:
+                    continue
+            # For all other vector array outputs set the indexed output.
+            else:
+                node.output[index] = value
 
 
 def update(context):
@@ -415,6 +454,11 @@ def reset(context):
         return {'WARNING'}, "No RBF node exists in the node tree"
 
     rbfNode.reset()
+    # Check, if the pose nodes need upgrading from an earlier version.
+    poses.upgradePoseNodes(rbfNode)
+
+    nodeTree.setInputNodesEditable(rbfNode, state=True)
+    nodeTree.setOutputNodesEditable(rbfNode, state=True)
 
     nodeTypes = ["RBFObjectOutputNode", "RBFNodeOutputNode"]
 

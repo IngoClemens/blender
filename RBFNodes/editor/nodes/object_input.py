@@ -3,13 +3,14 @@
 import bpy
 
 from . import common, node
+from ... core import poses
 
 
 class RBFObjectInputNode(node.RBFNode):
     """Driver object input node.
     """
     bl_idname = "RBFObjectInputNode"
-    bl_label = "Object"
+    bl_label = "Object Input"
     bl_icon = 'OBJECT_DATA'
 
     # ------------------------------------------------------------------

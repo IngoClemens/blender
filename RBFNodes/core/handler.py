@@ -3,19 +3,8 @@
 import bpy
 from bpy.app.handlers import persistent
 
-from . import nodeTree, rbf
-
-import time
-
-
-class Timer(object):
-    """Timer class for comparing refresh times.
-    """
-    def __init__(self):
-        self.start = None
-
-
-updateTimer = Timer()
+from . import nodeTree, rbf, utils
+from .. var import VERSION
 
 
 @persistent
@@ -23,15 +12,37 @@ def refresh(none):
     """Check, if the elapsed time requires an update of the solvers in
     the scene.
     """
-    update = False
-    if updateTimer.start is None or time.time() - updateTimer.start > 0.01:
-        updateTimer.start = time.time()
-        update = True
+    trees = nodeTree.getSceneTrees()
+    for tree in trees:
+        nodes = nodeTree.getRBFFromTree(tree)
+        for rbfNode in nodes:
+            if rbfNode.active and not rbfNode.mute:
+                result = rbf.getPoseWeights(rbfNode)
+                if result is not None:
+                    title = "Evaluation error"
+                    if not bpy.app.background:
+                        utils.displayMessage(title, result, 'ERROR')
+                    else:
+                        print("{} : {}".format(title, result))
 
-    if update:
-        trees = nodeTree.getSceneTrees()
-        for tree in trees:
-            nodes = nodeTree.getRBFFromTree(tree)
-            for rbfNode in nodes:
-                if rbfNode.active and not rbfNode.mute:
-                    rbf.getPoseWeights(rbfNode)
+@persistent
+def verifyVersion(none):
+    """Check, if the contained RBF nodes of a file match the current
+    version.
+    """
+    trees = nodeTree.getSceneTrees()
+    for tree in trees:
+        nodes = nodeTree.getRBFFromTree(tree)
+        for rbfNode in nodes:
+            if not utils.verifyVersion(rbfNode):
+                title = "RBF Nodes Warning"
+                message = ["The RBF node setup is not compatible with the current version.",
+                           "The installed version is {}".format(utils.versionString(VERSION)),
+                           "Please update the node tree with the following steps:",
+                           "1. Press 'Reset RBF' in the RBF editor's side panel.",
+                           "2. Press 'Activate RBF' in the same panel."]
+                if not bpy.app.background:
+                    utils.displayMessage(title, message, 'ERROR')
+                else:
+                    print("{} : {}".format(title, message))
+                return

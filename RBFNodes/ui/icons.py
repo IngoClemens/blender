@@ -7,13 +7,14 @@ import os
 
 
 class Icons(object):
-    """Class for handling the tool icons."""
+    """Class for handling the tool icons.
+    """
     def __init__(self):
         # Main dictionary for storing the icons.
         self.preview_collections = {}
 
     def create(self):
-        """Setup the preview collection for giving access to the icons.
+        """Set up the preview collection for giving access to the icons.
         """
         basePath = os.path.dirname(os.path.dirname(__file__))
         iconsDir = os.path.join(basePath, "icons")

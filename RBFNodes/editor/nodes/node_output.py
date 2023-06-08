@@ -15,7 +15,7 @@ class RBFNodeOutputNode(node.RBFNode):
     """Node tree output node.
     """
     bl_idname = "RBFNodeOutputNode"
-    bl_label = "Node"
+    bl_label = "Node Output"
     bl_icon = 'NODETREE'
 
     # ------------------------------------------------------------------

@@ -21,6 +21,10 @@ def drawObjectProperties(node, context, layout):
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
     """
+    # Set the editable state of the layout depending on the active state
+    # of the RBF node.
+    layout.enabled = node.editable
+
     layout.prop_search(node,
                        property="sceneObject",
                        search_data=context.scene,
@@ -64,6 +68,10 @@ def drawTransformProperties(node, layout):
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
     """
+    # Set the editable state of the layout depending on the active state
+    # of the RBF node.
+    layout.enabled = node.editable
+
     row = layout.row(align=True)
     row.prop(node, "x_axis")
     row.prop(node, "y_axis")
@@ -130,9 +138,11 @@ def drawRotationProperties(node, layout):
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
     """
+    # Set the editable state of the layout depending on the active state
+    # of the RBF node.
+    layout.enabled = node.editable
+
     layout.prop(node, "rotationMode")
-    if node.rotationMode == 'QUATERNION' and node.bl_idname != "RBFRotationOutputNode":
-        layout.prop(node, "rotationType")
 
     row = layout.row(align=True)
     if node.rotationMode == 'EULER':
@@ -153,7 +163,16 @@ def getRotationProperties(node, obj):
 
     :return: A list with the selected rotation properties and their
              values as a tuple.
-    :rtype: list(tuple(str, float))
+             The third element is None by default but may contain a
+             value for restoring a pose in case this value is different
+             from the value used for calculating the RBF.
+             This is true for quaternion or axis angle rotations.
+             Since quaternions are converted to an exponential map the
+             resulting value is different from the quaternion value used
+             to set the pose. To avoid confusion the original quaternion
+             value is stored to be able to recall the pose exactly how
+             it has been set.
+    :rtype: list(tuple(str, float, float or None))
     """
     result = []
 
@@ -173,34 +192,15 @@ def getRotationProperties(node, obj):
             result.append(("{}[{}]".format(mode, i), rotation[i], None))
     else:
         rotation = obj.rotation_quaternion
-        if node.bl_idname == "RBFRotationOutputNode":
-            mode = var.ROTATIONS['QUATERNION']
-            values = [v for v in rotation]
-        else:
-            if node.rotationType == 'SWING_TWIST':
-                mode = var.ROTATIONS['QUATERNION']
-                values = [v for v in rotation]
-            elif node.rotationType == 'SWING':
-                swing, twist = rotation.to_swing_twist('X')
-                mode = var.ROTATIONS[node.rotationType]
-                values = [v for v in swing]
-            elif node.rotationType == 'TWIST_X':
-                swing, twist = rotation.to_swing_twist('X')
-                mode = var.ROTATIONS[node.rotationType]
-                values = [twist]
-            elif node.rotationType == 'TWIST_Y':
-                swing, twist = rotation.to_swing_twist('Y')
-                mode = var.ROTATIONS[node.rotationType]
-                values = [twist]
-            else:
-                swing, twist = rotation.to_swing_twist('Z')
-                mode = var.ROTATIONS[node.rotationType]
-                values = [twist]
+        mode = var.ROTATIONS['QUATERNION']
+        values = list(rotation.to_exponential_map()) + [0.0]
 
         for i in range(len(values)):
             # For quaternions store every channel individually.
+            # Since quaternions are converted to an exponential map,
+            # store the original quaternion value for restoring poses.
             if len(values) > 1:
-                data = ("{}[{}]".format(mode, i), values[i], None)
+                data = ("{}[{}]".format(mode, i), values[i], rotation[i])
             # For a single twist axis store only the twist value but
             # also add the quaternion values for restoring poses.
             else:
@@ -307,6 +307,10 @@ def drawPropertyProperties(node, layout):
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
     """
+    # Set the editable state of the layout depending on the active state
+    # of the RBF node.
+    layout.enabled = node.editable
+
     layout.prop(node, "propertyEnum")
 
 
@@ -399,6 +403,10 @@ def drawCustomProperties(node, layout):
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
     """
+    # Set the editable state of the layout depending on the active state
+    # of the RBF node.
+    layout.enabled = node.editable
+
     layout.prop(node, "mode", expand=True)
     if node.mode == 'LIST':
         layout.prop(node, "propertyEnum")
@@ -498,6 +506,10 @@ def drawShapeKeyProperties(node, layout):
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
     """
+    # Set the editable state of the layout depending on the active state
+    # of the RBF node.
+    layout.enabled = node.editable
+
     layout.prop(node, "mode", expand=True)
     if node.mode == 'LIST':
         layout.prop(node, "shapeNameEnum")
@@ -647,6 +659,10 @@ def drawModifierProperties(node, layout):
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
     """
+    # Set the editable state of the layout depending on the active state
+    # of the RBF node.
+    layout.enabled = node.editable
+
     layout.prop(node, "modifierEnum")
     if node.modifierEnum != 'NONE':
         layout.prop(node, "propertyEnum")
@@ -748,6 +764,10 @@ def drawNodeProperties(node, layout):
     :param layout: The current layout.
     :type layout: bpy.types.UILayout
     """
+    # Set the editable state of the layout depending on the active state
+    # of the RBF node.
+    layout.enabled = node.editable
+
     layout.prop(node, "nodeParent")
     layout.prop(node, "parentName")
     layout.prop(node, "nodeName")

@@ -16,7 +16,7 @@ def dumpPose(context):
     """
     node = context.active_node
     if node and node.bl_idname == "RBFPoseNode":
-        dev.log("# Pose: {}".format(node.name))
+        dev.log("# Pose: {} ({})".format(node.label, node.name))
         dev.log("# Driver:")
         lines = poses.recallPoseForObject(json.loads(node.driverData), True)
         dev.log("\n".join(lines))
@@ -33,3 +33,5 @@ def dumpRBF(context):
     """
     rbfNode = nodeTree.getRBFNode(context)
     dev.log(rbfNode.getWeightMatrix())
+    dev.log("# Quaternions have been converted to an exponential map representation.")
+    dev.log("# Therefore, matrix values differ from the pose values.")

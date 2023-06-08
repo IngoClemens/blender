@@ -12,7 +12,7 @@ class RBFCustomOutputNode(node.RBFNode):
     """Custom property output node.
     """
     bl_idname = "RBFCustomOutputNode"
-    bl_label = "Custom"
+    bl_label = "Custom Output"
     bl_icon = 'EMPTY_SINGLE_ARROW'
 
     # ------------------------------------------------------------------

@@ -10,7 +10,7 @@ class RBFRotationInputNode(node.RBFNode):
     """Object rotation input node.
     """
     bl_idname = "RBFRotationInputNode"
-    bl_label = "Rotation"
+    bl_label = "Rotation Input"
     bl_icon = 'ORIENTATION_GIMBAL'
 
     # ------------------------------------------------------------------
@@ -23,7 +23,6 @@ class RBFRotationInputNode(node.RBFNode):
     z_axis : bpy.props.BoolProperty(name="Z", default=False)
 
     rotationMode : bpy.props.EnumProperty(name="", items=var.ROTATION_MODE, default='EULER')
-    rotationType : bpy.props.EnumProperty(name="", items=var.ROTATION_TYPE, default='SWING_TWIST')
 
     def init(self, context):
         """Initialize the node and add the sockets.
