@@ -36,14 +36,19 @@ editor.
 
 Changelog:
 
+0.12.1 - 2023-06-09
+       - Assigned the PointerProperty to the WindowManager.
+
 0.12.0 - 2023-04-17
        - Included a new option to add a color property.
+
 0.11.0 - 2023-03-24
        - Added the option to open a file browser to provide a file path
          for the operator via the BROWSER_GET_FILE placeholder.
          Because of a current Blender bug only files can be selected,
          not folders.
        - Fixed that expanded enum properties are not displayed anymore.
+
 0.10.0 - 2022-11-25
        - Property placeholders for single properties can now also be
          PROP1, to be consistent with the formatting for multiple
@@ -962,7 +967,7 @@ def replacePropertyPlaceholder(cmdString, propNames):
     :rtype: str
     """
     for i in range(len(propNames)):
-        propString = "context.scene.tool_shelf.{}".format(propNames[i])
+        propString = "context.window_manager.tool_shelf.{}".format(propNames[i])
         if len(propNames) == 1:
             # Starting with version 0.10.0 the placeholder for a single
             # property can now also be PROP1 for consisteny.
@@ -1196,7 +1201,7 @@ def clearFields(context):
     :param context: The current context.
     :type context: bpy.context
     """
-    tool_shelf = context.scene.tool_shelf
+    tool_shelf = context.window_manager.tool_shelf
 
     tool_shelf.name_value = ""
     tool_shelf.cmd_value = ""
@@ -1220,7 +1225,7 @@ def groupChanged(self, context):
     :param context: The current context.
     :type context: bpy.context
     """
-    tool_shelf = context.scene.tool_shelf
+    tool_shelf = context.window_manager.tool_shelf
 
     # Reset the tool selection.
     tool_shelf.button_value = 'NONE'
@@ -1241,7 +1246,7 @@ def toolChanged(self, context):
     :param context: The current context.
     :type context: bpy.context
     """
-    tool_shelf = context.scene.tool_shelf
+    tool_shelf = context.window_manager.tool_shelf
 
     if tool_shelf.mode_value == 'EDIT':
         clearFields(context)
@@ -1310,7 +1315,7 @@ def addOnChanged(self, context):
     :param context: The current context.
     :type context: bpy.context
     """
-    tool_shelf = context.scene.tool_shelf
+    tool_shelf = context.window_manager.tool_shelf
 
     tool_shelf.name_value = ""
     tool_shelf.cmd_value = ""
@@ -1337,7 +1342,7 @@ def importFileChanged(self, context):
     :param context: The current context.
     :type context: bpy.context
     """
-    tool_shelf = context.scene.tool_shelf
+    tool_shelf = context.window_manager.tool_shelf
     CONFIG_DATA_IMPORT.config = jsonRead(tool_shelf.file_value)
     if not len(CONFIG_DATA_IMPORT.config):
         tool_shelf.import_value = 'NONE'
@@ -1367,7 +1372,7 @@ def toolItems(self, context):
     """
     tools = [('NONE', "––– Select –––", "")]
 
-    tool_shelf = context.scene.tool_shelf
+    tool_shelf = context.window_manager.tool_shelf
 
     if tool_shelf.group_value != 'NONE':
         groupIndex = getGroupIndex(CONFIG_DATA, tool_shelf.group_value)
@@ -1449,7 +1454,7 @@ def importItems(self, context):
     """
     tools = [('NONE', "––– Select –––", "")]
 
-    tool_shelf = context.scene.tool_shelf
+    tool_shelf = context.window_manager.tool_shelf
 
     # If the path to the configuration file is valid get its data.
     # This is necessary because when the script gets reloaded in
@@ -1627,7 +1632,7 @@ class VIEW3D_PT_ToolShelf_Sub(VIEW3D_PT_ToolShelf):
         :param context: The current context.
         :type context: bpy.context
         """
-        tool_shelf = context.scene.tool_shelf
+        tool_shelf = context.window_manager.tool_shelf
 
         # Get the display mode.
         mode = tool_shelf.mode_value
@@ -1865,7 +1870,7 @@ def buildPanelClass(name, data, index, expand):
     # Build the draw method for the panel up front so that it can be
     # referenced when the class gets build.
     draw = ["def draw(self, context):"]
-    draw.append("tool_shelf = context.scene.tool_shelf")
+    draw.append("tool_shelf = context.window_manager.tool_shelf")
     draw.append("self.layout.use_property_split = True")
     draw.append("self.layout.use_property_decorate = False")
 
@@ -2371,20 +2376,20 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
             # Reload the panel.
             bpy.ops.script.reload()
 
-            context.scene.tool_shelf.expand_value = False
-            context.scene.tool_shelf.new_set_value = False
-            context.scene.tool_shelf.set_value = ""
-            context.scene.tool_shelf.column_value = 2
-            context.scene.tool_shelf.addon_value = False
-            context.scene.tool_shelf.name_value = ""
-            context.scene.tool_shelf.cmd_value = ""
-            context.scene.tool_shelf.tip_value = ""
-            context.scene.tool_shelf.image_value = ""
-            context.scene.tool_shelf.image_only_value = False
-            context.scene.tool_shelf.property_value = False
-            context.scene.tool_shelf.property_name_value = ""
-            context.scene.tool_shelf.property_value_value = ""
-            context.scene.tool_shelf.property_callback_value = False
+            context.window_manager.tool_shelf.expand_value = False
+            context.window_manager.tool_shelf.new_set_value = False
+            context.window_manager.tool_shelf.set_value = ""
+            context.window_manager.tool_shelf.column_value = 2
+            context.window_manager.tool_shelf.addon_value = False
+            context.window_manager.tool_shelf.name_value = ""
+            context.window_manager.tool_shelf.cmd_value = ""
+            context.window_manager.tool_shelf.tip_value = ""
+            context.window_manager.tool_shelf.image_value = ""
+            context.window_manager.tool_shelf.image_only_value = False
+            context.window_manager.tool_shelf.property_value = False
+            context.window_manager.tool_shelf.property_name_value = ""
+            context.window_manager.tool_shelf.property_value_value = ""
+            context.window_manager.tool_shelf.property_callback_value = False
 
         # --------------------------------------------------------------
         # Remove mode
@@ -2406,7 +2411,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                 # Reset the enum values to prevent errors because
                 # the removed item is not found anymore.
                 self.group_value = 'NONE'
-                context.scene.tool_shelf.group_value = 'NONE'
+                context.window_manager.tool_shelf.group_value = 'NONE'
 
             # ----------------------------------------------------------
             # Delete the selected button.
@@ -2419,7 +2424,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                     # Reset the enum values to prevent errors because
                     # the removed item is not found anymore.
                     self.button_value = 'NONE'
-                    context.scene.tool_shelf.button_value = 'NONE'
+                    context.window_manager.tool_shelf.button_value = 'NONE'
                 else:
                     self.report({'WARNING'}, "No tool doesn't exist in the selected group")
                     return {'CANCELLED'}
@@ -2513,7 +2518,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                 # Save the configuration.
                 jsonWrite(CONFIG_PATH, CONFIG_DATA)
 
-                context.scene.tool_shelf.import_value = 'NONE'
+                context.window_manager.tool_shelf.import_value = 'NONE'
 
                 # Reload the panel.
                 bpy.ops.script.reload()
@@ -2547,8 +2552,8 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                 # Save the configuration.
                 jsonWrite(CONFIG_PATH, CONFIG_DATA)
 
-                context.scene.tool_shelf.group_value = 'NONE'
-                context.scene.tool_shelf.import_value = 'NONE'
+                context.window_manager.tool_shelf.group_value = 'NONE'
+                context.window_manager.tool_shelf.import_value = 'NONE'
 
                 # Reload the panel.
                 bpy.ops.script.reload()
@@ -2576,7 +2581,7 @@ class TOOLSHELF_OT_MoveItemUp(bpy.types.Operator):
         # unmodified dictionary when applying the new order.
         CONFIG_DATA_BACKUP = CONFIG_DATA.copy()
 
-        tool_shelf = context.scene.tool_shelf
+        tool_shelf = context.window_manager.tool_shelf
         name, isGroup = getReorderItem(context)
         # If no group is selected there is nothing to reorder.
         if name is None:
@@ -2610,7 +2615,7 @@ class TOOLSHELF_OT_MoveItemDown(bpy.types.Operator):
         # unmodified dictionary when applying the new order.
         CONFIG_DATA_BACKUP = CONFIG_DATA.copy()
 
-        tool_shelf = context.scene.tool_shelf
+        tool_shelf = context.window_manager.tool_shelf
         name, isGroup = getReorderItem(context)
         # If no group is selected there is nothing to reorder.
         if name is None:
@@ -2852,7 +2857,7 @@ def getReorderItem(context):
              The tuple contains None if no group is selected.
     :rtype: tuple(str, bool) or tuple(None, None)
     """
-    tool_shelf = context.scene.tool_shelf
+    tool_shelf = context.window_manager.tool_shelf
 
     groupName = tool_shelf.group_value
     if groupName == 'NONE':
@@ -2935,7 +2940,7 @@ def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
 
-    bpy.types.Scene.tool_shelf = bpy.props.PointerProperty(type=Tool_Shelf_Properties)
+    bpy.types.WindowManager.tool_shelf = bpy.props.PointerProperty(type=Tool_Shelf_Properties)
 
 
 def unregister():
@@ -2949,7 +2954,7 @@ def unregister():
     for cls in CLASSES:
         bpy.utils.unregister_class(cls)
 
-    del bpy.types.Scene.tool_shelf
+    del bpy.types.WindowManager.tool_shelf
 
 
 if __name__ == "__main__":
