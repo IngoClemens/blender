@@ -29,6 +29,9 @@ driver values.
 
 Changelog:
 
+1.0.1 - 2023-06-09
+      - Fixed wrong unregistering of the PointerProperty.
+
 1.0.0 - 2023-06-08
       - Because of some necessary changes new RBF setups are not
         compatible with older versions of the add-on. A message appears

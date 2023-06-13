@@ -47,4 +47,4 @@ def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
 
-    del bpy.types.Scene.rbfnodes
+    del bpy.types.WindowManager.rbf_nodes
