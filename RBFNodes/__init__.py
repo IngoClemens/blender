@@ -1,6 +1,6 @@
 """
 RBF Nodes
-Copyright (C) 2022, Ingo Clemens, brave rabbit, www.braverabbit.com
+Copyright (C) 2022-2023, Ingo Clemens, brave rabbit, www.braverabbit.com
 
     GNU GENERAL PUBLIC LICENSE Version 3
 
@@ -28,6 +28,12 @@ driver values.
 ------------------------------------------------------------------------
 
 Changelog:
+
+1.0.2 - 2023-07-03
+      - Fixed an error related to the driver or driven object missing a
+        material assignment when linking an input or output node.
+      - Fixed that geometry nodes with a geometry socket don't get their
+        value plugs listed.
 
 1.0.1 - 2023-06-09
       - Fixed wrong unregistering of the PointerProperty.
@@ -90,7 +96,7 @@ from . core import handler
 
 bl_info = {"name": "RBF Nodes",
            "author": "Ingo Clemens",
-           "version": (1, 0, 0),
+           "version": (1, 0, 2),
            "blender": (3, 1, 0),
            "category": "Animation",
            "location": "Editors > RBF Nodes Editor",

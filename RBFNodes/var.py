@@ -5,7 +5,7 @@
 # Global names
 # ----------------------------------------------------------------------
 NAME = "RBF Nodes"
-VERSION = (1, 0, 0)
+VERSION = (1, 0, 2)
 NODE_TREE_TYPE = "RBFNodesNodeTree"
 CATEGORIES_ID = "RBFNODES_TREE_NODE_CATEGORIES"
 

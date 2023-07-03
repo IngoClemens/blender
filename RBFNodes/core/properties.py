@@ -59,9 +59,10 @@ def nodeProperties(node, fromInput=True):
 
     props = []
     for i, plug in enumerate(plugs):
-        value = plug.default_value
-        if isinstance(value, (int, float, list, bpy.types.bpy_prop_array)):
-            props.append((plug.name, "{}[{}]".format(name, i)))
+        if hasattr(plug, "default_value"):
+            value = plug.default_value
+            if isinstance(value, (int, float, list, bpy.types.bpy_prop_array)):
+                props.append((plug.name, "{}[{}]".format(name, i)))
     return props
 
 
