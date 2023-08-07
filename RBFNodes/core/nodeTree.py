@@ -377,7 +377,7 @@ def getMaterial(name):
     obj = bpy.context.active_object
     if obj:
         index = obj.active_material_index
-        if not index:
+        if index is None:
             return
         mat = obj.material_slots[index].material
         if mat and mat.node_tree and mat.node_tree.name == name:

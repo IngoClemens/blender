@@ -29,6 +29,10 @@ driver values.
 
 Changelog:
 
+1.0.3 - 2023-08-07
+      - Fixed that shading nodes cannot be linked due to python changes
+        in Blender 3.6.
+
 1.0.2 - 2023-07-03
       - Fixed an error related to the driver or driven object missing a
         material assignment when linking an input or output node.
@@ -96,7 +100,7 @@ from . core import handler
 
 bl_info = {"name": "RBF Nodes",
            "author": "Ingo Clemens",
-           "version": (1, 0, 2),
+           "version": (1, 0, 3),
            "blender": (3, 1, 0),
            "category": "Animation",
            "location": "Editors > RBF Nodes Editor",
