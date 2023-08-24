@@ -25,6 +25,11 @@ Node-based RBF solver for driving multiple properties with multiple driver value
 
 [Documentation](https://github.com/IngoClemens/blender/wiki/RBF-Nodes)
 
+## Smooth Weights
+Advanced tool for smoothing mesh weights by averaging neighbouring weights.
+
+[Documentation](https://github.com/IngoClemens/blender/wiki/Smooth-Weights)
+
 ## Thumb Mate
 Create customizable thumbnail previews for object assets in the asset browser.
 
