@@ -93,6 +93,16 @@ Currently only one stroke can be undone.
 
 Changelog:
 
+1.1.0 - 2023-08-25
+      - Disabling Use Selection also disables selection/deselection
+        mode.
+      - When exiting while in Blender's Weight Paint mode the mode is
+        kept.
+      - Fixed that undo is very slow with a large number of affected
+        vertices.
+      - The user defined color for unselected vertices is not used when
+        entering the tool.
+
 1.0.0 - 2023-08-24
       - Increased brush value precision.
       - Public release.
@@ -144,7 +154,7 @@ Changelog:
 
 bl_info = {"name": "Smooth Weights",
            "author": "Ingo Clemens",
-           "version": (0, 1, 0),
+           "version": (1, 1, 0),
            "blender": (3, 6, 0),
            "category": "Rigging",
            "location": "View3D > Object",
@@ -771,8 +781,6 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         self.mesh.reset()
 
         # Reset the selection modes.
-        context.object.smooth_weights.select = False
-        context.object.smooth_weights.deselect = False
         self.setSelectionMode(context, active=False)
 
         self.isDragging = False
@@ -1398,7 +1406,8 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         :param active: True, if the selection mode should be activated.
         :type active: bool
         """
-        bpy.ops.object.mode_set(mode='OBJECT')
+        if self.mesh.obj.mode not in ['OBJECT', 'WEIGHT_PAINT']:
+            bpy.ops.object.mode_set(mode='OBJECT')
         if active:
             # Store the current shading mode.
             self.shadingMode = context.space_data.shading.type
@@ -1406,7 +1415,10 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
             context.space_data.shading.type = 'SOLID'
             context.space_data.shading.color_type = 'VERTEX'
         else:
-            # Set the shaing mode and type only if it has been stored
+            # Turn off selection and deselection
+            context.object.smooth_weights.select = False
+            context.object.smooth_weights.deselect = False
+            # Set the shading mode and type only if it has been stored
             # before.
             if self.shadingMode is not None:
                 context.space_data.shading.type = self.shadingMode
@@ -1910,7 +1922,7 @@ class Mesh(object):
         :param indices: The list of vertex indices.
         :type indices: list(int)
         :param allWeightData: The list of all vertex weight tuples, with
-                              the  weight and vertex group index for
+                              the weight and vertex group index for
                               each vertex index.
         :type allWeightData: list(list(tuple(float, int)))
 
@@ -1936,7 +1948,7 @@ class Mesh(object):
             weights = self.undoWeights.pop(0)
             for i in indices:
                 self.weights[i] = weights[i]
-                self.setWeightsFromVertexList(indices, weights)
+            self.setWeightsFromVertexList(indices, weights)
 
     def initSmoothed(self):
         """Initialize the list for holding the smoothed status for undo.
@@ -2499,6 +2511,8 @@ class Mesh(object):
             colors = self.obj.data.color_attributes.new(name=SELECT_COLOR_ATTRIBUTE,
                                                         type='FLOAT_COLOR',
                                                         domain='POINT')
+            self.resetColors(colors)
+
         # Store the currenly active colors.
         self.userColorAttr = self.obj.data.color_attributes.active_color
         # Set the active colors.
@@ -2527,7 +2541,10 @@ class Mesh(object):
             # attribute reference updated.
             if not len(self.selectionColors.name):
                 self.selectionColors = self.getColorAttribute()
-            self.obj.data.color_attributes.remove(self.selectionColors)
+            try:
+                self.obj.data.color_attributes.remove(self.selectionColors)
+            except (Exception,):
+                pass
             self.selectionColors = None
 
         if self.userColorAttr is not None:
@@ -2539,7 +2556,7 @@ class Mesh(object):
         :param indices: The list of vertex indices to color as selected.
         :type indices: list(int)
         """
-        if self.selectionColors is None:
+        if self.selectionColors is None or not len(self.selectionColors.data):
             return
 
         # Store the current mode.
@@ -2587,12 +2604,21 @@ class Mesh(object):
         # Set the object mode.
         bpy.ops.object.mode_set(mode="OBJECT")
 
+        self.resetColors(self.selectionColors)
+
+        bpy.ops.object.mode_set(mode=mode)
+
+    def resetColors(self, colorAttr):
+        """Set all vertex colors in the selection attribute to the
+        unselected color.
+
+        :param colorAttr: The color attribute.
+        :type colorAttr: bpy.types.Attribute
+        """
         color = getPreferences().unselected_color
         color = [linear_to_srgb(c) for c in color]
         for i in range(self.numVertices()):
-            self.selectionColors.data[i].color = (color[0], color[1], color[2], 1.0)
-
-        bpy.ops.object.mode_set(mode=mode)
+            colorAttr.data[i].color = (color[0], color[1], color[2], 1.0)
 
     def colorToSelection(self):
         """Select all vertices which have their selection color set.
