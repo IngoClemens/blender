@@ -66,6 +66,9 @@ X: Ignore Backside
 L: Ignore Lock
 I: Use Islands
 N: Normalize
+O: Oversampling
+   Hold O while pressing + or - to increase or decrease the oversampling
+   value.
 V: Volume (off for surface smoothing)
 R: Volume Range
    Hold R while dragging the cursor left/right to adjust the range.
@@ -92,6 +95,15 @@ Currently only one stroke can be undone.
 ------------------------------------------------------------------------
 
 Changelog:
+
+1.2.0 - 2023-08-28
+      - Added an oversampling property for smoothing in multiple
+        iterations for a smoother result.
+      - Added an additional color preference to control the color of the
+        brush circle and the tool info separately.
+      - Increased the drawing precision of the brush circle.
+      - Fixed that the flood operator would not respect the current
+        vertex selection.
 
 1.1.0 - 2023-08-25
       - Disabling Use Selection also disables selection/deselection
@@ -154,7 +166,7 @@ Changelog:
 
 bl_info = {"name": "Smooth Weights",
            "author": "Ingo Clemens",
-           "version": (1, 1, 0),
+           "version": (1, 2, 0),
            "blender": (3, 6, 0),
            "category": "Rigging",
            "location": "View3D > Object",
@@ -182,6 +194,8 @@ import time
 NAME = "smoothWeights"
 # The name of the color attribute which stores the current selection.
 SELECT_COLOR_ATTRIBUTE = "smoothWeights_selection"
+# The number of points for the brush circle.
+CIRCLE_POINTS = 64
 
 # Switch for smoothing only selected vertices.
 AFFECT_SELECTED = True
@@ -200,6 +214,8 @@ IGNORE_LOCK = False
 MAX_GROUPS = 5
 # Normalization switch.
 NORMALIZE = True
+# The oversampling value.
+OVERSAMPLING = 1
 # The default radius of the brush.
 RADIUS = 0.25
 # The selection state.
@@ -231,6 +247,7 @@ IGNORELOCK_KEY = "L"
 ISLANDS_KEY = "I"
 MAXGROUPS_KEY = "G"
 NORMALIZE_KEY = "N"
+OVERSAMPLING_KEY = "O"
 RADIUS_KEY = "B"
 SELECT_KEY = "W"
 USEMAXGROUPS_KEY = "M"
@@ -243,6 +260,7 @@ VOLUMERANGE_KEY = "R"
 
 # Preferences
 BRUSH_COLOR = (0.263, 0.723, 0.0)
+INFO_COLOR = (0.263, 0.723, 0.0)
 KEEP_SELECTION = True
 SELECTED_COLOR = (0.03, 0.302, 1.0)
 SHOW_INFO = True
@@ -251,17 +269,30 @@ UNSELECTED_COLOR = (1.0, 1.0, 1.0)
 
 # Labels
 AFFECT_SELECTED_LABEL = "Affect Selected"
+BRUSH_COLOR_LABEL = "Brush Color"
+CLEAR_SELECTION_LABEL = "Clear Selection"
 CURVE_LABEL = "Curve"
+DECREASE_VALUE_LABEL = "Decrease Value"
+DESELECT_LABEL = "Deselect"
 FLOOD_LABEL = "Flood"
 IGNORE_BACKSIDE_LABEL = "Ignore Backside"
 IGNORE_LOCK_LABEL = "Ignore Lock"
+INCREASE_VALUE_LABEL = "Increase Value"
+INFO_TEXT_COLOR_LABEL = "Tool Info Color"
+KEEP_SELECTION_LABEL = "Keep Selection After Finishing"
+MAX_GROUPS_LABEL = "Max Groups"
 NORMALIZE_LABEL = "Normalize"
+OVERSAMPLING_LABEL = "Oversampling"
 USE_ISLANDS_LABEL = "Use Islands"
 USE_MAX_GROUPS_LABEL = "Limit Groups"
 USE_SELECTION_LABEL = "Use Selection"
-MAX_GROUPS_LABEL = "Max Groups"
 RADIUS_LABEL = "Radius"
+SELECT_LABEL = "Select"
+SELECTED_COLOR_LABEL = "Selected Color"
+SHOW_INFO_LABEL = "Show Tool Info"
 STRENGTH_LABEL = "Strength"
+UNDO_STEPS_LABEL = "Undo Steps"
+UNSELECTED_COLOR_LABEL = "Unselected Color"
 VOLUME_LABEL = "Use Volume"
 VOLUME_RANGE_LABEL = "Volume Range"
 
@@ -274,9 +305,11 @@ ANN_DESELECT = "Deselect vertices"
 ANN_FLOOD = "Flood smooth the vertex weights"
 ANN_IGNORE_BACKSIDE = "Ignore faces which are viewed from the back"
 ANN_IGNORE_LOCK = "Ignore the lock status of a vertex group"
+ANN_INFO_COLOR = "Display color for the in-view info (not gamma corrected)"
 ANN_KEEP_SELECTION = "Keep the tool selection vertices as selected vertices after finishing the tool"
 ANN_MAX_GROUPS = "The number of vertex groups a vertex can share weights with"
 ANN_NORMALIZE = "Normalize the averaged weights to a sum of 1"
+ANN_OVERSAMPLING = "The number of iterations for the smoothing"
 ANN_RADIUS = "The brush radius in generic Blender units"
 ANN_SELECT = "Select vertices"
 ANN_SELECTED_COLOR = "The color for selected vertices"
@@ -287,8 +320,8 @@ ANN_UNSELECTED_COLOR = "The color for unselected vertices"
 ANN_USE_ISLANDS = "Limit the smoothing to the current island when in surface mode"
 ANN_USE_MAX_GROUPS = "Limit the weighting to a maximum number of vertex groups"
 ANN_USE_SELECTION = "Use only selected or unselected vertices for smoothing"
-ANN_VALUE_DOWN = "Decrease the maximum vertex groups"
-ANN_VALUE_UP = "Increase the maximum vertex groups"
+ANN_VALUE_DOWN = "Decrease the maximum vertex groups or oversampling"
+ANN_VALUE_UP = "Increase the maximum vertex groups or oversampling"
 ANN_VOLUME = "Smooth weights within the brush volume. When off the weights are averaged based on linked vertices"
 ANN_VOLUME_RANGE = "Scale factor for radius, determining neighboring vertices in volume mode"
 
@@ -318,6 +351,9 @@ class SmoothWeights_Properties(bpy.types.PropertyGroup):
                                      description=ANN_MAX_GROUPS)
     normalize: bpy.props.BoolProperty(default=NORMALIZE,
                                       description=ANN_NORMALIZE)
+    oversampling: bpy.props.IntProperty(default=OVERSAMPLING,
+                                        min=1,
+                                        description=ANN_OVERSAMPLING)
     radius: bpy.props.FloatProperty(default=RADIUS,
                                     min=0,
                                     description=ANN_RADIUS)
@@ -380,13 +416,19 @@ class DrawInfo3D(object):
         self.volume_key = None
         self.volumeRange_key = None
 
-    def drawColor(self):
+    def drawColor(self, item):
         """Return the draw color defined in the preferences.
+
+        :param item: The color item string.
+        :type item: str
 
         :return: The drawing color for the brush circle and info.
         :rtype: list
         """
-        color = getPreferences().brush_color
+        if item == "brush":
+            color = getPreferences().brush_color
+        else:
+            color = getPreferences().info_color
         # Gamma-correct the color.
         return [linear_to_srgb(c) for c in color]
 
@@ -399,13 +441,13 @@ class DrawInfo3D(object):
         if self.center is None:
             return
 
-        color = self.drawColor()
+        color = self.drawColor(item="brush")
 
         # Get the brush settings.
         radius = context.object.smooth_weights.radius
 
         # The number of points for the brush circle.
-        numPoints = 32
+        numPoints = CIRCLE_POINTS
 
         # The default normal for the brush circle.
         baseNormal = Vector((0.0, 0.0, 1.0))
@@ -440,7 +482,7 @@ class DrawInfo3D(object):
         """
         fontId = 0
 
-        color = self.drawColor()
+        color = self.drawColor(item="info")
 
         # The font size and positioning depends on the system's pixel
         # size.
@@ -457,6 +499,7 @@ class DrawInfo3D(object):
         maxGroups = context.object.smooth_weights.maxGroups
         useMaxGroups = context.object.smooth_weights.useMaxGroups
         normalize = context.object.smooth_weights.normalize
+        oversampling = context.object.smooth_weights.oversampling
         radius = context.object.smooth_weights.radius
         select = context.object.smooth_weights.select
         useSelection = context.object.smooth_weights.useSelection
@@ -485,6 +528,7 @@ class DrawInfo3D(object):
                      "{}  {}: {}".format(self.ignoreLock_key, IGNORE_LOCK_LABEL, "On" if ignoreLock else "Off"),
                      "{}  {} {}".format(self.islands_key, USE_ISLANDS_LABEL, "On" if islands else "Off"),
                      "{}  {}: {}".format(self.normalize_key, NORMALIZE_LABEL, "On" if normalize else "Off"),
+                     "{}  {}: {}".format(self.oversampling_key, OVERSAMPLING_LABEL, oversampling),
                      "",
                      "{}  {}: {}".format(self.volume_key, VOLUME_LABEL, "On" if volume else "Off"),
                      "{}  {}: {:.3f}".format(self.volumeRange_key, VOLUME_RANGE_LABEL, volumeRange),
@@ -570,6 +614,7 @@ class DrawInfo3D(object):
         self.islands_key = getPreferences().islands_key.upper()
         self.maxGroups_key = getPreferences().maxGroups_key.upper()
         self.normalize_key = getPreferences().normalize_key.upper()
+        self.oversampling_key = getPreferences().oversampling_key.upper()
         self.radius_key = getPreferences().radius_key.upper()
         self.select_key = getPreferences().select_key.upper()
         self.strength_key = getPreferences().strength_key.upper()
@@ -626,6 +671,8 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
     adjustValue = None
     # The switch for setting the max groups value.
     setMaxGroups = False
+    # The switch for setting the oversampling value.
+    setOversampling = False
 
     isModal = False
 
@@ -637,6 +684,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
     islands = USE_ISLANDS
     maxGroups = MAX_GROUPS
     normalize = NORMALIZE
+    oversampling = OVERSAMPLING
     radius = RADIUS
     strength = STRENGTH
     useMaxGroups = USE_MAX_GROUPS
@@ -654,6 +702,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
     islands_key = None
     maxGroups_key = None
     normalize_key = None
+    oversampling_key = None
     radius_key = None
     select_key = None
     strength_key = None
@@ -720,6 +769,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         self.islands = context.object.smooth_weights.islands
         self.maxGroups = context.object.smooth_weights.maxGroups
         self.normalize = context.object.smooth_weights.normalize
+        self.oversampling = context.object.smooth_weights.oversampling
         self.radius = context.object.smooth_weights.radius
         self.strength = context.object.smooth_weights.strength
         self.useMaxGroups = context.object.smooth_weights.useMaxGroups
@@ -854,7 +904,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
 
             if not select and not deselect:
-                self.mesh.performSmooth(rangeVerts)
+                self.mesh.performSmooth(rangeVerts, useColorAttr=True)
             else:
                 # Paint selection only if the selection should be used.
                 if self.useSelection:
@@ -1031,6 +1081,36 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         if self.setMaxGroups:
+            return {'RUNNING_MODAL'}
+
+        # Oversampling
+        if event.type == self.oversampling_key:
+            if event.value == 'PRESS':
+                self.setOversampling = True
+            elif event.value == 'RELEASE':
+                self.setOversampling = False
+
+        if event.type == self.value_up_key and event.value == 'PRESS' and self.setOversampling:
+            value = context.object.smooth_weights.oversampling + 1
+            context.object.smooth_weights.oversampling = value
+            self.oversampling = value
+            self.updateSettings()
+            drawInfo3d.updateView()
+            context.area.tag_redraw()
+            return {'RUNNING_MODAL'}
+
+        if event.type == self.value_down_key and event.value == 'PRESS' and self.setOversampling:
+            value = context.object.smooth_weights.oversampling - 1
+            if value < 1:
+                value = 1
+            context.object.smooth_weights.oversampling = value
+            self.oversampling = value
+            self.updateSettings()
+            drawInfo3d.updateView()
+            context.area.tag_redraw()
+            return {'RUNNING_MODAL'}
+
+        if self.setOversampling:
             return {'RUNNING_MODAL'}
 
         # Flood
@@ -1327,6 +1407,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         self.mesh.islands = self.islands
         self.mesh.maxGroups = self.maxGroups
         self.mesh.normalize = self.normalize
+        self.mesh.oversampling = self.oversampling
         self.mesh.radius = self.radius
         self.mesh.strength = self.strength
         self.mesh.useMaxGroups = self.useMaxGroups
@@ -1346,6 +1427,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         self.islands_key = getPreferences().islands_key.upper()
         self.maxGroups_key = getPreferences().maxGroups_key.upper()
         self.normalize_key = getPreferences().normalize_key.upper()
+        self.oversampling_key = getPreferences().oversampling_key.upper()
         self.radius_key = getPreferences().radius_key.upper()
         self.select_key = getPreferences().select_key.upper()
         self.strength_key = getPreferences().strength_key.upper()
@@ -1380,6 +1462,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
                  "{}: {}".format(self.ignoreBackside_key, IGNORE_BACKSIDE_LABEL),
                  "{}: {}".format(self.ignoreLock_key, IGNORE_LOCK_LABEL),
                  "{}: {}".format(self.normalize_key, NORMALIZE_LABEL),
+                 "{}: {} {}/{}".format(self.oversampling_key, OVERSAMPLING_LABEL, up, down),
                  "{}: {}".format(self.volume_key, VOLUME_LABEL),
                  "{}: {}".format(self.islands_key, USE_ISLANDS_LABEL),
                  "{}: {}".format(self.useMaxGroups_key, USE_MAX_GROUPS_LABEL),
@@ -1465,6 +1548,10 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
                                       min=0.001,
                                       max=1,
                                       description=ANN_STRENGTH)
+    oversampling: bpy.props.IntProperty(name=OVERSAMPLING_LABEL,
+                                        default=OVERSAMPLING,
+                                        min=1,
+                                        description=ANN_OVERSAMPLING)
     useSelection: bpy.props.BoolProperty(name=USE_SELECTION_LABEL,
                                          default=USE_SELECTION,
                                          description=ANN_USE_SELECTION)
@@ -1518,6 +1605,9 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
                               useColorAttr=False,
                               strength=self.strength)
 
+        # Reset the mesh.
+        self.mesh.reset()
+
         # Copy the settings to the object properties.
         self.setSettings(context)
         # Mark the operator ready for redo.
@@ -1558,6 +1648,7 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
         self.ignoreLock = context.object.smooth_weights.ignoreLock
         self.maxGroups = context.object.smooth_weights.maxGroups
         self.normalize = context.object.smooth_weights.normalize
+        self.oversampling = context.object.smooth_weights.oversampling
         self.radius = context.object.smooth_weights.radius
         self.strength = context.object.smooth_weights.strength
         self.useMaxGroups = context.object.smooth_weights.useMaxGroups
@@ -1579,6 +1670,7 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
         context.object.smooth_weights.ignoreLock = self.ignoreLock
         context.object.smooth_weights.maxGroups = self.maxGroups
         context.object.smooth_weights.normalize = self.normalize
+        context.object.smooth_weights.oversampling = self.oversampling
         context.object.smooth_weights.radius = self.radius
         context.object.smooth_weights.strength = self.strength
         context.object.smooth_weights.useMaxGroups = self.useMaxGroups
@@ -1620,6 +1712,7 @@ class Mesh(object):
         self.islands = self.obj.smooth_weights.islands
         self.maxGroups = self.obj.smooth_weights.maxGroups
         self.normalize = self.obj.smooth_weights.normalize
+        self.oversampling = self.obj.smooth_weights.oversampling
         self.radius = self.obj.smooth_weights.radius
         self.strength = self.obj.smooth_weights.strength
         self.useMaxGroups = self.obj.smooth_weights.useMaxGroups
@@ -2197,12 +2290,12 @@ class Mesh(object):
         :param affectSelected: True, if only selected vertices should be
                                affected.
         :type affectSelected: bool
-        :param strength: The smoothing strength.
-        :type strength: float
         :param useColorAttr: True, if the color attribute should be used
                              for the selection (in paint mode), rather
                              than the current vertex selection.
         :type useColorAttr: bool
+        :param strength: The smoothing strength.
+        :type strength: float
         """
         # Needed for the paint operator but not for the flood operator.
         self.undoIndices.insert(0, [])
@@ -2246,9 +2339,9 @@ class Mesh(object):
                 oppositeIndex = self.getOppositeBoundaryIndex(vert.index)
                 vertData[vert.index] = vert.index, strength, oppositeIndex
 
-        self.performSmooth(vertData, flood=True)
+        self.performSmooth(vertData, flood=True, useColorAttr=useColorAttr)
 
-    def performSmooth(self, vertData, flood=False):
+    def performSmooth(self, vertData, flood=False, useColorAttr=False):
         """Smooth all vertices within the brush radius.
 
         :param vertData: The list with vertex data from the brush range.
@@ -2257,6 +2350,10 @@ class Mesh(object):
                       This disables the scale value being affected by
                       the curve falloff.
         :type flood: bool
+        :param useColorAttr: True, if the color attribute should be used
+                             for the selection (in paint mode), rather
+                             than the current vertex selection.
+        :type useColorAttr: bool
         """
         # The smoothing is performed in three steps to increase
         # efficiency in relation to possible oversampling.
@@ -2268,7 +2365,10 @@ class Mesh(object):
         connectedData = []
         for index, value, indexBound in vertData:
 
-            isSel = self.isSelected(index)
+            if useColorAttr:
+                isSel = self.isSelected(index)
+            else:
+                isSel = self.obj.data.vertices[index].select
             affectState = isSel if self.affectSelected else not isSel
 
             # Only process affected vertices.
@@ -2279,34 +2379,35 @@ class Mesh(object):
                 connectedData.append(self.getConnectedData(index, value, indexBound, flood))
 
         # 2. Perform the smoothing of the weights.
-        #    If oversampling is required, this would be placed inside
-        #    the oversampling loop.
         #    When oversampling, the important part is to use the new
         #    weights as the base for the next oversampling pass.
         #    New and old weights shouldn't get mixed up because this
         #    would cause jitter, since the weights and indices are not
         #    in order.
-        smoothed = [None] * self.numVertices()
-        for index, scale, indexBound, connected, volumeScale in connectedData:
-            self.computeWeights(index, scale, indexBound, connected, volumeScale, smoothed)
+        for sample in range(self.oversampling):
+            smoothed = [None] * self.numVertices()
+            for index, scale, indexBound, connected, volumeScale in connectedData:
+                self.computeWeights(index, scale, indexBound, connected, volumeScale, smoothed)
 
-        # 3. Collect all processed vertices and their final weights for
-        #    setting the values in the vertex groups.
-        indices = []
-        weightData = []
-        for index, scale, indexBound, connected, volumeScale in connectedData:
-            # Get the new weights for applying.
-            indices.append(index)
-            self.cancelIndices[index] = True
-            weightData.append(smoothed[index])
-            self.weights[index] = smoothed[index]
-            # Add the boundary vertex if in surface mode and
-            # islands should not be respected.
-            if not self.islands and indexBound is not None:
-                indices.append(indexBound)
-                self.cancelIndices[indexBound] = True
-                weightData.append(smoothed[indexBound])
-                self.weights[indexBound] = smoothed[indexBound]
+            # 3. Collect all processed vertices and their final weights for
+            #    setting the values in the vertex groups.
+            indices = []
+            weightData = []
+            for index, scale, indexBound, connected, volumeScale in connectedData:
+                if sample == self.oversampling - 1:
+                    # Get the new weights for applying.
+                    indices.append(index)
+                    self.cancelIndices[index] = True
+                    weightData.append(smoothed[index])
+                self.weights[index] = smoothed[index]
+                # Add the boundary vertex if in surface mode and
+                # islands should not be respected.
+                if not self.islands and indexBound is not None:
+                    if sample == self.oversampling - 1:
+                        indices.append(indexBound)
+                        self.cancelIndices[indexBound] = True
+                        weightData.append(smoothed[indexBound])
+                    self.weights[indexBound] = smoothed[indexBound]
 
         # Apply the weights.
         self.setVertexWeights(indices, weightData)
@@ -2354,7 +2455,7 @@ class Mesh(object):
             volumeScale = [v for i, v, b in vertData]
 
         if not flood:
-            scale = getFalloffValue(value, self.curve) * self.strength
+            scale = getFalloffValue(value, self.curve) * self.getStrength()
         else:
             scale = self.strength
 
@@ -2495,6 +2596,14 @@ class Mesh(object):
         # mode and islands should not be respected.
         if not self.islands and indexBound is not None:
             smoothed[indexBound] = smoothed[index]
+
+    def getStrength(self):
+        """Return the smoothing strength based on the oversampling.
+
+        :return: The smoothing strength value:
+        :rtype: float
+        """
+        return self.strength / self.oversampling
 
     # ------------------------------------------------------------------
     # Selection
@@ -2851,6 +2960,7 @@ class SMOOTHWEIGHTS_PT_settings(bpy.types.Panel):
         col.prop(sw, "islands", text=USE_ISLANDS_LABEL)
         col.prop(sw, "ignoreLock", text=IGNORE_LOCK_LABEL)
         col.prop(sw, "normalize", text=NORMALIZE_LABEL)
+        col.prop(sw, "oversampling", text=OVERSAMPLING_LABEL)
         col.prop(sw, "useMaxGroups", text=USE_MAX_GROUPS_LABEL)
         col.prop(sw, "maxGroups", text=MAX_GROUPS_LABEL)
         col.separator()
@@ -2896,82 +3006,89 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
     """
     bl_idname = NAME
 
-    brush_color: bpy.props.FloatVectorProperty(name="Brush Color",
+    brush_color: bpy.props.FloatVectorProperty(name=BRUSH_COLOR_LABEL,
                                                description=ANN_BRUSH_COLOR,
                                                subtype='COLOR',
                                                default=BRUSH_COLOR)
-    keep_selection: bpy.props.BoolProperty(name="Keep Selection After Finishing",
+    info_color: bpy.props.FloatVectorProperty(name=INFO_TEXT_COLOR_LABEL,
+                                              description=ANN_INFO_COLOR,
+                                              subtype='COLOR',
+                                              default=INFO_COLOR)
+    keep_selection: bpy.props.BoolProperty(name=KEEP_SELECTION_LABEL,
                                            description=ANN_KEEP_SELECTION,
                                            default=KEEP_SELECTION)
-    selected_color: bpy.props.FloatVectorProperty(name="Selected Color",
+    selected_color: bpy.props.FloatVectorProperty(name=SELECTED_COLOR_LABEL,
                                                   description=ANN_SELECTED_COLOR,
                                                   subtype='COLOR',
                                                   default=SELECTED_COLOR)
-    show_info: bpy.props.BoolProperty(name="Show Tool Info",
+    show_info: bpy.props.BoolProperty(name=SHOW_INFO_LABEL,
                                       description=ANN_SHOW_INFO,
                                       default=SHOW_INFO)
-    undo_steps: bpy.props.IntProperty(name="Undo Steps",
+    undo_steps: bpy.props.IntProperty(name=UNDO_STEPS_LABEL,
                                       description=ANN_UNDO_STEPS,
                                       default=UNDO_STEPS,
                                       min=1,
                                       max=100)
-    unselected_color: bpy.props.FloatVectorProperty(name="Unselected Color",
+    unselected_color: bpy.props.FloatVectorProperty(name=UNSELECTED_COLOR_LABEL,
                                                     description=ANN_UNSELECTED_COLOR,
                                                     subtype='COLOR',
                                                     default=UNSELECTED_COLOR)
 
-    affectSelected_key: bpy.props.StringProperty(name="Affect Selected",
+    affectSelected_key: bpy.props.StringProperty(name=AFFECT_SELECTED_LABEL,
                                                  description=ANN_AFFECT_SELECTED,
                                                  default=AFFECTSELECTED_KEY)
-    clearSelection_key: bpy.props.StringProperty(name="Clear Selection",
+    clearSelection_key: bpy.props.StringProperty(name=CLEAR_SELECTION_LABEL,
                                                  description=ANN_CLEAR_SELECTION,
                                                  default=CLEARSELECTION_KEY)
-    deselect_key: bpy.props.StringProperty(name="Deselect",
+    deselect_key: bpy.props.StringProperty(name=DESELECT_LABEL,
                                            description=ANN_DESELECT,
                                            default=DESELECT_KEY)
-    flood_key: bpy.props.StringProperty(name="Flood",
+    flood_key: bpy.props.StringProperty(name=FLOOD_LABEL,
                                         description=ANN_FLOOD,
                                         default=FLOOD_KEY)
-    ignoreBackside_key: bpy.props.StringProperty(name="Ignore Backside",
+    ignoreBackside_key: bpy.props.StringProperty(name=IGNORE_BACKSIDE_LABEL,
                                                  description=ANN_IGNORE_BACKSIDE,
                                                  default=IGNOREBACKSIDE_KEY)
-    ignoreLock_key: bpy.props.StringProperty(name="Ignore Lock",
+    ignoreLock_key: bpy.props.StringProperty(name=IGNORE_LOCK_LABEL,
                                              description=ANN_IGNORE_LOCK,
                                              default=IGNORELOCK_KEY)
-    islands_key: bpy.props.StringProperty(name="Use Islands",
+    islands_key: bpy.props.StringProperty(name=USE_ISLANDS_LABEL,
                                           description=ANN_USE_ISLANDS,
                                           default=ISLANDS_KEY)
-    maxGroups_key: bpy.props.StringProperty(name="Max Groups",
+    maxGroups_key: bpy.props.StringProperty(name=MAX_GROUPS_LABEL,
                                             description=ANN_MAX_GROUPS,
                                             default=MAXGROUPS_KEY)
-    normalize_key: bpy.props.StringProperty(name="Normalize",
+    normalize_key: bpy.props.StringProperty(name=NORMALIZE_LABEL,
                                             description=ANN_NORMALIZE,
                                             default=NORMALIZE_KEY)
-    radius_key: bpy.props.StringProperty(name="Radius",
+    oversampling_key: bpy.props.StringProperty(name=OVERSAMPLING_LABEL,
+                                               description=ANN_OVERSAMPLING,
+                                               default=OVERSAMPLING_KEY)
+    radius_key: bpy.props.StringProperty(name=RADIUS_LABEL,
                                          description=ANN_RADIUS,
                                          default=RADIUS_KEY)
-    select_key: bpy.props.StringProperty(name="Select",
+    select_key: bpy.props.StringProperty(name=SELECT_LABEL,
                                          description=ANN_SELECT,
                                          default=SELECT_KEY)
-    strength_key: bpy.props.StringProperty(name="Strength",
+    strength_key: bpy.props.StringProperty(name=STRENGTH_LABEL,
                                            description=ANN_STRENGTH,
                                            default=STRENGTH_KEY)
-    useMaxGroups_key: bpy.props.StringProperty(name="Use Max Groups",
+    useMaxGroups_key: bpy.props.StringProperty(name=USE_MAX_GROUPS_LABEL,
                                                description=ANN_USE_MAX_GROUPS,
                                                default=USEMAXGROUPS_KEY)
-    useSelection_key: bpy.props.StringProperty(name="Use Selection",
+    useSelection_key: bpy.props.StringProperty(name=USE_SELECTION_LABEL,
                                                description=ANN_USE_SELECTION,
                                                default=USESELECTION_KEY)
-    value_up_key: bpy.props.StringProperty(name="Increase Value",
+    value_up_key: bpy.props.StringProperty(name=INCREASE_VALUE_LABEL,
                                            description=ANN_VALUE_UP,
                                            default=VALUE_UP_KEY)
-    value_down_key: bpy.props.StringProperty(name="Decrease Value",
+    value_down_key: bpy.props.StringProperty(name=DECREASE_VALUE_LABEL,
                                              description=ANN_VALUE_DOWN,
                                              default=VALUE_DOWN_KEY)
-    volume_key: bpy.props.StringProperty(name="Use Volume",
+    volume_key: bpy.props.StringProperty(name=VOLUME_LABEL,
                                          description=ANN_VOLUME,
                                          default=VOLUME_KEY)
-    volumeRange_key: bpy.props.StringProperty(name="Volume Range",
+    volumeRange_key: bpy.props.StringProperty(name=VOLUME_RANGE_LABEL,
                                               description=ANN_VOLUME_RANGE,
                                               default=VOLUMERANGE_KEY)
 
@@ -2992,6 +3109,7 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
         colBox.prop(self, "undo_steps")
         colBox.separator()
         colBox.prop(self, "brush_color")
+        colBox.prop(self, "info_color")
         colBox.prop(self, "selected_color")
         colBox.prop(self, "unselected_color")
 
@@ -3006,6 +3124,7 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
         colBox.prop(self, "ignoreLock_key")
         colBox.prop(self, "islands_key")
         colBox.prop(self, "normalize_key")
+        colBox.prop(self, "oversampling_key")
         colBox.separator()
         colBox.prop(self, "volume_key")
         colBox.prop(self, "volumeRange_key")
