@@ -1,179 +1,6 @@
-"""
-smoothWeights
-Copyright (C) 2023, Ingo Clemens, brave rabbit, www.braverabbit.com
+# <pep8 compliant>
 
-    GNU GENERAL PUBLIC LICENSE Version 3
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.
-    If not, see <https://www.gnu.org/licenses/>.
-
-------------------------------------------------------------------------
-
-Description:
-
-------------------------------------------------------------------------
-
-Usage:
-
-Requirements:
-The mesh needs to have at least two vertex groups for the panel and menu
-item to show.
-
-1. Select the mesh in object mode. There is no need to enter weight
-   painting mode.
-2. From the side panel in the 3D view choose the tool tab.
-3. Open the folder "Smooth Weights"
-4. Press "Brush".
-
-   or
-
-   From the 3D view main menu choose Object > Smooth Weights.
-
-   or
-
-   From the 3D view Weight Paint menu choose Weights > Smooth Weights.
-
-5. All settings can either be adjusted from the side panel before
-   entering the tool or via keymaps while the tool is active.
-6. LMB paint over the mesh to smooth the weights.
-7. Press Enter to finish the tool or Esc/RMB to cancel.
-
-The default keymaps are:
-
-B: Brush size
-   Hold B while dragging the cursor left/right to adjust the size.
-   Hold Shift for faster adjustment and Ctrl for slower.
-   Make sure to hover over the mesh.
-S: Brush strength
-   Hold S while dragging the cursor left/right to adjust the strength.
-   Hold Shift for faster adjustment and Ctrl for slower.
-   Make sure to hover over the mesh.
-1/2/3/4: Brush Curve Falloff (None, Linear, Smooth, Narrow)
-Q: Use Selection
-A: Affect Selected
-X: Ignore Backside
-L: Ignore Lock
-I: Use Islands
-N: Normalize
-O: Oversampling
-   Hold O while pressing + or - to increase or decrease the oversampling
-   value.
-V: Volume (off for surface smoothing)
-R: Volume Range
-   Hold R while dragging the cursor left/right to adjust the range.
-   Hold Shift for faster adjustment and Ctrl for slower.
-   Make sure to hover over the mesh.
-M: Limit Max Groups
-G: Groups
-   Hold G while pressing + or - to increase or decrease the number of
-   vertex groups.
-F: Flood Smooth
-Shift + RMB: Frame Change
-   Change the current frame by dragging the mouse left or right.
-W: Toggle Select mode.
-E: Toggle Deselect mode.
-C: Clear Selection
-
-All keymaps, except the frame change, are customizable from the add-on
-preferences.
-
-While the tool is active the last brush stroke can be undone by pressing
-the default key for undo, without any modifiers.
-Currently only one stroke can be undone.
-
-------------------------------------------------------------------------
-
-Changelog:
-
-1.2.0 - 2023-08-28
-      - Added an oversampling property for smoothing in multiple
-        iterations for a smoother result.
-      - Added an additional color preference to control the color of the
-        brush circle and the tool info separately.
-      - Increased the drawing precision of the brush circle.
-      - Fixed that the flood operator would not respect the current
-        vertex selection.
-
-1.1.0 - 2023-08-25
-      - Disabling Use Selection also disables selection/deselection
-        mode.
-      - When exiting while in Blender's Weight Paint mode the mode is
-        kept.
-      - Fixed that undo is very slow with a large number of affected
-        vertices.
-      - The user defined color for unselected vertices is not used when
-        entering the tool.
-
-1.0.0 - 2023-08-24
-      - Increased brush value precision.
-      - Public release.
-
-0.0.6 - 2023-08-23
-      - Ignore islands is now enabled for volume mode.
-      - Added a selection and deselection mode.
-      - Added a keymap for flooding in paint mode.
-      - The paint mode undo queue has now a configurable length with a
-        preference setting.
-      - The tool is now only accessible when in Object or Weight Paint
-        mode.
-
-0.0.5 - 2023-08-18
-      - Added the ability to drag the current frame while in paint
-        mode with Shift + RMB.
-      - Added the corresponding keymap to the in-view settings.
-      - Fixed, that the brush circle briefly appears at the last
-        position when starting a new stroke.
-      - Fixed the wrong display of the max groups label in the in-view
-        settings.
-
-0.0.4 - 2023-08-18
-      - Improvements to the smoothing algorithm.
-      - Added the option to ignore backfaces while painting.
-      - Included the volume option in the floor operator.
-      - Removed the oversampling property, which was needed for the old
-        smoothing process.
-      - Fixed some issues related to the selection switches.
-      - Fixed the strength value which was not working as expected.
-
-0.0.3 - 2023-08-16
-      - The tool is now also available in Blender's Weight Paint mode.
-      - The paint cursor now shows as a target cross, to match it with
-        the regular paint tool.
-      - Fixed an undo-paint-related issue when using the flood operator.
-      - Fixed the labels in the redo panel of the floor operator.
-
-0.0.2 - 2023-08-16
-      - Added a new option to disable any selection-based restriction.
-      - Added a single undo operation while in paint mode.
-      - Fixed the issue that any transformation affects the
-        functionality of the tool.
-
-0.0.1 - 2023-08-15
-
-------------------------------------------------------------------------
-"""
-
-bl_info = {"name": "Smooth Weights",
-           "author": "Ingo Clemens",
-           "version": (1, 2, 0),
-           "blender": (3, 6, 0),
-           "category": "Rigging",
-           "location": "View3D > Object",
-           "description": "Smooth mesh weights by averaging neighbouring weights",
-           "warning": "",
-           "doc_url": "https://github.com/IngoClemens/blender/wiki/Smooth-Weights",
-           "tracker_url": ""}
+from . import symmetryMap, utils, weights
 
 import blf
 import bpy
@@ -232,6 +59,8 @@ USE_ISLANDS = False
 USE_MAX_GROUPS = True
 # Switch for using selected or unselected vertices.
 USE_SELECTION = False
+# Switch for using the symmetry map.
+USE_SYMMETRY = False
 # Switch for toggling between a volume-based and a surface-based brush.
 VOLUME = False
 # The radius multiplier for finding close vertices in volume mode.
@@ -252,6 +81,7 @@ RADIUS_KEY = "B"
 SELECT_KEY = "W"
 USEMAXGROUPS_KEY = "M"
 USESELECTION_KEY = "Q"
+USESYMMETRY_KEY = "T"
 STRENGTH_KEY = "S"
 VALUE_UP_KEY = "PLUS"
 VALUE_DOWN_KEY = "MINUS"
@@ -286,6 +116,7 @@ OVERSAMPLING_LABEL = "Oversampling"
 USE_ISLANDS_LABEL = "Use Islands"
 USE_MAX_GROUPS_LABEL = "Limit Groups"
 USE_SELECTION_LABEL = "Use Selection"
+USE_SYMMETRY_LABEL = "Use Symmetry"
 RADIUS_LABEL = "Radius"
 SELECT_LABEL = "Select"
 SELECTED_COLOR_LABEL = "Selected Color"
@@ -320,6 +151,7 @@ ANN_UNSELECTED_COLOR = "The color for unselected vertices"
 ANN_USE_ISLANDS = "Limit the smoothing to the current island when in surface mode"
 ANN_USE_MAX_GROUPS = "Limit the weighting to a maximum number of vertex groups"
 ANN_USE_SELECTION = "Use only selected or unselected vertices for smoothing"
+ANN_USE_SYMMETRY = "Use the symmetry map to mirror the weights according to the mesh topology"
 ANN_VALUE_DOWN = "Decrease the maximum vertex groups or oversampling"
 ANN_VALUE_UP = "Increase the maximum vertex groups or oversampling"
 ANN_VOLUME = "Smooth weights within the brush volume. When off the weights are averaged based on linked vertices"
@@ -347,7 +179,7 @@ class SmoothWeights_Properties(bpy.types.PropertyGroup):
     islands: bpy.props.BoolProperty(default=USE_ISLANDS,
                                     description=ANN_USE_ISLANDS)
     maxGroups: bpy.props.IntProperty(default=MAX_GROUPS,
-                                     min=0,
+                                     min=1,
                                      description=ANN_MAX_GROUPS)
     normalize: bpy.props.BoolProperty(default=NORMALIZE,
                                       description=ANN_NORMALIZE)
@@ -367,6 +199,8 @@ class SmoothWeights_Properties(bpy.types.PropertyGroup):
                                          description=ANN_USE_MAX_GROUPS)
     useSelection: bpy.props.BoolProperty(default=USE_SELECTION,
                                          description=ANN_USE_SELECTION)
+    useSymmetry: bpy.props.BoolProperty(default=USE_SYMMETRY,
+                                        description=ANN_USE_SYMMETRY)
     volume: bpy.props.BoolProperty(default=VOLUME,
                                    description=ANN_VOLUME)
     volumeRange: bpy.props.FloatProperty(default=VOLUME_RANGE,
@@ -408,15 +242,18 @@ class DrawInfo3D(object):
         self.islands_key = None
         self.maxGroups_key = None
         self.normalize_key = None
+        self.oversampling_key = None
         self.radius_key = None
         self.select_key = None
         self.strength_key = None
         self.useMaxGroups_key = None
         self.useSelection_key = None
+        self.useSymmetry_key = None
         self.volume_key = None
         self.volumeRange_key = None
 
-    def drawColor(self, item):
+    @classmethod
+    def drawColor(cls, item):
         """Return the draw color defined in the preferences.
 
         :param item: The color item string.
@@ -430,7 +267,7 @@ class DrawInfo3D(object):
         else:
             color = getPreferences().info_color
         # Gamma-correct the color.
-        return [linear_to_srgb(c) for c in color]
+        return [utils.linear_to_srgb(c) for c in color]
 
     def drawCallback(self, context):
         """Callback for drawing the brush.
@@ -503,6 +340,7 @@ class DrawInfo3D(object):
         radius = context.object.smooth_weights.radius
         select = context.object.smooth_weights.select
         useSelection = context.object.smooth_weights.useSelection
+        useSymmetry = context.object.smooth_weights.useSymmetry
         strength = context.object.smooth_weights.strength
         volume = context.object.smooth_weights.volume
         volumeRange = context.object.smooth_weights.volumeRange
@@ -536,6 +374,8 @@ class DrawInfo3D(object):
                      "{}  {}: {}".format(self.useMaxGroups_key, USE_MAX_GROUPS_LABEL, "On" if useMaxGroups else "Off"),
                      "{}  {}: {}".format(self.maxGroups_key, MAX_GROUPS_LABEL, maxGroups),
                      "Current Max Groups: {}".format(self.currentMaxGroups),
+                     "",
+                     "{}  {}: {}".format(self.useSymmetry_key, USE_SYMMETRY_LABEL, "On" if useSymmetry else "Off"),
                      "",
                      "Selection: {}".format(selectState)]
         # Show only the minimum tool info.
@@ -594,7 +434,8 @@ class DrawInfo3D(object):
             self.handleInfo = None
             self.updateView()
 
-    def updateView(self):
+    @classmethod
+    def updateView(cls):
         """Force a redraw of the current 3d view.
         """
         for area in bpy.context.screen.areas:
@@ -620,6 +461,7 @@ class DrawInfo3D(object):
         self.strength_key = getPreferences().strength_key.upper()
         self.useMaxGroups_key = getPreferences().useMaxGroups_key.upper()
         self.useSelection_key = getPreferences().useSelection_key.upper()
+        self.useSymmetry_key = getPreferences().useSymmetry_key.upper()
         self.volume_key = getPreferences().volume_key.upper()
         self.volumeRange_key = getPreferences().volumeRange_key.upper()
 
@@ -632,10 +474,10 @@ drawInfo3d = DrawInfo3D()
 # Paint Operator
 # ----------------------------------------------------------------------
 
-class OBJECT_OT_SmoothWeights(bpy.types.Operator):
+class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
     """Operator class for the tool.
     """
-    bl_idname = "object.smooth_weights"
+    bl_idname = "smoothweights.paint"
     bl_label = "Smooth Weights"
     bl_description = "Drag over a surface to smooth the skin weights"
     bl_options = {'REGISTER', 'UNDO'}
@@ -651,9 +493,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
     baseFrame = 1
 
     # The mesh class instance.
-    mesh = None
-    # The weight lists.
-    weights = []
+    Mesh = None
     # The selected vertices when entering the tool for undo.
     prevSelection = None
     # The current vertex selection.
@@ -689,6 +529,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
     strength = STRENGTH
     useMaxGroups = USE_MAX_GROUPS
     useSelection = USE_SELECTION
+    useSymmetry = USE_SYMMETRY
     volume = VOLUME
     volumeRange = VOLUME_RANGE
 
@@ -708,6 +549,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
     strength_key = None
     useMaxGroups_key = None
     useSelection_key = None
+    useSymmetry_key = None
     value_up_key = None
     value_down_key = None
     volume_key = None
@@ -774,14 +616,15 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         self.strength = context.object.smooth_weights.strength
         self.useMaxGroups = context.object.smooth_weights.useMaxGroups
         self.useSelection = context.object.smooth_weights.useSelection
+        self.useSymmetry = context.object.smooth_weights.useSymmetry
         self.volume = context.object.smooth_weights.volume
         self.volumeRange = context.object.smooth_weights.volumeRange
 
         # Initialize the skin mesh.
-        self.mesh = Mesh(context.object)
+        self.Mesh = Mesh(context.object)
 
         # Transfer the current selection to the selection color.
-        self.mesh.setSelection(self.mesh.selectedVertices)
+        self.Mesh.setSelection(self.Mesh.selectedVertices)
 
         # If the current selection should be used for smoothing, store
         # the current shading mode and switch to selection display.
@@ -789,7 +632,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
             self.setSelectionMode(context, active=True)
 
         # Add the draw handler for the brush info.
-        drawInfo3d.currentMaxGroups = self.mesh.currentMaxGroups
+        drawInfo3d.currentMaxGroups = self.Mesh.currentMaxGroups
         drawInfo3d.addInfo()
 
         return {'RUNNING_MODAL'}
@@ -809,8 +652,8 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         if context.object:
             # Reset the weights.
             # Process only the weights which have been smoothed.
-            indices = [i for i, vertex in enumerate(self.mesh.obj.data.vertices) if self.mesh.cancelIndices[i]]
-            self.mesh.setWeightsFromVertexList(indices, self.mesh.cancelWeights)
+            indices = [i for i, vertex in enumerate(self.Mesh.obj.data.vertices) if self.Mesh.cancelIndices[i]]
+            self.Mesh.weights.setWeightsFromVertexList(indices, self.Mesh.cancelWeights)
 
         # Reset the operator.
         self.reset(context)
@@ -826,9 +669,9 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         self.isModal = False
 
         # Remove the selection colors.
-        self.mesh.deleteColorAttribute()
+        self.Mesh.deleteColorAttribute()
 
-        self.mesh.reset()
+        self.Mesh.reset()
 
         # Reset the selection modes.
         self.setSelectionMode(context, active=False)
@@ -862,10 +705,10 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
 
                 # Make sure that the object is in Object or WEIGHT_PAINT
                 # mode.
-                if self.mesh.obj.mode not in ['OBJECT', 'WEIGHT_PAINT']:
+                if self.Mesh.obj.mode not in ['OBJECT', 'WEIGHT_PAINT']:
                     bpy.ops.object.mode_set(mode='OBJECT')
                 # Make sure the color attribute is current.
-                self.mesh.updateColorAttribute()
+                self.Mesh.updateColorAttribute()
                 # Update the keymaps.
                 self.getKeymaps()
                 # Update the current tool settings for the mesh class.
@@ -873,20 +716,19 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
                 # Init the undo list.
                 # If the maximum size of the undo list has been reached
                 # remove the last element.
-                if getPreferences().undo_steps <= len(self.mesh.undoIndices):
-                    lastItem = len(self.mesh.undoIndices) - 1
-                    self.mesh.undoIndices.pop(lastItem)
-                    self.mesh.undoWeights.pop(lastItem)
-                self.mesh.undoIndices.insert(0, [])
-                self.mesh.undoWeights.insert(0, [None] * self.mesh.numVertices())
+                if getPreferences().undo_steps <= len(self.Mesh.undoIndices):
+                    lastItem = len(self.Mesh.undoIndices) - 1
+                    self.Mesh.undoIndices.pop(lastItem)
+                    self.Mesh.undoWeights.pop(lastItem)
+                self.Mesh.undoIndices.insert(0, [])
+                self.Mesh.undoWeights.insert(0, [None] * self.Mesh.numVertices())
                 drawInfo3d.addCircle()
 
         if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
             # If the brush action has been performed refresh the point
             # positions.
             if self.isDragging:
-                self.mesh.getDeformedPointPositions()
-
+                self.Mesh.getDeformedPointPositions()
             self.isDragging = False
             # Remove the brush circle.
             drawInfo3d.removeCircle()
@@ -904,7 +746,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
                 return {'RUNNING_MODAL'}
 
             if not select and not deselect:
-                self.mesh.performSmooth(rangeVerts, useColorAttr=True)
+                self.Mesh.performSmooth(rangeVerts, useColorAttr=True)
             else:
                 # Paint selection only if the selection should be used.
                 if self.useSelection:
@@ -925,7 +767,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
             self.frameDrag = False
             self.adjustPos = None
             self.frameDragTimer = time.time()
-            self.mesh.getDeformedPointPositions()
+            self.Mesh.getDeformedPointPositions()
 
         if event.type == 'MOUSEMOVE' and self.frameDrag:
             # Skip evaluation steps to improve performance.
@@ -1115,7 +957,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
 
         # Flood
         if event.type == self.flood_key and event.value == 'PRESS':
-            self.mesh.floodSmooth(useSelection=self.useSelection,
+            self.Mesh.floodSmooth(useSelection=self.useSelection,
                                   affectSelected=self.affectSelected,
                                   useColorAttr=True,
                                   strength=self.strength)
@@ -1142,12 +984,22 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
             return {'RUNNING_MODAL'}
 
         if event.type == self.clearSelection_key and event.value == 'PRESS':
-            self.mesh.clearSelection()
+            self.Mesh.clearSelection()
+            return {'RUNNING_MODAL'}
+
+        # Use symmetry
+        if event.type == self.useSymmetry_key and event.value == 'PRESS':
+            value = not context.object.smooth_weights.useSymmetry
+            context.object.smooth_weights.useSymmetry = value
+            self.useSymmetry = value
+            self.updateSettings()
+            drawInfo3d.updateView()
+            context.area.tag_redraw()
             return {'RUNNING_MODAL'}
 
         # Undo
         if event.type == self.undo_key and event.value == 'PRESS':
-            self.mesh.undoStroke()
+            self.Mesh.undoStroke()
             return {'RUNNING_MODAL'}
 
         # --------------------------------------------------------------
@@ -1158,7 +1010,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         if event.type in {'RET', 'NUMPAD_ENTER'}:
             # Match the vertex selection with the selection colors.
             if getPreferences().keep_selection:
-                self.mesh.colorToSelection()
+                self.Mesh.colorToSelection()
             self.reset(context)
             return {'FINISHED'}
 
@@ -1194,7 +1046,8 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
     # Brush position and settings
     # ------------------------------------------------------------------
 
-    def mouse3d(self, context, event):
+    @classmethod
+    def mouse3d(cls, context, event):
         """Return the 3d position of the mouse and the view vector.
 
         :param context: The current context.
@@ -1247,7 +1100,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
 
         # Discontinue if no intersection can be found or if the
         # intersected object is not the current object.
-        backside = self.ignoreBackside and isBackface(viewVector, normal)
+        backside = self.ignoreBackside and utils.isBackface(viewVector, normal)
         if not result or obj != context.object or backside:
             return
 
@@ -1275,15 +1128,15 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         pos, normal, index, obj, viewOrigin = result
 
         # Get the vertex which is closest to the brush center.
-        closestIndex, closestDistance = self.mesh.getClosestFaceVertex(pos, index, self.radius)
+        closestIndex, closestDistance = self.Mesh.getClosestFaceVertex(pos, index, self.radius)
 
         if closestIndex is None:
             return
 
         if self.volume:
-            radiusVerts = self.mesh.getVerticesInVolume(pos, self.radius, local=False)
+            radiusVerts = self.Mesh.getVerticesInVolume(pos, self.radius, local=False)
         else:
-            radiusVerts = self.mesh.getVerticesOnSurface(pos, closestIndex, self.radius)
+            radiusVerts = self.Mesh.getVerticesOnSurface(pos, closestIndex, self.radius)
 
         drawInfo3d.center = pos
         drawInfo3d.normal = normal
@@ -1400,20 +1253,21 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         """Transfer the current tool settings to the instanced mesh
         class.
         """
-        self.mesh.affectSelected = self.affectSelected
-        self.mesh.curve = self.curve
-        self.mesh.ignoreBackside = self.ignoreBackside
-        self.mesh.ignoreLock = self.ignoreLock
-        self.mesh.islands = self.islands
-        self.mesh.maxGroups = self.maxGroups
-        self.mesh.normalize = self.normalize
-        self.mesh.oversampling = self.oversampling
-        self.mesh.radius = self.radius
-        self.mesh.strength = self.strength
-        self.mesh.useMaxGroups = self.useMaxGroups
-        self.mesh.useSelection = self.useSelection
-        self.mesh.volume = self.volume
-        self.mesh.volumeRange = self.volumeRange
+        self.Mesh.affectSelected = self.affectSelected
+        self.Mesh.curve = self.curve
+        self.Mesh.ignoreBackside = self.ignoreBackside
+        self.Mesh.ignoreLock = self.ignoreLock
+        self.Mesh.islands = self.islands
+        self.Mesh.maxGroups = self.maxGroups
+        self.Mesh.normalize = self.normalize
+        self.Mesh.oversampling = self.oversampling
+        self.Mesh.radius = self.radius
+        self.Mesh.strength = self.strength
+        self.Mesh.useMaxGroups = self.useMaxGroups
+        self.Mesh.useSelection = self.useSelection
+        self.Mesh.useSymmetry = self.useSymmetry
+        self.Mesh.volume = self.volume
+        self.Mesh.volumeRange = self.volumeRange
 
     def getKeymaps(self):
         """Get the current key maps.
@@ -1433,6 +1287,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         self.strength_key = getPreferences().strength_key.upper()
         self.useMaxGroups_key = getPreferences().useMaxGroups_key.upper()
         self.useSelection_key = getPreferences().useSelection_key.upper()
+        self.useSymmetry_key = getPreferences().useSymmetry_key.upper()
         self.value_up_key = getPreferences().value_up_key.upper()
         self.value_down_key = getPreferences().value_down_key.upper()
         self.volume_key = getPreferences().volume_key.upper()
@@ -1467,6 +1322,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
                  "{}: {}".format(self.islands_key, USE_ISLANDS_LABEL),
                  "{}: {}".format(self.useMaxGroups_key, USE_MAX_GROUPS_LABEL),
                  "{}: {} {}/{}".format(self.maxGroups_key, MAX_GROUPS_LABEL, up, down),
+                 "{}: {}".format(self.useSymmetry_key, USE_SYMMETRY_LABEL),
                  "{}: Toggle Select".format(self.select_key),
                  "{}: Toggle Deselect".format(self.deselect_key),
                  "{}: Clear Selection".format(self.clearSelection_key),
@@ -1489,7 +1345,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         :param active: True, if the selection mode should be activated.
         :type active: bool
         """
-        if self.mesh.obj.mode not in ['OBJECT', 'WEIGHT_PAINT']:
+        if self.Mesh.obj.mode not in ['OBJECT', 'WEIGHT_PAINT']:
             bpy.ops.object.mode_set(mode='OBJECT')
         if active:
             # Store the current shading mode.
@@ -1515,7 +1371,7 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         :type vertData: list(tuple(int, float, int/None))
         """
         indices = [index for index, dist, v in vertData]
-        self.mesh.setSelection(indices)
+        self.Mesh.setSelection(indices)
 
     def paintDeselect(self, vertData):
         """Remove the selection color for all given vertices.
@@ -1524,17 +1380,17 @@ class OBJECT_OT_SmoothWeights(bpy.types.Operator):
         :type vertData: list(tuple(int, float, int/None))
         """
         indices = [index for index, dist, v in vertData]
-        self.mesh.removeSelection(indices)
+        self.Mesh.removeSelection(indices)
 
 
 # ----------------------------------------------------------------------
 # Flood Operator
 # ----------------------------------------------------------------------
 
-class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
+class SMOOTHWEIGHTS_OT_Flood(bpy.types.Operator):
     """Operator class for flood-smoothing the object's weights.
     """
-    bl_idname = "object.smooth_weights_flood"
+    bl_idname = "smoothweights.flood"
     bl_label = "Flood Smooth Weights"
     bl_description = "Smooth the weights of all selected or unselected vertices"
     bl_options = {'REGISTER', 'UNDO'}
@@ -1569,7 +1425,7 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
                                          description=ANN_USE_MAX_GROUPS)
     maxGroups: bpy.props.IntProperty(name=MAX_GROUPS_LABEL,
                                      default=MAX_GROUPS,
-                                     min=0,
+                                     min=1,
                                      description=ANN_MAX_GROUPS)
     volume: bpy.props.BoolProperty(name=VOLUME_LABEL,
                                    default=VOLUME,
@@ -1579,8 +1435,11 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
                                          min=0.001,
                                          max=1,
                                          description=ANN_VOLUME_RANGE)
+    useSymmetry: bpy.props.BoolProperty(name=USE_SYMMETRY_LABEL,
+                                        default=USE_SYMMETRY,
+                                        description=ANN_USE_SYMMETRY)
 
-    mesh = None
+    Mesh = None
     prevSelection = None
     redo = True
 
@@ -1598,15 +1457,15 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
             self.setSettings(context)
 
         # Initialize the skin mesh.
-        self.mesh = Mesh(context.object)
+        self.Mesh = Mesh(context.object)
 
-        self.mesh.floodSmooth(useSelection=self.useSelection,
+        self.Mesh.floodSmooth(useSelection=self.useSelection,
                               affectSelected=self.affectSelected,
                               useColorAttr=False,
                               strength=self.strength)
 
         # Reset the mesh.
-        self.mesh.reset()
+        self.Mesh.reset()
 
         # Copy the settings to the object properties.
         self.setSettings(context)
@@ -1628,11 +1487,11 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
         if context.object:
             # Reset the weights.
             # Process only the weights which have been smoothed.
-            indices = [i for i, vertex in enumerate(self.mesh.obj.data.vertices) if self.mesh.cancelIndices[i]]
-            self.mesh.setWeightsFromVertexList(indices, self.mesh.cancelWeights)
+            indices = [i for i, vertex in enumerate(self.Mesh.obj.data.vertices) if self.Mesh.cancelIndices[i]]
+            self.Mesh.weights.setWeightsFromVertexList(indices, self.Mesh.cancelWeights)
 
         # Reset the mesh.
-        self.mesh.reset()
+        self.Mesh.reset()
 
         return {'CANCELLED'}
 
@@ -1653,6 +1512,7 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
         self.strength = context.object.smooth_weights.strength
         self.useMaxGroups = context.object.smooth_weights.useMaxGroups
         self.useSelection = context.object.smooth_weights.useSelection
+        self.useSymmetry = context.object.smooth_weights.useSymmetry
         self.volume = context.object.smooth_weights.volume
         self.volumeRange = context.object.smooth_weights.volumeRange
         # Set the redo flag to False to indicate that the settings
@@ -1675,8 +1535,76 @@ class OBJECT_OT_SmoothWeightsFlood(bpy.types.Operator):
         context.object.smooth_weights.strength = self.strength
         context.object.smooth_weights.useMaxGroups = self.useMaxGroups
         context.object.smooth_weights.useSelection = self.useSelection
+        context.object.smooth_weights.useSymmetry = self.useSymmetry
         context.object.smooth_weights.volume = self.volume
         context.object.smooth_weights.volumeRange = self.volumeRange
+
+
+# ----------------------------------------------------------------------
+# Tool Operator Functions
+# ----------------------------------------------------------------------
+
+def limitGroups(obj, maxGroups=1):
+    """Limit the weights of the current selection or all vertices to the
+    given maximum number of vertex groups.
+
+    :param obj: The mesh object.
+    :type obj: bpy.types.Object
+    :param maxGroups: The number of maximum groups per vertex.
+    :type maxGroups: int
+    """
+    weightObj = weights.Weights(obj)
+
+    verts = set()
+    if obj.mode == 'EDIT':
+        verts = utils.getVertexSelection(obj)
+    else:
+        # Get all vertices indices.
+        for i in range(len(obj.data.vertices)):
+            verts.add(i)
+
+    indices = []
+    weightData = []
+
+    for index in verts:
+        weightList = weightObj.vertexWeights(index, sparse=True)
+        # Only edit the weights if the current number of groups exceeds
+        # the max limit.
+        if len(weightList) > maxGroups:
+            weightList = weightObj.limitVertexGroups(weightList, maxGroups)
+            weightList = weightObj.normalizeVertexGroup(weightList)
+            indices.append(index)
+            weightData.append(weightList)
+
+    if len(indices):
+        weightObj.setVertexWeights(indices, weightData, clearAll=True, editMode=True)
+
+
+# ----------------------------------------------------------------------
+# Tool Operators
+# ----------------------------------------------------------------------
+
+class SMOOTHWEIGHTS_OT_LimitGroups(bpy.types.Operator):
+    """Operator class for selecting mapped vertices.
+    """
+    bl_idname = "smoothweights.limit_groups"
+    bl_label = "Limit Vertex Groups"
+    bl_description = "Limits the vertex weights to a maximum number of vertex groups"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    maxGroups: bpy.props.IntProperty(name=MAX_GROUPS_LABEL,
+                                     default=MAX_GROUPS,
+                                     min=1,
+                                     description=ANN_MAX_GROUPS)
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        limitGroups(context.object, self.maxGroups)
+        return {'FINISHED'}
 
 
 # ----------------------------------------------------------------------
@@ -1687,9 +1615,11 @@ class Mesh(object):
     """Class for evaluating the current mesh and storing relevant data
     for the smoothing process.
     """
-
     def __init__(self, obj):
         """Initialize.
+
+        :param obj: The mesh object.
+        :type obj: bpy.types.Object
         """
         # Set the object mode.
         # If the object is in edit mode the depsgraph evaluation will
@@ -1703,7 +1633,11 @@ class Mesh(object):
         self.bm = bmesh.new()
         self.bm.from_mesh(obj.data)
         self.bm.verts.ensure_lookup_table()
+        self.bm.edges.ensure_lookup_table()
         self.bm.faces.ensure_lookup_table()
+
+        # Create the weights class instance.
+        self.weights = weights.Weights(obj)
 
         # The tool settings.
         self.affectSelected = self.obj.smooth_weights.affectSelected
@@ -1717,11 +1651,9 @@ class Mesh(object):
         self.strength = self.obj.smooth_weights.strength
         self.useMaxGroups = self.obj.smooth_weights.useMaxGroups
         self.useSelection = self.obj.smooth_weights.useSelection
+        self.useSymmetry = self.obj.smooth_weights.useSymmetry
         self.volume = self.obj.smooth_weights.volume
         self.volumeRange = self.obj.smooth_weights.volumeRange
-
-        self.groupLocks = self.locks()
-        self.numGroups = len(self.allVertexGroups())
 
         # The maximum number of groups a vertex currently has.
         self.currentMaxGroups = 0
@@ -1747,7 +1679,7 @@ class Mesh(object):
 
         # Get the current weights.
         self.cancelWeights = None
-        self.weights = self.allVertexWeights()
+        self.weightList = self.allVertexWeights()
 
         # The list storing if a vertex has been smoothed.
         self.cancelIndices = None
@@ -1759,6 +1691,11 @@ class Mesh(object):
 
         self.kdLocal = self.kdTree()
         self.kdDeformed = self.kdTree(local=False)
+
+        # Get the symmetry map.
+        self.orderMap = []
+        if self.useSymmetry and symmetryMap.hasValidOrderMap(self.obj):
+            orderMap = symmetryMap.getOrderMap(self.obj)
 
     def reset(self):
         """Free the bmesh memory.
@@ -1864,49 +1801,6 @@ class Mesh(object):
         # Reset the object's mode.
         bpy.ops.object.mode_set(mode=mode)
 
-    def allVertexGroups(self):
-        """Return a list with the names of all vertex groups.
-
-        :return: A list with the vertex group names.
-        :rtype: list(str)
-        """
-        return [i.name for i in self.obj.vertex_groups]
-
-    def locks(self):
-        """Return a list with the lock state of all vertex groups.
-
-        :return: A list with the vertex group locks.
-        :rtype: list(bool)
-        """
-        return [i.lock_weight for i in self.obj.vertex_groups]
-
-    def isLocked(self, groupIndex):
-        """Return, if the group with the given index is locked, while
-        considering to ignore locks.
-
-        :param groupIndex: The vertex group index.
-        :type groupIndex: int
-
-        :return: True, if the group is considered to be locked.
-        :rtype: bool
-        """
-        return self.groupLocks[groupIndex] and not self.ignoreLock
-
-    def vertexGroups(self, index):
-        """Return a list with the vertex groups indices which influence
-        the given vertex.
-
-        :param index: The vertex index.
-        :type index: int
-
-        :return: A list with the vertex group indices for the vertex.
-        :rtype: list(int)
-        """
-        indices = []
-        for i, element in self.obj.data.vertices[index].groups.items():
-            indices.append(self.obj.data.vertices[index].groups[i].group)
-        return indices
-
     def allVertexWeights(self):
         """Return all weights for all vertices.
 
@@ -1916,121 +1810,18 @@ class Mesh(object):
         w = [None] * self.numVertices()
         self.cancelWeights = [None] * self.numVertices()
         for i in range(self.numVertices()):
-            data = self.vertexWeights(i)
+            maxGroups = [self.currentMaxGroups]
+            data = self.weights.vertexWeights(i, maxGroups=maxGroups)
             w[i] = data
+
+            # Update the current max number of vertex groups.
+            self.currentMaxGroups = maxGroups[0]
+
             # Copy the weight data for undo.
             # This is much faster than having to copy the complete
             # weight list later via deepcopy().
             self.cancelWeights[i] = data.copy()
         return w
-
-    def vertexWeights(self, index):
-        """Return a list with the vertex groups weights for the given
-        vertex.
-
-        :param index: The vertex index.
-        :type index: int
-
-        :return: A full list with the vertex weights and the group index
-                 for all vertex groups.
-        :rtype: list(tuple(float, int))
-        """
-        w = []
-        for i, element in self.obj.data.vertices[index].groups.items():
-            value = self.obj.data.vertices[index].groups[i].weight
-            groupId = self.obj.data.vertices[index].groups[i].group
-            w.append((value, groupId))
-
-        # Update the current max number of vertex groups.
-        if len(w) > self.currentMaxGroups:
-            self.currentMaxGroups = len(w)
-
-        weightList = [(0.0, i) for i in range(self.numGroups)]
-
-        for item in w:
-            value, groupId = item
-            weightList[groupId] = value, groupId
-
-        return weightList
-
-    def setVertexWeight(self, index, groupId, weight):
-        """Set the weight for the given vertex and vertex group.
-
-        :param index: The vertex index.
-        :type index: int
-        :param groupId: The vertex group index.
-        :type groupId: int
-        :param weight: The vertex weight.
-        :type weight: float
-        """
-        names = self.allVertexGroups()
-        group = self.obj.vertex_groups.get(names[groupId])
-        group.remove([index])
-        if weight > 0:
-            group.add([index], weight, 'REPLACE')
-
-    def setWeightsForVertex(self, index, weightList):
-        """Set the weight for the given vertex for all vertex groups.
-
-        :param index: The vertex index.
-        :type index: int
-        :param weightList: The list of vertex weight tuples, with the
-                           weight and vertex group index.
-        :type weightList: list(tuple(float, int))
-        """
-        for groupIndex in range(len(weightList)):
-            value, groupId = weightList[groupIndex]
-            self.setVertexWeight(index, groupIndex, value)
-
-    def setVertexWeights(self, indices, weightData):
-        """Set the weights for the given list of vertex indices.
-
-        :param indices: The list of vertex indices.
-        :type indices: list(int)
-        :param weightData: The list of vertex weight tuples, with the
-                           weight and vertex group index for each given
-                           vertex index.
-        :type weightData: list(list(tuple(float, int)))
-
-        :return: True, if setting the weights was successful. False if
-                 the object is in edit mode.
-        :rtype: bool
-        """
-        if self.obj.mode == 'EDIT':
-            return False
-
-        for i in range(len(weightData)):
-            weightList = weightData[i]
-            self.setWeightsForVertex(indices[i], weightList)
-
-        return True
-
-    def setWeightsFromVertexList(self, indices, allWeightData):
-        """Set the weights for the given list of vertex indices.
-
-        This is used to reset the previous weights when cancelling.
-        The weight data list contains all previous weights but the given
-        indices are only from the processed vertices.
-
-        :param indices: The list of vertex indices.
-        :type indices: list(int)
-        :param allWeightData: The list of all vertex weight tuples, with
-                              the weight and vertex group index for
-                              each vertex index.
-        :type allWeightData: list(list(tuple(float, int)))
-
-        :return: True, if setting the weights was successful. False if
-                 the object is in edit mode.
-        :rtype: bool
-        """
-        if self.obj.mode == 'EDIT':
-            return False
-
-        for i in range(len(indices)):
-            weightList = allWeightData[indices[i]]
-            self.setWeightsForVertex(indices[i], weightList)
-
-        return True
 
     def undoStroke(self):
         """Reset the weights for all indices which have been edited
@@ -2038,10 +1829,10 @@ class Mesh(object):
         """
         if len(self.undoIndices):
             indices = self.undoIndices.pop(0)
-            weights = self.undoWeights.pop(0)
+            weightList = self.undoWeights.pop(0)
             for i in indices:
-                self.weights[i] = weights[i]
-            self.setWeightsFromVertexList(indices, weights)
+                self.weightList[i] = weightList[i]
+            self.weights.setWeightsFromVertexList(indices, weightList)
 
     def initSmoothed(self):
         """Initialize the list for holding the smoothed status for undo.
@@ -2096,7 +1887,7 @@ class Mesh(object):
         :type local: bool
 
         :return: The kdtree.
-        :rtype: kdtree instance
+        :rtype: kdtree.KDTree()
         """
         kd = kdtree.KDTree(len(self.pointsDeformed))
         for i in range(len(self.pointsDeformed)):
@@ -2355,6 +2146,8 @@ class Mesh(object):
                              than the current vertex selection.
         :type useColorAttr: bool
         """
+        weightObj = weights.Weights(self.obj)
+
         # The smoothing is performed in three steps to increase
         # efficiency in relation to possible oversampling.
         # 1. Evaluate all vertices of the brush radius and collect their
@@ -2375,7 +2168,7 @@ class Mesh(object):
             if not self.useSelection or (self.useSelection and affectState):
                 if self.undoWeights[0][index] is None:
                     self.undoIndices[0].append(index)
-                    self.undoWeights[0][index] = [tuple(item) for item in self.weights[index]]
+                    self.undoWeights[0][index] = [tuple(item) for item in self.weightList[index]]
                 connectedData.append(self.getConnectedData(index, value, indexBound, flood))
 
         # 2. Perform the smoothing of the weights.
@@ -2384,6 +2177,8 @@ class Mesh(object):
         #    New and old weights shouldn't get mixed up because this
         #    would cause jitter, since the weights and indices are not
         #    in order.
+        indices = []
+        weightData = []
         for sample in range(self.oversampling):
             smoothed = [None] * self.numVertices()
             for index, scale, indexBound, connected, volumeScale in connectedData:
@@ -2391,30 +2186,44 @@ class Mesh(object):
 
             # 3. Collect all processed vertices and their final weights for
             #    setting the values in the vertex groups.
-            indices = []
-            weightData = []
             for index, scale, indexBound, connected, volumeScale in connectedData:
+                mirrorIndex = self.getSymmetryIndex(index, self.orderMap)
+                mirrorWeights = weightObj.mirrorGroupAssignment(smoothed[index])
                 if sample == self.oversampling - 1:
                     # Get the new weights for applying.
                     indices.append(index)
                     self.cancelIndices[index] = True
                     weightData.append(smoothed[index])
-                self.weights[index] = smoothed[index]
+                    if mirrorIndex:
+                        indices.append(mirrorIndex)
+                        self.cancelIndices[mirrorIndex] = True
+                        weightData.append(mirrorWeights)
+                self.weightList[index] = smoothed[index]
+                if mirrorIndex:
+                    self.weightList[mirrorIndex] = mirrorWeights
                 # Add the boundary vertex if in surface mode and
                 # islands should not be respected.
                 if not self.islands and indexBound is not None:
+                    mirrorIndex = self.getSymmetryIndex(indexBound, self.orderMap)
+                    mirrorWeights = weightObj.mirrorGroupAssignment(smoothed[indexBound])
                     if sample == self.oversampling - 1:
                         indices.append(indexBound)
                         self.cancelIndices[indexBound] = True
                         weightData.append(smoothed[indexBound])
-                    self.weights[indexBound] = smoothed[indexBound]
+                        if mirrorIndex:
+                            indices.append(mirrorIndex)
+                            self.cancelIndices[mirrorIndex] = True
+                            weightData.append(mirrorWeights)
+                    self.weightList[indexBound] = smoothed[indexBound]
+                    if mirrorIndex:
+                        self.weightList[mirrorIndex] = mirrorWeights
 
         # Apply the weights.
-        self.setVertexWeights(indices, weightData)
+        self.weights.setVertexWeights(indices, weightData)
 
     def getConnectedData(self, index, value, indexBound, flood=False):
         """Return the data of all connected vertices, either by surface
-        or by volume, which are used as a source to calculcate the
+        or by volume, which are used as a source to calculate the
         smoothing.
 
         :param index: The index of the vertex to smooth.
@@ -2462,8 +2271,8 @@ class Mesh(object):
         return index, scale, indexBound, connected, volumeScale
 
     def computeWeights(self, index, scale, indexBound, connected, volumeScale, smoothed):
-        """Calculate an interpolated weight value from the current
-        weight and the weights of the connected vertices.
+        """Calculate an interpolated weight value from the weights of
+        the connected vertices.
 
         :param index: The index of the vertex to smooth.
         :type index: int
@@ -2492,15 +2301,12 @@ class Mesh(object):
         # Weight calculation
         # --------------------------------------------------------------
 
-        # Declared just for safety. It will get overwritten when getting
-        # the weights from the list.
-        groupId = 0
         # The pre-allocated list of weights. This gets updated with each
         # evaluated group.
-        weightList = [0.0] * len(self.weights[index])
+        weightList = [0.0] * len(self.weightList[index])
 
-        for i in range(len(self.weights[index])):
-            weight, groupId = self.weights[index][i]
+        for i in range(len(self.weightList[index])):
+            weight, groupId = self.weightList[index][i]
 
             originalWeight = weight
 
@@ -2508,7 +2314,7 @@ class Mesh(object):
             # When in volume mode it's possible that the volume range is
             # too small and no vertices are found. In this case there
             # are no weights to average.
-            if numConnected and not self.isLocked(i):
+            if numConnected and not self.weights.isLocked(i, self.ignoreLock):
                 # If there are connected vertices, ignore the current
                 # weight to evaluate only the connected weights.
                 weight = 0.0
@@ -2516,12 +2322,12 @@ class Mesh(object):
                     mult = scale
                     if self.volume:
                         mult = volumeScale[c]
-                    weight += self.weights[connected[c]][i][0] * mult + originalWeight * (1 - mult)
+                    weight += self.weightList[connected[c]][i][0] * mult + originalWeight * (1 - mult)
 
                 weight = weight / numConnected
 
             maxWeight += weight
-            if self.isLocked(i):
+            if self.weights.isLocked(i, self.ignoreLock):
                 maxWeightLocked += weight
                 hasLocks = True
             else:
@@ -2549,7 +2355,7 @@ class Mesh(object):
                     weight = 0.0
 
                 maxWeight += weight
-                if self.isLocked(groupId):
+                if self.weights.isLocked(groupId, self.ignoreLock):
                     maxWeightLocked += weight
                     hasLocks = True
                 else:
@@ -2578,7 +2384,7 @@ class Mesh(object):
                 # remaining weight range.
                 else:
                     remainingWeight = 1 - maxWeightLocked
-                    if not self.isLocked(i):
+                    if not self.weights.isLocked(i, self.ignoreLock):
                         # Make sure the division is not by a zero
                         # weight.
                         if remainingWeight > 0:
@@ -2588,7 +2394,7 @@ class Mesh(object):
                             weight = 0.0
 
                 # Clamp because of float precision.
-                weight = clamp(weight, 0.0, 1.0)
+                weight = utils.clamp(weight, 0.0, 1.0)
 
                 smoothed[index][i] = weight, groupId
 
@@ -2600,10 +2406,28 @@ class Mesh(object):
     def getStrength(self):
         """Return the smoothing strength based on the oversampling.
 
-        :return: The smoothing strength value:
+        :return: The smoothing strength value.
         :rtype: float
         """
         return self.strength / self.oversampling
+
+    def getSymmetryIndex(self, index, orderMap):
+        """Return the symmetry index from the given order map.
+
+        Returns None if the symmetry index doesn't exist or the order
+        map is empty.
+
+        :param index: The index of the vertex.
+        :type index: int
+        :param orderMap: The symmetry map.
+        :type orderMap: list(int)
+
+        :return: The symmetry index or None
+        :rtype: int or None
+        """
+        if self.useSymmetry and len(orderMap):
+            if orderMap[index] != -1:
+                return orderMap[index]
 
     # ------------------------------------------------------------------
     # Selection
@@ -2622,7 +2446,7 @@ class Mesh(object):
                                                         domain='POINT')
             self.resetColors(colors)
 
-        # Store the currenly active colors.
+        # Store the currently active colors.
         self.userColorAttr = self.obj.data.color_attributes.active_color
         # Set the active colors.
         self.obj.data.color_attributes.active_color = colors
@@ -2674,7 +2498,7 @@ class Mesh(object):
         bpy.ops.object.mode_set(mode="OBJECT")
 
         color = getPreferences().selected_color
-        color = [linear_to_srgb(c) for c in color]
+        color = [utils.linear_to_srgb(c) for c in color]
         for index in indices:
             self.selectionColors.data[index].color = (color[0], color[1], color[2], 1.0)
 
@@ -2696,7 +2520,7 @@ class Mesh(object):
         bpy.ops.object.mode_set(mode="OBJECT")
 
         color = getPreferences().unselected_color
-        color = [linear_to_srgb(c) for c in color]
+        color = [utils.linear_to_srgb(c) for c in color]
         for index in indices:
             self.selectionColors.data[index].color = (color[0], color[1], color[2], 1.0)
 
@@ -2725,7 +2549,7 @@ class Mesh(object):
         :type colorAttr: bpy.types.Attribute
         """
         color = getPreferences().unselected_color
-        color = [linear_to_srgb(c) for c in color]
+        color = [utils.linear_to_srgb(c) for c in color]
         for i in range(self.numVertices()):
             colorAttr.data[i].color = (color[0], color[1], color[2], 1.0)
 
@@ -2766,7 +2590,7 @@ class Mesh(object):
         The values are stored in the class variables.
         """
         color = getPreferences().selected_color
-        color = [linear_to_srgb(c) for c in color]
+        color = [utils.linear_to_srgb(c) for c in color]
         for c in range(len(color)):
             if self.colorValue < color[c] < 0.99:
                 self.colorValue = color[c]
@@ -2776,52 +2600,6 @@ class Mesh(object):
 # ----------------------------------------------------------------------
 # Utilities
 # ----------------------------------------------------------------------
-
-def srgb_to_linear(value):
-    """Convert the given sRGB value to a linear value.
-
-    :param value: The sRGB value to convert.
-    :type value: float
-
-    :return: The linear value.
-    :rtype: float
-    """
-    if value <= 0.0404482362771082:
-        return value / 12.92
-    else:
-        return pow(((value + 0.055) / 1.055), 2.4)
-
-
-def linear_to_srgb(value):
-    """Convert the given linear value to a sRGB value.
-
-    :param value: The linear value to convert.
-    :type value: float
-
-    :return: The sRGB value.
-    :rtype: float
-    """
-    if value > 0.0031308:
-        return 1.055 * (pow(value, (1.0 / 2.4))) - 0.055
-    else:
-        return 12.92 * value
-
-
-def isEquivalent(vector1, vector2, tolerance=1e-6):
-    """Return, if the given vectors are equivalent to each other.
-
-    :param vector1: The first vector to compare.
-    :type vector1: Vector
-    :param vector2: The second vector to compare.
-    :type vector2: Vector
-    :param tolerance: The allowed tolerance between the vectors.
-    :type tolerance: float
-
-    :return: True, if the vectors are equivalent to each other.
-    :rtype: bool
-    """
-    return (vector1 - vector2).length_squared <= tolerance * tolerance
-
 
 def isModifier(event):
     """Return if the event contains a modifier key
@@ -2856,39 +2634,6 @@ def getFalloffValue(value, curve):
         return value
 
 
-def clamp(value, minVal, maxVal):
-    """Clamp to given value to the min and max range.
-
-    :param value: The value to clamp.
-    :type value: float
-    :param minVal: The minimum allowed value.
-    :type minVal: float
-    :param maxVal: The maximum allowed value.
-    :type maxVal: float
-
-    :return: The clamped value.
-    :rtype: float
-    """
-    value = max(min(value, maxVal), minVal)
-    return value
-
-
-def isBackface(viewVector, faceNormal):
-    """Return, if the given face normal is pointing away from the view.
-
-    :param viewVector: The viewing vector.
-    :type viewVector: Vector
-    :param faceNormal: The normal of the face.
-    :type faceNormal: Vector
-
-    :return: True, if the face is pointing away.
-    :rtype: bool
-    """
-    viewVector.normalize()
-    faceNormal.normalize()
-    return viewVector.dot(faceNormal) > 0
-
-
 # ----------------------------------------------------------------------
 # Tool Panel
 # ----------------------------------------------------------------------
@@ -2906,7 +2651,6 @@ def hasWeights(context):
     obj = context.object
     if (obj is not None and
             obj.type == 'MESH' and
-            obj.mode in ['OBJECT', 'WEIGHT_PAINT'] and
             len(obj.vertex_groups) > 1):
         return True
     return False
@@ -2946,27 +2690,45 @@ class SMOOTHWEIGHTS_PT_settings(bpy.types.Panel):
         layout.use_property_split = True
         layout.use_property_decorate = False
 
-        col = layout.column(align=True)
-        col.prop(sw, "curve", text=CURVE_LABEL)
-        col.prop(sw, "radius", text=RADIUS_LABEL)
-        col.prop(sw, "strength", text=STRENGTH_LABEL)
-        col.separator()
-        col.prop(sw, "volume", text=VOLUME_LABEL)
-        col.prop(sw, "volumeRange", text=VOLUME_RANGE_LABEL)
-        col.separator()
-        col.prop(sw, "useSelection", text=USE_SELECTION_LABEL)
-        col.prop(sw, "affectSelected", text=AFFECT_SELECTED_LABEL)
-        col.prop(sw, "ignoreBackside", text=IGNORE_BACKSIDE_LABEL)
-        col.prop(sw, "islands", text=USE_ISLANDS_LABEL)
-        col.prop(sw, "ignoreLock", text=IGNORE_LOCK_LABEL)
-        col.prop(sw, "normalize", text=NORMALIZE_LABEL)
-        col.prop(sw, "oversampling", text=OVERSAMPLING_LABEL)
-        col.prop(sw, "useMaxGroups", text=USE_MAX_GROUPS_LABEL)
-        col.prop(sw, "maxGroups", text=MAX_GROUPS_LABEL)
-        col.separator()
-        col.operator("object.smooth_weights", text="Brush")
-        col.separator()
-        col.operator("object.smooth_weights_flood", text="Flood")
+        if context.object.mode in ['OBJECT', 'WEIGHT_PAINT']:
+            row = layout.row()
+            row.label(text="Brush")
+
+            box = layout.box()
+            col = box.column(align=True)
+            col.prop(sw, "curve", text=CURVE_LABEL)
+            col.prop(sw, "radius", text=RADIUS_LABEL)
+            col.prop(sw, "strength", text=STRENGTH_LABEL)
+            col.separator()
+            col.prop(sw, "volume", text=VOLUME_LABEL)
+            col.prop(sw, "volumeRange", text=VOLUME_RANGE_LABEL)
+            col.separator()
+            col.prop(sw, "useSelection", text=USE_SELECTION_LABEL)
+            col.prop(sw, "affectSelected", text=AFFECT_SELECTED_LABEL)
+            col.prop(sw, "ignoreBackside", text=IGNORE_BACKSIDE_LABEL)
+            col.prop(sw, "islands", text=USE_ISLANDS_LABEL)
+            col.prop(sw, "ignoreLock", text=IGNORE_LOCK_LABEL)
+            col.prop(sw, "normalize", text=NORMALIZE_LABEL)
+            col.prop(sw, "oversampling", text=OVERSAMPLING_LABEL)
+            col.separator()
+            col.prop(sw, "useMaxGroups", text=USE_MAX_GROUPS_LABEL)
+            col.prop(sw, "maxGroups", text=MAX_GROUPS_LABEL)
+            if symmetryMap.hasValidOrderMap(context.object):
+                col.separator()
+                col.prop(sw, "useSymmetry", text=USE_SYMMETRY_LABEL)
+            col.separator()
+            col.operator("smoothweights.paint", text="Brush")
+            col.separator()
+
+        row = layout.row()
+        row.label(text="Tools")
+
+        box = layout.box()
+        col = box.column(align=True)
+        if context.object.mode in ['OBJECT', 'WEIGHT_PAINT']:
+            col.operator("smoothweights.flood", text="Flood")
+            col.separator()
+        col.operator("smoothweights.limit_groups", text="Limit Groups")
 
 
 # ----------------------------------------------------------------------
@@ -2980,11 +2742,17 @@ def menu_item(self, context):
     :type context: bpy.context
     """
     if hasWeights(context):
-        self.layout.separator()
-        self.layout.operator(OBJECT_OT_SmoothWeights.bl_idname,
-                             text="Smooth Weights")
-        self.layout.operator(OBJECT_OT_SmoothWeightsFlood.bl_idname,
-                             text="Flood Smooth Weights")
+        if context.object.mode in ['OBJECT', 'WEIGHT_PAINT']:
+            self.layout.separator()
+            self.layout.operator(SMOOTHWEIGHTS_OT_Paint.bl_idname,
+                                 text="Smooth Weights")
+            self.layout.operator(SMOOTHWEIGHTS_OT_Flood.bl_idname,
+                                 text="Flood Smooth Weights")
+            self.layout.operator(SMOOTHWEIGHTS_OT_LimitGroups.bl_idname,
+                                 text="Limit Weight Groups")
+        if context.object.mode in ['EDIT']:
+            self.layout.operator(SMOOTHWEIGHTS_OT_LimitGroups.bl_idname,
+                                 text="Limit Weight Groups")
 
 
 # ----------------------------------------------------------------------
@@ -3079,6 +2847,9 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
     useSelection_key: bpy.props.StringProperty(name=USE_SELECTION_LABEL,
                                                description=ANN_USE_SELECTION,
                                                default=USESELECTION_KEY)
+    useSymmetry_key: bpy.props.StringProperty(name=USE_SYMMETRY_LABEL,
+                                              description=ANN_USE_SYMMETRY,
+                                              default=USESYMMETRY_KEY)
     value_up_key: bpy.props.StringProperty(name=INCREASE_VALUE_LABEL,
                                            description=ANN_VALUE_UP,
                                            default=VALUE_UP_KEY)
@@ -3125,6 +2896,7 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
         colBox.prop(self, "islands_key")
         colBox.prop(self, "normalize_key")
         colBox.prop(self, "oversampling_key")
+        colBox.prop(self, "useSymmetry_key")
         colBox.separator()
         colBox.prop(self, "volume_key")
         colBox.prop(self, "volumeRange_key")
@@ -3148,8 +2920,9 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
 
 # Collect all classes in a list for easier access.
 classes = [SmoothWeights_Properties,
-           OBJECT_OT_SmoothWeights,
-           OBJECT_OT_SmoothWeightsFlood,
+           SMOOTHWEIGHTS_OT_Paint,
+           SMOOTHWEIGHTS_OT_Flood,
+           SMOOTHWEIGHTS_OT_LimitGroups,
            SMOOTHWEIGHTS_PT_settings,
            SMOOTHWEIGHTSPreferences]
 
@@ -3182,7 +2955,3 @@ def unregister():
     # Remove the brush circle and info from the 3d view if any.
     drawInfo3d.removeCircle()
     drawInfo3d.removeInfo()
-
-
-if __name__ == "__main__":
-    register()
