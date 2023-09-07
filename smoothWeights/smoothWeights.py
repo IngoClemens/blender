@@ -729,6 +729,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
             # positions.
             if self.isDragging:
                 self.Mesh.getDeformedPointPositions()
+
             self.isDragging = False
             # Remove the brush circle.
             drawInfo3d.removeCircle()
@@ -1692,11 +1693,6 @@ class Mesh(object):
         self.kdLocal = self.kdTree()
         self.kdDeformed = self.kdTree(local=False)
 
-        # Get the symmetry map.
-        self.orderMap = []
-        if self.useSymmetry and symmetryMap.hasValidOrderMap(self.obj):
-            orderMap = symmetryMap.getOrderMap(self.obj)
-
     def reset(self):
         """Free the bmesh memory.
         """
@@ -2148,6 +2144,11 @@ class Mesh(object):
         """
         weightObj = weights.Weights(self.obj)
 
+        # Get the symmetry map.
+        orderMap = []
+        if self.useSymmetry and symmetryMap.hasValidOrderMap(self.obj):
+            orderMap = symmetryMap.getOrderMap(self.obj)
+
         # The smoothing is performed in three steps to increase
         # efficiency in relation to possible oversampling.
         # 1. Evaluate all vertices of the brush radius and collect their
@@ -2187,7 +2188,7 @@ class Mesh(object):
             # 3. Collect all processed vertices and their final weights for
             #    setting the values in the vertex groups.
             for index, scale, indexBound, connected, volumeScale in connectedData:
-                mirrorIndex = self.getSymmetryIndex(index, self.orderMap)
+                mirrorIndex = self.getSymmetryIndex(index, orderMap)
                 mirrorWeights = weightObj.mirrorGroupAssignment(smoothed[index])
                 if sample == self.oversampling - 1:
                     # Get the new weights for applying.
@@ -2204,7 +2205,7 @@ class Mesh(object):
                 # Add the boundary vertex if in surface mode and
                 # islands should not be respected.
                 if not self.islands and indexBound is not None:
-                    mirrorIndex = self.getSymmetryIndex(indexBound, self.orderMap)
+                    mirrorIndex = self.getSymmetryIndex(indexBound, orderMap)
                     mirrorWeights = weightObj.mirrorGroupAssignment(smoothed[indexBound])
                     if sample == self.oversampling - 1:
                         indices.append(indexBound)
