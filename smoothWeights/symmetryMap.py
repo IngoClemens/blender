@@ -137,6 +137,11 @@ class SymmetryMap(object):
             # Get the current edge selection.
             edges = [edge for edge in self.bm.edges if edge.select]
 
+            # In case many elements are selected (because of an
+            # accidental selection), limit the number of edges to two.
+            if len(edges) > 2:
+                edges = edges[:2]
+
             for edge in edges:
                 # Get the edge faces.
                 result = self.getEdgeFaces(edge)
@@ -472,7 +477,10 @@ class SymmetryMap(object):
         for vert in self.getIslandVertices(data["faces"].asList()):
             # Only process the positive side and those which haven't
             # been mapped.
-            if (vert.co[axisIndex] >= 0 and
+            # Account for the case that a vertex can be very slighly on
+            # the negative side and still be considered at the center.
+            # Use the negative tolerance value to cover these vertices.
+            if (vert.co[axisIndex] >= -tolerance and
                     (not hasMap or
                      (hasMap and self.obj.data[PROPERTY_NAME][vert.index] == -1))):
                 pos = vert.co.copy()
@@ -605,11 +613,15 @@ class SymmetryMap(object):
         faceA = getInnerFace(edgeA, axisIndex=self.axis)
         faceB = getInnerFace(edgeB, axisIndex=self.axis)
 
+        # The faces should never be None.
+        if faceA is None or faceB is None:
+            return None, None
+
         # Get the direction of the edge.
         dirA = getEdgeDirection(faceA, edgeA)
         dirB = getEdgeDirection(faceB, edgeB)
 
-        # The directions never should be None.
+        # The directions should never be None.
         if dirA is None or dirB is None:
             return None, None
 
@@ -826,13 +838,14 @@ class SymmetryMap(object):
                 verts = edge.verts
                 faces = edge.link_faces
 
-                elements.append({"vertex1": verts[0].index,
-                                 "vertex2": verts[1].index,
-                                 "vertex3": None,
-                                 "vertex4": None,
-                                 "face1": faces[0].index,
-                                 "face2": faces[1].index,
-                                 "faceCount": island["faceCount"]})
+                if len(verts) == 2 and len(faces) == 2:
+                    elements.append({"vertex1": verts[0].index,
+                                     "vertex2": verts[1].index,
+                                     "vertex3": None,
+                                     "vertex4": None,
+                                     "face1": faces[0].index,
+                                     "face2": faces[1].index,
+                                     "faceCount": island["faceCount"]})
 
         return elements
 
@@ -849,7 +862,7 @@ class SymmetryMap(object):
         symMap = [-1] * len(self.bm.verts)
 
         for island in data:
-            if island["face1"] and island["face2"]:
+            if island["face1"] is not None and island["face2"] is not None:
 
                 vertex1 = 0
                 vertex2 = 0

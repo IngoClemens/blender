@@ -1392,7 +1392,7 @@ class SMOOTHWEIGHTS_OT_Flood(bpy.types.Operator):
     """Operator class for flood-smoothing the object's weights.
     """
     bl_idname = "smoothweights.flood"
-    bl_label = "Flood Smooth Weights"
+    bl_label = "Flood Smooth"
     bl_description = "Smooth the weights of all selected or unselected vertices"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -1589,7 +1589,7 @@ class SMOOTHWEIGHTS_OT_LimitGroups(bpy.types.Operator):
     """Operator class for selecting mapped vertices.
     """
     bl_idname = "smoothweights.limit_groups"
-    bl_label = "Limit Vertex Groups"
+    bl_label = "Limit Groups"
     bl_description = "Limits the vertex weights to a maximum number of vertex groups"
     bl_options = {'REGISTER', 'UNDO'}
 
@@ -2684,6 +2684,8 @@ class SMOOTHWEIGHTS_PT_settings(bpy.types.Panel):
         :param context: The current context.
         :type context: bpy.context
         """
+        hasOrderMap = symmetryMap.hasValidOrderMap(context.object)
+
         sw = context.object.smooth_weights
 
         layout = self.layout
@@ -2714,7 +2716,7 @@ class SMOOTHWEIGHTS_PT_settings(bpy.types.Panel):
             col.separator()
             col.prop(sw, "useMaxGroups", text=USE_MAX_GROUPS_LABEL)
             col.prop(sw, "maxGroups", text=MAX_GROUPS_LABEL)
-            if symmetryMap.hasValidOrderMap(context.object):
+            if hasOrderMap:
                 col.separator()
                 col.prop(sw, "useSymmetry", text=USE_SYMMETRY_LABEL)
             col.separator()
@@ -2727,9 +2729,12 @@ class SMOOTHWEIGHTS_PT_settings(bpy.types.Panel):
         box = layout.box()
         col = box.column(align=True)
         if context.object.mode in ['OBJECT', 'WEIGHT_PAINT']:
-            col.operator("smoothweights.flood", text="Flood")
+            col.operator("smoothweights.flood", icon='IMAGE')
             col.separator()
-        col.operator("smoothweights.limit_groups", text="Limit Groups")
+        col.operator("smoothweights.limit_groups", icon='GROUP_VERTEX')
+        if hasOrderMap:
+            col.separator()
+            col.operator("symmetryMap.mirror_weights", icon='MOD_MIRROR')
 
 
 # ----------------------------------------------------------------------

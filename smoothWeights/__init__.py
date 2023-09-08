@@ -96,6 +96,16 @@ the default key for undo, without any modifiers.
 
 Changelog:
 
+2.1.0 - 2023-09-08
+      - Added the Mirror Weights operator to the Smooth Weights panel.
+      - Added icons for all tool buttons.
+      - Fixed that mapping takes long if too many elements are selected.
+        The selection is now limited to two edges maximum.
+      - Fixed that mapping fails with simple objects if one of the faces
+        has a zero index.
+      - Fixed that Add Partial doesn't find center vertices if these are
+        slightly on the negative side.
+
 2.0.0 - 2023-09-07
       - Added symmetry mapping.
       - Added a symmetry option to the smooth operators to use the new
@@ -178,7 +188,7 @@ from . import smoothWeights, symmetryMap
 
 bl_info = {"name": "Smooth Weights",
            "author": "Ingo Clemens",
-           "version": (2, 0, 0),
+           "version": (2, 1, 0),
            "blender": (3, 6, 0),
            "category": "Rigging",
            "location": "View3D > Object",
