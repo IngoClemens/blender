@@ -74,10 +74,9 @@ R: Volume Range
    Hold R while dragging the cursor left/right to adjust the range.
    Hold Shift for faster adjustment and Ctrl for slower.
    Make sure to hover over the mesh.
-M: Limit Max Groups
 G: Groups
    Hold G while pressing + or - to increase or decrease the number of
-   vertex groups.
+   vertex groups. Zero ignores any group limit.
 T: Use Symmetry
 F: Flood Smooth
 Shift + RMB: Frame Change
@@ -95,6 +94,15 @@ the default key for undo, without any modifiers.
 ------------------------------------------------------------------------
 
 Changelog:
+
+2.2.0 - 2023-09-12
+      - Overall speed improvements.
+      - Added a normalize option to the Limit Groups operator.
+      - Mirroring weights now better addresses weights for vertices on
+        the line of symmetry.
+      - Removed the property to enable/disable the use of maximum vertex
+        groups. Instead, a max groups value of zero will ignore any
+        limit.
 
 2.1.0 - 2023-09-08
       - Added the Mirror Weights operator to the Smooth Weights panel.
@@ -188,7 +196,7 @@ from . import smoothWeights, symmetryMap
 
 bl_info = {"name": "Smooth Weights",
            "author": "Ingo Clemens",
-           "version": (2, 1, 0),
+           "version": (2, 2, 0),
            "blender": (3, 6, 0),
            "category": "Rigging",
            "location": "View3D > Object",

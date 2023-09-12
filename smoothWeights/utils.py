@@ -219,3 +219,68 @@ def getSymmetryPointDelta(vert1, vert2, axisIndex):
     pos2[axisIndex] *= -1
 
     return (pos1 - pos2).length
+
+
+def averageEdgeLength(vert):
+    """Return the average edge length of all edges connected to the
+    given vertex.
+
+    :param vert: The vertex to get the edges from.
+    :type vert: bmesh.types.Vert
+
+    :return: The average connected edge length.
+    :rtype: float
+    """
+    length = 0.0
+    edges = vert.link_edges
+    for edge in edges:
+        length += edge.calc_length()
+    return length / len(edges)
+
+
+def averageEdgeLengthTotal(obj):
+    """Return the average edge length of the entire mesh.
+
+    Only every fourth vertex will be considered.
+
+    :param obj: The mesh object.
+    :type obj: bpy.types.Object
+
+    :return: The average mesh edge length.
+    :rtype: float
+    """
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+
+    length = 0.0
+    count = 0
+    for i, vert in enumerate(bm.verts):
+        if i % 4 == 0:
+            length += averageEdgeLength(vert)
+            count += 1
+
+    bm.free()
+
+    return length / count
+
+
+def sortDict(data, reverse=False, maxCount=None):
+    """Sort the values in the given dictionary.
+
+    :param data: The dictionary to sort.
+    :type data: dict
+    :param reverse: True, if the sorting should be reversed, from high
+                    to low.
+    :type reverse: bool
+    :param maxCount: The maximum number of entries.
+    :type maxCount: int or None
+
+    :return: The sorted dictionary.
+    :rtype: dict
+    """
+    if maxCount is None:
+        return dict(sorted(data.items(), key=lambda x: x[1], reverse=reverse))
+    else:
+        return dict(sorted(data.items(), key=lambda x: x[1], reverse=reverse)[:maxCount])

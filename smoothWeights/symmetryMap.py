@@ -14,17 +14,23 @@ AXIS = "X"
 AXIS_INDICES = {"X": 0, "Y": 1, "Z": 2}
 DIRECTION = "POSITIVE"
 DIRECTION_INDICES = {"POSITIVE": 1, "NEGATIVE": 0}
+MAX_GROUPS = 5
+NORMALIZE = True
 TOLERANCE = 0.0
 VERBOSE = False
 
 ANN_AXIS = "The axis which defines the symmetry. Also used as the mirror axis"
 ANN_DIRECTION = "The direction to mirror values"
+ANN_MAX_GROUPS = "The number of vertex groups a vertex can share weights with. A zero value disables the limit"
+ANN_NORMALIZE = "Normalize the averaged weights to a sum of 1"
 ANN_TOLERANCE = ("Value for finding symmetry points. Zero for automatic "
                  "tolerance based on average edge length")
 ANN_VERBOSE = "Outputs the mapping result to the command line"
 
 AXIS_LABEL = "Axis"
 DIRECTION_LABEL = "Direction From"
+MAX_GROUPS_LABEL = "Max Groups"
+NORMALIZE_LABEL = "Normalize"
 TOLERANCE_LABEL = "Tolerance"
 VERBOSE_LABEL = "Verbose"
 
@@ -337,7 +343,7 @@ class SymmetryMap(object):
         verts = face.verts
 
         # Get the average edge length.
-        avgLength = self.averageEdgeLength(verts[0])
+        avgLength = utils.averageEdgeLength(verts[0])
 
         for vert in verts:
             point = vert.co
@@ -363,23 +369,6 @@ class SymmetryMap(object):
                 visitedVerts.add(vert.index)
 
         return centerEdge, minPos, minVertex, avgLength
-
-    @classmethod
-    def averageEdgeLength(cls, vert):
-        """Return the average edge length of all edges connected to the
-        given vertex.
-
-        :param vert: The vertex to get the edges from.
-        :type vert: bmesh.types.Vert
-
-        :return: The average connected edge length.
-        :rtype: float
-        """
-        length = 0.0
-        edges = vert.link_edges
-        for edge in edges:
-            length += edge.calc_length()
-        return length / len(edges)
 
     def getIslandCenterEdge(self, vertex, tolerance):
         """Return the center edge of the island, based on the given
@@ -1605,7 +1594,7 @@ def outputVerbose(items, header):
             print(item)
 
 
-def mirrorWeights(obj, axis, direction, tolerance):
+def mirrorWeights(obj, axis, direction, tolerance, maxGroups=5, normalize=True):
     """Mirror the weights of all or only selected vertices.
 
     :param obj: The object.
@@ -1616,6 +1605,12 @@ def mirrorWeights(obj, axis, direction, tolerance):
     :type direction: int
     :param tolerance: The tolerance for matching vertices.
     :type tolerance: float
+    :param maxGroups: The maximum number of vertex groups. Zero for no
+                      limit.
+    :type maxGroups: int
+    :param normalize: True, if the weights across all groups should be
+                      normalized.
+    :type normalize: bool
 
     :return: A message string.
     :rtype: str
@@ -1624,6 +1619,11 @@ def mirrorWeights(obj, axis, direction, tolerance):
 
     axisIndex = AXIS_INDICES[axis]
     directionIndex = DIRECTION_INDICES[direction]
+
+    # Set the tolerance to be dependent on the average edge length if
+    # the tolerance is set to auto.
+    if tolerance == 0:
+        tolerance = utils.averageEdgeLengthTotal(obj) * 0.25
 
     verts = set()
     if obj.mode == 'EDIT':
@@ -1635,22 +1635,35 @@ def mirrorWeights(obj, axis, direction, tolerance):
                     (not directionIndex and vert.co[axisIndex] <= tolerance)):
                 verts.add(vert.index)
 
-    indices = []
-    weightData = []
+    weightData = {}
 
     orderMap = obj.data[PROPERTY_NAME]
 
     for index in verts:
-        weightList = weightObj.vertexWeights(index, sparse=True)
-        vertWeights = weightObj.mirrorGroupAssignment(weightList)
+        # For the center vertices split the weights to either side if
+        # necessary.
+        splitWeight = index == orderMap[index]
+
+        weightList = weightObj.vertexWeights(index)
+        # Mirror the groups.
+        vertWeights = weightObj.mirrorGroupAssignment(weightList, splitWeight)
+        # Set max influences.
+        if maxGroups > 0:
+            vertWeights = utils.sortDict(vertWeights, reverse=True, maxCount=maxGroups)
+        # Normalize.
+        if normalize:
+            vertWeights = weightObj.normalizeVertexGroup(vertWeights)
 
         # Only mirror the weights if there are weight values to set and
         # if the target index is known.
-        if len(vertWeights) and orderMap[index] != -1:
-            indices.append(orderMap[index])
-            weightData.append(vertWeights)
+        if vertWeights and orderMap[index] != -1:
+            weightData[orderMap[index]] = vertWeights
 
-    weightObj.setVertexWeights(indices, weightData, clearAll=True, editMode=True)
+        # Also edit the source side in case of split weights.
+        if splitWeight:
+            weightData[index] = vertWeights
+
+    weightObj.setVertexWeights(weightData, editMode=True)
 
     return "Mirrored {}".format(utils.pluralize(len(verts), "weight", "vertex"))
 
@@ -1662,25 +1675,36 @@ def mirrorWeights(obj, axis, direction, tolerance):
 class SymmetryMap_Properties(bpy.types.PropertyGroup):
     """Property group class to make the properties globally available.
     """
-    axis: bpy.props.EnumProperty(name="Axis",
+    axis: bpy.props.EnumProperty(name=AXIS_LABEL,
                                  items=(('X', "X", "Symmetry on the x axis"),
                                         ('Y', "Y", "Symmetry on the y axis"),
                                         ('Z', "Z", "Symmetry on the z axis")),
                                  default=AXIS,
                                  description=ANN_AXIS)
 
-    direction: bpy.props.EnumProperty(name="Direction",
+    direction: bpy.props.EnumProperty(name=DIRECTION_LABEL,
                                       items=(('POSITIVE', "Positive", "Mirror positive to negative", 'TRIA_LEFT', 0),
                                              ('NEGATIVE', "Negative", "Mirror negative to positive", 'TRIA_RIGHT', 1)),
                                       default=DIRECTION,
                                       description=ANN_DIRECTION)
 
-    tolerance: bpy.props.FloatProperty(default=TOLERANCE,
+    maxGroups: bpy.props.IntProperty(name=MAX_GROUPS_LABEL,
+                                     default=MAX_GROUPS,
+                                     min=0,
+                                     description=ANN_MAX_GROUPS)
+
+    normalize: bpy.props.BoolProperty(name=NORMALIZE_LABEL,
+                                      default=NORMALIZE,
+                                      description=ANN_NORMALIZE)
+
+    tolerance: bpy.props.FloatProperty(name=TOLERANCE_LABEL,
+                                       default=TOLERANCE,
                                        min=0,
                                        precision=4,
                                        description=ANN_TOLERANCE)
 
-    verbose: bpy.props.BoolProperty(default=VERBOSE,
+    verbose: bpy.props.BoolProperty(name=VERBOSE_LABEL,
+                                    default=VERBOSE,
                                     description=ANN_VERBOSE)
 
 
@@ -1872,10 +1896,12 @@ class SYMMETRYMAP_OT_mirrorWeights(bpy.types.Operator):
         # Get the mapping settings.
         axis = sm.axis
         direction = sm.direction
+        maxGroups = sm.maxGroups
+        normalize = sm.normalize
         tolerance = sm.tolerance
 
         start = time.time()
-        info = mirrorWeights(context.object, axis, direction, tolerance)
+        info = mirrorWeights(context.object, axis, direction, tolerance, maxGroups, normalize)
         duration = time.time() - start
 
         self.report({'INFO'}, "Mirror weights finished in {:.3f} seconds. {}".format(duration, info))
@@ -1934,9 +1960,9 @@ class SYMMETRYMAP_PT_settings(bpy.types.Panel):
             infoCol.label(text=info, icon=icon)
             col.separator()
         row = col.row()
-        row.prop(sm, "axis", text=AXIS_LABEL, expand=True)
-        col.prop(sm, "tolerance", text=TOLERANCE_LABEL)
-        col.prop(sm, "verbose", text=VERBOSE_LABEL)
+        row.prop(sm, "axis", expand=True)
+        col.prop(sm, "tolerance")
+        col.prop(sm, "verbose")
         col.separator()
         col.operator("symmetrymap.create_map", icon='PRESET_NEW')
         col.separator()
@@ -1957,7 +1983,9 @@ class SYMMETRYMAP_PT_settings(bpy.types.Panel):
             box = layout.box()
             col = box.column(align=True)
             row = col.row()
-            row.prop(sm, "direction", text=DIRECTION_LABEL, expand=True)
+            row.prop(sm, "direction", expand=True)
+            col.prop(sm, "normalize")
+            col.prop(sm, "maxGroups")
             col.separator()
             col.operator("symmetrymap.mirror_weights", icon='MOD_MIRROR')
 

@@ -82,58 +82,43 @@ class Weights(object):
             indices.append(self.data.vertices[index].groups[i].group)
         return indices
 
-    def vertexWeights(self, index, sparse=False, maxGroups=None):
+    def vertexWeights(self, index, maxGroups=None):
         """Return a list with the vertex groups weights for the given
         vertex.
 
         :param index: The vertex index.
         :type index: int
-        :param sparse: True, if the returned list should only contain
-                       non-zero weights.
-                       False, for all weights. The returned list will
-                       have a size matching the number of vertex groups.
-        :type sparse: bool
         :param maxGroups: Optional list argument to return and update
                           the maximum number of groups per vertex.
                           If the list is provided it only contains one
                           element.
         :type maxGroups: None or list(int)
 
-        :return: A full list with the vertex weights and the group index
-                 for all vertex groups.
-        :rtype: list(tuple(float, int))
+        :return: A dictionary for the vertex storing the group indices
+                 and weight values as key/value pairs.
+        :rtype: dict
         """
-        w = []
+        w = {}
         for i, element in self.data.vertices[index].groups.items():
             value = self.data.vertices[index].groups[i].weight
             groupId = self.data.vertices[index].groups[i].group
-            w.append((value, groupId))
+            w[groupId] = value
 
         # Update the current max number of vertex groups.
         if maxGroups is not None and len(maxGroups):
             if len(w) > maxGroups[0]:
                 maxGroups[0] = len(w)
 
-        if sparse:
-            return w
+        return w
 
-        numGroups = len(self.allVertexGroupNames())
-        weightList = [(0.0, i) for i in range(numGroups)]
-
-        for item in w:
-            value, groupId = item
-            weightList[groupId] = value, groupId
-
-        return weightList
-
-    def setWeightsForVertex(self, index, weightList, clear=True):
+    def setWeightsForVertex(self, index, weightData, clear=True):
         """Set the weight for the given vertex for all vertex groups.
 
         :param index: The vertex index.
         :type index: int
-        :param weightList: The list of vertex weight tuples, with the
-                           weight and vertex group index.
-        :type weightList: list(tuple(float, int))
+        :param weightData: A dictionary for the vertex storing the group
+                           indices and weight values as key/value pairs.
+        :type weightData: dict
         :param clear: True, if the vertex group influence should be
                       removed before setting the new weight.
                       This is usually True, except when all influence
@@ -141,8 +126,8 @@ class Weights(object):
                       weights.
         :type clear: bool
         """
-        for groupIndex in range(len(weightList)):
-            value, groupId = weightList[groupIndex]
+        for groupId in weightData:
+            value = weightData[groupId]
 
             group = self.vertexGroup(groupId)
             if clear:
@@ -151,18 +136,13 @@ class Weights(object):
             if value > 0:
                 group.add([index], value, 'REPLACE')
 
-    def setVertexWeights(self, indices, weightData, clearAll=False, editMode=False):
+    def setVertexWeights(self, weightData, editMode=False):
         """Set the weights for the given list of vertex indices.
 
-        :param indices: The list of vertex indices.
-        :type indices: list(int)
-        :param weightData: The list of vertex weight tuples, with the
-                           weight and vertex group index for each given
-                           vertex index.
-        :type weightData: list(list(tuple(float, int)))
-        :param clearAll: True, if all vertex group influence should be
-                         reset before setting all new weights.
-        :type clearAll: bool
+        :param weightData: A dictionary which holds a dictionary for
+                           each vertex storing the group indices and
+                           weight values as key/value pairs.
+        :type weightData: dict(dict)
         :param editMode: False, to set the weights only when not in
                          edit mode. Necessary because when using the
                          smoothing brush the modes cannot be changed.
@@ -182,46 +162,45 @@ class Weights(object):
                 # edited while in edit mode.
                 bpy.ops.object.mode_set(mode="OBJECT")
 
-        # If all new weights should be set remove any vertex group
-        # influence for all given vertices.
-        if clearAll:
-            self.clearVertexWeights(indices)
+        # Remove any vertex group influence for all given vertices.
+        self.clearVertexWeights(list(weightData.keys()))
 
-        for i in range(len(weightData)):
-            weightList = weightData[i]
-            self.setWeightsForVertex(indices[i], weightList, clear=not clearAll)
+        for index in weightData:
+            weightList = weightData[index]
+            # Since the group assignments already have been cleared,
+            # clearing is not necessary.
+            self.setWeightsForVertex(index, weightList, clear=False)
 
         if editMode:
             bpy.ops.object.mode_set(mode=mode)
 
         return True
 
-    def setWeightsFromVertexList(self, indices, allWeightData):
+    def setWeightsFromVertexList(self, indices, weightData):
         """Set the weights for the given list of vertex indices.
 
-        This is used to reset the previous weights when cancelling.
-        The weight data list contains all previous weights but the given
+        When resetting to the previous weights when cancelling the
+        weight data list contains all previous weights but the given
         indices are only from the processed vertices.
 
         :param indices: The list of vertex indices.
         :type indices: list(int)
-        :param allWeightData: The list of all vertex weight tuples, with
-                              the weight and vertex group index for
-                              each vertex index.
-        :type allWeightData: list(list(tuple(float, int)))
-
-        :return: True, if setting the weights was successful. False if
-                 the object is in edit mode.
-        :rtype: bool
+        :param weightData: A dictionary which holds a dictionary for
+                           each vertex storing the group indices and
+                           weight values as key/value pairs.
+        :type weightData: dict(dict)
         """
-        if self.obj.mode == 'EDIT':
-            return False
+        mode = self.obj.mode
+        if mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode="OBJECT")
 
-        for i in range(len(indices)):
-            weightList = allWeightData[indices[i]]
-            self.setWeightsForVertex(indices[i], weightList)
+        self.clearVertexWeights(indices)
 
-        return True
+        for i in indices:
+            weightList = weightData[i]
+            self.setWeightsForVertex(i, weightList)
+
+        bpy.ops.object.mode_set(mode=mode)
 
     def clearVertexWeights(self, indices):
         """Delete the group influence for the given vertex or list of
@@ -236,67 +215,54 @@ class Weights(object):
         for group in self.obj.vertex_groups:
             group.remove(indices)
 
-    def mirrorGroupAssignment(self, weightList):
+    def mirrorGroupAssignment(self, weightData, splitWeight=False):
         """Replace the group indices in the given weight data list with
         the indices of the opposite groups.
 
-        :param weightList: The list of vertex weight tuples, with the
-                           weight and vertex group index.
-        :type weightList: list(tuple(float, int))
+        :param weightData: A dictionary for the vertex storing the group
+                           indices and weight values as key/value pairs.
+        :type weightData: dict
+        :param splitWeight: True, if the weight should be equally split
+                            between both sides.
+        :type splitWeight: bool
 
-        :return: The weight list with the mirrored group indices.
-        :rtype: list(tuple(float, int))
+        :return: The weight dictionary with the mirrored group indices.
+        :rtype: dict
         """
         groupNames = self.allVertexGroupNames()
 
-        vertWeights = []
-        for value, groupId in weightList:
+        vertWeights = {}
+        for groupId in weightData:
             # Rename the source vertex group name.
             oppositeName = utils.replaceSideIdentifier(groupNames[groupId])
             # Check if the mirrored name exists.
             if oppositeName in groupNames:
                 # Get the according index for the mirrored name.
                 oppositeId = groupNames.index(oppositeName)
-                # Store the value and group index.
-                vertWeights.append((value, oppositeId))
+                if not splitWeight:
+                    # Store the value for the group index.
+                    vertWeights[oppositeId] = weightData[groupId]
+                else:
+                    # Split the weight between the two groups.
+                    value = weightData[groupId] * 0.5
+                    vertWeights[groupId] = value
+                    vertWeights[oppositeId] = value
 
         return vertWeights
-
-    @classmethod
-    def limitVertexGroups(cls, weightData, maxGroups):
-        """Limit the number of entries in the given list of weights to
-        the given max group count.
-
-        The returned list only contains the highest weight values.
-
-        :param weightData: The list of vertex weight tuples, with the
-                           weight and vertex group index for each given
-                           vertex index.
-        :type weightData: list(list(tuple(float, int)))
-        :param maxGroups: The number of allowed vertex group influences.
-        :type maxGroups: int
-
-        :return: The reduced list of vertex weight tuples.
-        :rtype: list(list(tuple(float, int)))
-        """
-        # Sort by the weight value in descending order.
-        sortedWeights = sorted(weightData, key=lambda x: x[0], reverse=True)
-        return sortedWeights[:maxGroups]
 
     @classmethod
     def normalizeVertexGroup(cls, weightData):
         """Normalize the weights of the given list of weights.
 
-        :param weightData: The list of vertex weight tuples, with the
-                           weight and vertex group index for each given
-                           vertex index.
-        :type weightData: list(list(tuple(float, int)))
+        :param weightData: A dictionary for the vertex storing the group
+                           indices and weight values as key/value pairs.
+        :type weightData: dict
 
-        :return: The normalized list of vertex weight tuples.
-        :rtype: list(list(tuple(float, int)))
+        :return: The normalized dictionary of vertex weights.
+        :rtype: dict
         """
-        sumWeight = sum(value for value, groupId in weightData)
+        sumWeight = sum(weightData.values())
 
-        normalizedData = [(value / sumWeight, groupId) for value, groupId in weightData]
+        normalizedData = {key: value / sumWeight for key, value in weightData.items()}
 
         return normalizedData
