@@ -1,0 +1,64 @@
+Requirements:
+The mesh needs to have at least two vertex groups for the panel and menu
+item to show.
+
+1. Select the mesh in object mode. There is no need to enter weight
+   painting mode.
+2. From the side panel in the 3D view choose the tool tab.
+3. Open the folder "Smooth Weights"
+4. Press "Brush".
+
+   or
+
+   From the 3D view main menu choose Object > Smooth Weights.
+
+   or
+
+   From the 3D view Weight Paint menu choose Weights > Smooth Weights.
+
+5. All settings can either be adjusted from the side panel before
+   entering the tool or via keymaps while the tool is active.
+6. LMB paint over the mesh to smooth the weights.
+7. Press Enter to finish the tool or Esc/RMB to cancel.
+
+The default keymaps are:
+
+B: Brush size
+   Hold B while dragging the cursor left/right to adjust the size.
+   Hold Shift for faster adjustment and Ctrl for slower.
+   Make sure to hover over the mesh.
+S: Brush strength
+   Hold S while dragging the cursor left/right to adjust the strength.
+   Hold Shift for faster adjustment and Ctrl for slower.
+   Make sure to hover over the mesh.
+1/2/3/4: Brush Curve Falloff (None, Linear, Smooth, Narrow)
+Q: Use Selection
+A: Affect Selected
+X: Ignore Backside
+L: Ignore Lock
+I: Use Islands
+N: Normalize
+O: Oversampling
+   Hold O while pressing + or - to increase or decrease the oversampling
+   value.
+V: Volume (off for surface smoothing)
+R: Volume Range
+   Hold R while dragging the cursor left/right to adjust the range.
+   Hold Shift for faster adjustment and Ctrl for slower.
+   Make sure to hover over the mesh.
+G: Groups
+   Hold G while pressing + or - to increase or decrease the number of
+   vertex groups. Zero ignores any group limit.
+T: Use Symmetry
+F: Flood Smooth
+Shift + RMB: Frame Change
+   Change the current frame by dragging the mouse left or right.
+W: Toggle Select mode.
+E: Toggle Deselect mode.
+C: Clear Selection
+
+All keymaps, except the frame change, are customizable from the add-on
+preferences.
+
+While the tool is active the last brush stroke can be undone by pressing
+the default key for undo, without any modifiers.

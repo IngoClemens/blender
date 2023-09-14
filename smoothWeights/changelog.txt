@@ -1,0 +1,102 @@
+2.3.0 - 2023-09-14
+      - Detection of non-manifold geometry when creating the symmetry
+        map.
+      - Two new operators for symmetrizing and flipping the mesh.
+      - Sibling stepping for analyzing the symmetry. This requires
+        extras to be enabled in the add-on preferences.
+      - Code restructure
+      - Easier modification of keymap preferences through a separate
+        keymap file.
+
+2.2.0 - 2023-09-12
+      - Overall speed improvements.
+      - Added a normalize option to the Limit Groups operator.
+      - Mirroring weights now better addresses weights for vertices on
+        the line of symmetry.
+      - Removed the property to enable/disable the use of maximum vertex
+        groups. Instead, a max groups value of zero will ignore any
+        limit.
+
+2.1.0 - 2023-09-08
+      - Added the Mirror Weights operator to the Smooth Weights panel.
+      - Added icons for all tool buttons.
+      - Fixed that mapping takes long if too many elements are selected.
+        The selection is now limited to two edges maximum.
+      - Fixed that mapping fails with simple objects if one of the faces
+        has a zero index.
+      - Fixed that Add Partial doesn't find center vertices if these are
+        slightly on the negative side.
+
+2.0.0 - 2023-09-07
+      - Added symmetry mapping.
+      - Added a symmetry option to the smooth operators to use the new
+        symmetry map for mirrored smoothing.
+      - Added a new operator to clamp the maximum number of vertex
+        groups.
+      - Added a new operator to mirror vertex weights based on the
+        symmetry map.
+
+1.2.0 - 2023-08-28
+      - Added an oversampling property for smoothing in multiple
+        iterations for a smoother result.
+      - Added an additional color preference to control the color of the
+        brush circle and the tool info separately.
+      - Increased the drawing precision of the brush circle.
+      - Fixed that the flood operator would not respect the current
+        vertex selection.
+
+1.1.0 - 2023-08-25
+      - Disabling Use Selection also disables selection/deselection
+        mode.
+      - When exiting while in Blender's Weight Paint mode the mode is
+        kept.
+      - Fixed that undo is very slow with a large number of affected
+        vertices.
+      - The user defined color for unselected vertices is not used when
+        entering the tool.
+
+1.0.0 - 2023-08-24
+      - Increased brush value precision.
+      - Public release.
+
+0.0.6 - 2023-08-23
+      - Ignore islands is now enabled for volume mode.
+      - Added a selection and deselection mode.
+      - Added a keymap for flooding in paint mode.
+      - The paint mode undo queue has now a configurable length with a
+        preference setting.
+      - The tool is now only accessible when in Object or Weight Paint
+        mode.
+
+0.0.5 - 2023-08-18
+      - Added the ability to drag the current frame while in paint
+        mode with Shift + RMB.
+      - Added the corresponding keymap to the in-view settings.
+      - Fixed, that the brush circle briefly appears at the last
+        position when starting a new stroke.
+      - Fixed the wrong display of the max groups label in the in-view
+        settings.
+
+0.0.4 - 2023-08-18
+      - Improvements to the smoothing algorithm.
+      - Added the option to ignore backfaces while painting.
+      - Included the volume option in the floor operator.
+      - Removed the oversampling property, which was needed for the old
+        smoothing process.
+      - Fixed some issues related to the selection switches.
+      - Fixed the strength value which was not working as expected.
+
+0.0.3 - 2023-08-16
+      - The tool is now also available in Blender's Weight Paint mode.
+      - The paint cursor now shows as a target cross, to match it with
+        the regular paint tool.
+      - Fixed an undo-paint-related issue when using the flood operator.
+      - Fixed the labels in the redo panel of the floor operator.
+
+0.0.2 - 2023-08-16
+      - Added a new option to disable any selection-based restriction.
+      - Added a single undo operation while in paint mode.
+      - Fixed the issue that any transformation affects the
+        functionality of the tool.
+
+0.0.1 - 2023-08-15

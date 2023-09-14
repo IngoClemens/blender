@@ -1,43 +1,13 @@
 # <pep8 compliant>
 
-from . import utils, weights
+from . import constants as const
+from . import preferences as prefs
+from . import strings, utils, weights
 
 import bpy
 import bmesh
 
 import time
-
-
-PROPERTY_NAME = "br_symmetry_map"
-
-AXIS = "X"
-AXIS_INDICES = {"X": 0, "Y": 1, "Z": 2}
-DIRECTION = "POSITIVE"
-DIRECTION_INDICES = {"POSITIVE": 1, "NEGATIVE": 0}
-MAX_GROUPS = 5
-NORMALIZE = True
-TOLERANCE = 0.0
-VERBOSE = False
-
-ANN_AXIS = "The axis which defines the symmetry. Also used as the mirror axis"
-ANN_DIRECTION = "The direction to mirror values"
-ANN_MAX_GROUPS = "The number of vertex groups a vertex can share weights with. A zero value disables the limit"
-ANN_NORMALIZE = "Normalize the averaged weights to a sum of 1"
-ANN_TOLERANCE = ("Value for finding symmetry points. Zero for automatic "
-                 "tolerance based on average edge length")
-ANN_VERBOSE = "Outputs the mapping result to the command line"
-
-AXIS_LABEL = "Axis"
-DIRECTION_LABEL = "Direction From"
-MAX_GROUPS_LABEL = "Max Groups"
-NORMALIZE_LABEL = "Normalize"
-TOLERANCE_LABEL = "Tolerance"
-VERBOSE_LABEL = "Verbose"
-
-WARNING_EDGE_NOT_CONNECTED = "The symmetry edge is not connected to any faces"
-WARNING_EDGE_NEEDS_TWO_FACES = "The symmetry edge must be connected to two faces"
-ERROR_TRAVERSE_COUNT = "Face count is different while traversing vertices: "
-ERROR_PASS_COUNT_MISMATCH = "Mapping failed. The passes have a different vertex count. Vertices: "
 
 
 # ----------------------------------------------------------------------
@@ -99,7 +69,7 @@ class SymmetryMap(object):
         self.bm.edges.ensure_lookup_table()
         self.bm.faces.ensure_lookup_table()
 
-        self.axis = AXIS_INDICES[axis]
+        self.axis = const.AXIS_INDICES[axis]
         self.tolerance = tolerance
 
     def freeMesh(self):
@@ -235,9 +205,9 @@ class SymmetryMap(object):
         """
         faces = edge.link_faces
         if not len(faces):
-            return WARNING_EDGE_NOT_CONNECTED
+            return strings.WARNING_EDGE_NOT_CONNECTED
         if len(faces) < 2:
-            return WARNING_EDGE_NEEDS_TWO_FACES
+            return strings.WARNING_EDGE_NEEDS_TWO_FACES
 
         return [f for f in faces]
 
@@ -426,7 +396,7 @@ class SymmetryMap(object):
         if self.obj.mode != 'EDIT':
             return [], autoInfo
 
-        axisIndex = AXIS_INDICES[axis]
+        axisIndex = const.AXIS_INDICES[axis]
         hasMap = hasMapProperty(self.obj)
 
         # Get the current selection.
@@ -471,7 +441,7 @@ class SymmetryMap(object):
             # Use the negative tolerance value to cover these vertices.
             if (vert.co[axisIndex] >= -tolerance and
                     (not hasMap or
-                     (hasMap and self.obj.data[PROPERTY_NAME][vert.index] == -1))):
+                     (hasMap and self.obj.data[const.MAP_PROPERTY_NAME][vert.index] == -1))):
                 pos = vert.co.copy()
                 pos[axisIndex] *= -1
                 rangeVerts = kdPoints.find_range(pos, tolerance)
@@ -845,10 +815,12 @@ class SymmetryMap(object):
                      elements.
         :type data: list(dict)
 
-        :return: The list of mapped vertex indices.
-        :rtype: list(int)
+        :return: The list of mapped vertex indices or an error message.
+        :rtype: list(int) or str
         """
         symMap = [-1] * len(self.bm.verts)
+
+        invalidIndices = []
 
         for island in data:
             if island["face1"] is not None and island["face2"] is not None:
@@ -876,11 +848,15 @@ class SymmetryMap(object):
                         numFaces = island["faceCount"]
 
                     result = traverseMesh(self.bm, face, vertex1, vertex2, numFaces)
-                    mapOrder, numProcessFaces = result
+                    mapOrder, numProcessFaces, invalid = result
+
+                    # Non-manifold geometry.
+                    if len(invalid):
+                        invalidIndices.extend(invalid)
 
                     if numFaces != numProcessFaces:
-                        msg = "{}{} {}".format(ERROR_TRAVERSE_COUNT, vertex1, vertex2)
-                        return msg
+                        msg = "{}{} {}".format(strings.ERROR_TRAVERSE_COUNT, vertex1, vertex2)
+                        return "ERROR:{}".format(msg)
 
                     if i == 0:
                         order1 = mapOrder
@@ -888,14 +864,18 @@ class SymmetryMap(object):
                         order2 = mapOrder
 
                 if len(order1) != len(order2):
-                    msg = "{}{} {}".format(ERROR_PASS_COUNT_MISMATCH, vertex1, vertex2)
-                    return msg
+                    msg = "{}{} {}".format(strings.ERROR_PASS_COUNT_MISMATCH, vertex1, vertex2)
+                    return "ERROR:{}".format(msg)
 
                 # Use the generated maps to build a new vertex list that
                 # will remap the original topology.
                 for i in range(len(order1)):
                     symMap[order1[i]] = order2[i]
                     symMap[order2[i]] = order1[i]
+
+        if len(invalidIndices):
+            selectNonManifold(self.obj, invalidIndices)
+            return "ERROR:{}".format(strings.ERROR_NON_MANIFOLD)
 
         return symMap
 
@@ -963,12 +943,13 @@ def traverseMesh(bm, face, vertex1, vertex2, numFaces):
     :param numFaces: The number of faces of the island.
     :type numFaces: int
 
-    :return: A tuple with the vertex order list and the number of
-             processed faces.
-    :rtype: tuple(list(int), int)
+    :return: A tuple with the vertex order list, the number of processed
+             faces and a list with non-manifold vertex indices
+    :rtype: tuple(list(int), int, list(int))
     """
-    visitedVerts = [False] * len(bm.verts)
-    visitedFaces = [False] * len(bm.faces)
+    visitedVerts = set()
+    visitedEdges = set()
+    visitedFaces = set()
 
     processFaces = []
     faceVtx1 = []
@@ -977,10 +958,11 @@ def traverseMesh(bm, face, vertex1, vertex2, numFaces):
     faceVtx1.append(vertex1)
     faceVtx2.append(vertex2)
 
-    visitedFaces[face] = True
+    visitedFaces.add(face)
 
     orderedVertices = []
 
+    invalid = set()
     for i in range(numFaces):
         if i < len(processFaces):
             face = processFaces[i]
@@ -990,8 +972,8 @@ def traverseMesh(bm, face, vertex1, vertex2, numFaces):
             faceEdges = [e.index for e in bm.faces[face].edges]
 
             edgeVertices = []
-            for edges in bm.faces[face].edges:
-                edgeVertices.extend([v.index for v in edges.verts])
+            for edge in bm.faces[face].edges:
+                edgeVertices.extend([v.index for v in edge.verts])
 
             orderedEdges, orderedVertex1, orderedVertex2 = getOrderedFaceEdges(vertex1,
                                                                                vertex2,
@@ -999,25 +981,37 @@ def traverseMesh(bm, face, vertex1, vertex2, numFaces):
                                                                                edgeVertices)
 
             for j in range(len(orderedEdges)):
-                if not visitedVerts[orderedVertex1[j]]:
+                if orderedVertex1[j] not in visitedVerts:
+                    if not isManifold(bm.verts[orderedVertex1[j]]):
+                        invalid.add(orderedVertex1[j])
                     orderedVertices.append(orderedVertex1[j])
-                    visitedVerts[orderedVertex1[j]] = True
-                if not visitedVerts[orderedVertex2[j]]:
+                    visitedVerts.add(orderedVertex1[j])
+                if orderedVertex2[j] not in visitedVerts:
+                    if not isManifold(bm.verts[orderedVertex2[j]]):
+                        invalid.add(orderedVertex2[j])
                     orderedVertices.append(orderedVertex2[j])
-                    visitedVerts[orderedVertex2[j]] = True
+                    visitedVerts.add(orderedVertex2[j])
+
+                # Check for non-manifold eges which are connected to
+                # more than two faces.
+                if orderedEdges[j] not in visitedEdges:
+                    if len(bm.edges[orderedEdges[j]].link_faces) > 2:
+                        invalid.add(orderedVertex1[j])
+                        invalid.add(orderedVertex2[j])
+                    visitedEdges.add(orderedEdges[j])
 
                 connectedFaces = [f.index for f in bm.edges[orderedEdges[j]].link_faces]
                 connectedFace = getOppositeEdgeFace(face, connectedFaces)
 
-                if connectedFace is not None and not visitedFaces[connectedFace]:
+                if connectedFace is not None and connectedFace not in visitedFaces:
                     processFaces.append(connectedFace)
                     faceVtx1.append(orderedVertex1[j])
                     faceVtx2.append(orderedVertex2[j])
-                    visitedFaces[connectedFace] = True
+                    visitedFaces.add(connectedFace)
         else:
             break
 
-    return orderedVertices, len(processFaces)
+    return orderedVertices, len(processFaces), list(invalid)
 
 
 def getOrderedFaceEdges(vertex1, vertex2, edgeList, edgeVertices):
@@ -1159,6 +1153,59 @@ def getEdgeDirection(face, edge):
                 return False
 
 
+def isManifold(vert):
+    """Return if the given vertex is manifold.
+
+    :param vert: The vertex to check.
+    :type vert: bmesh.types.Vert
+
+    :return: True, if the vertex is manifold.
+    :rtype: bool
+    """
+    # Get the connected edges and faces.
+    edges = vert.link_edges
+    faces = vert.link_faces
+
+    numEdges = len(edges)
+    numFaces = len(faces)
+
+    # There are three cases which usually can occur.
+    # 1.  In a regular quat mesh a point is connected to four faces
+    #     and four edges. Valid.
+    # 2a. An island corner vertex has two edges and one face it's
+    #     connected to. Valid. One face more than edges.
+    # 2b. An island border vertex has three edges and two faces it's
+    #     connected to. Valid. One face more than edges.
+    # 3.  Two faces are connected by one vertex. Two faces and four
+    #     edges. This is not allowed.
+    case1 = numFaces == numEdges
+    case2 = numEdges == numFaces + 1
+    # Check if the vertex is non-manifold
+    if not case1 and not case2:
+        return False
+    return True
+
+
+def selectNonManifold(obj, indices):
+    """Select the non-manifold vertices.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+    :param indices: The non-manifold vertex indices.
+    :type indices: list(int)
+    """
+    bpy.ops.object.mode_set(mode='EDIT')
+    # Clear the selection to make sure that only the pair is selected.
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    for index in indices:
+        obj.data.vertices[index].select = True
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='VERT')
+
+
 # ----------------------------------------------------------------------
 # Operator Functions
 # ----------------------------------------------------------------------
@@ -1173,7 +1220,20 @@ def hasMapProperty(obj):
     :return: True, if the property exists.
     :rtype: bool
     """
-    return PROPERTY_NAME in obj.data
+    return const.MAP_PROPERTY_NAME in obj.data
+
+
+def hasWalkIndexProperty(obj):
+    """Return if the walk index property exists in the object's data
+    block.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+
+    :return: True, if the property exists.
+    :rtype: bool
+    """
+    return const.WALK_PROPERTY_NAME in obj.data
 
 
 def getOrderMap(obj):
@@ -1188,7 +1248,7 @@ def getOrderMap(obj):
     :return: The order map.
     :rtype: list(int)
     """
-    return obj.data[PROPERTY_NAME]
+    return obj.data[const.MAP_PROPERTY_NAME]
 
 
 def hasValidOrderMap(obj):
@@ -1202,7 +1262,7 @@ def hasValidOrderMap(obj):
     :rtype: bool
     """
     if hasMapProperty(obj):
-        return len(obj.data[PROPERTY_NAME]) == len(obj.data.vertices)
+        return len(obj.data[const.MAP_PROPERTY_NAME]) == len(obj.data.vertices)
     else:
         return False
 
@@ -1218,7 +1278,7 @@ def isComplete(obj):
     :rtype: bool
     """
     if hasMapProperty(obj):
-        return not any(item == -1 for item in obj.data[PROPERTY_NAME])
+        return not any(item == -1 for item in obj.data[const.MAP_PROPERTY_NAME])
     else:
         return False
 
@@ -1233,7 +1293,7 @@ def getUnmappedNum(obj):
     :rtype: int or None
     """
     if hasMapProperty(obj):
-        return sum(1 for value in obj.data[PROPERTY_NAME] if value == -1)
+        return sum(1 for value in obj.data[const.MAP_PROPERTY_NAME] if value == -1)
 
 
 def setMap(obj, indices):
@@ -1244,7 +1304,7 @@ def setMap(obj, indices):
     :param indices: The list of mapping indices
     :type indices: list(int)
     """
-    obj.data[PROPERTY_NAME] = indices
+    obj.data[const.MAP_PROPERTY_NAME] = indices
 
 
 def extendMap(obj, indices):
@@ -1262,7 +1322,7 @@ def extendMap(obj, indices):
     else:
         for i, index in enumerate(indices):
             if index != -1:
-                obj.data[PROPERTY_NAME][i] = index
+                obj.data[const.MAP_PROPERTY_NAME][i] = index
 
 
 def getMapInfo(obj):
@@ -1284,15 +1344,18 @@ def getMapInfo(obj):
             count = getUnmappedNum(obj)
             vtxCount = len(obj.data.vertices)
             if count == 0:
-                return "Mapping complete", 'CHECKMARK', True
+                return strings.INFO_MAPPING_COMPLETE, 'CHECKMARK', True
             elif count == vtxCount:
-                return "Mapping not set", 'ERROR', False
+                return strings.INFO_MAPPING_NOT_SET, 'ERROR', False
             else:
-                return "Partial mapping {}/{} vertices".format(vtxCount - count, vtxCount), 'ERROR', True
+                return ("{}{}/{}{}".format(strings.INFO_PARTIAL_MAP,
+                                           vtxCount - count,
+                                           vtxCount,
+                                           strings.INFO_VERTICES), 'ERROR', True)
 
         # The vertex count differs.
         else:
-            return "Vertex count mismatch", 'ERROR', False
+            return strings.ERROR_VERTEX_COUNT_MISMATCH, 'ERROR', False
 
 
 def createMap(obj, axis, tolerance, verbose=False):
@@ -1319,7 +1382,7 @@ def createMap(obj, axis, tolerance, verbose=False):
     # Update the island data with the center edge, if one is selected.
     symMap.getIslandFromSelection(data=data)
     if verbose:
-        msg = "Symmetry mapping found {}".format(utils.pluralize(len(data), "island"))
+        msg = "{}{}".format(strings.INFO_MAPPING_FOUND, utils.pluralize(len(data), "island"))
         outputVerbose(data, msg)
 
     # Get all islands which have a matching size.
@@ -1358,7 +1421,7 @@ def createMap(obj, axis, tolerance, verbose=False):
     # Combine all found traversal elements.
     elements = spanElements + pairElements
     if verbose:
-        msg = "{} used for mapping".format(utils.pluralize(len(elements), "element"))
+        msg = "{}{}".format(utils.pluralize(len(elements), "element"), strings.INFO_USED_FOR_MAPPING)
         outputVerbose(elements, msg)
         print()
 
@@ -1369,11 +1432,15 @@ def createMap(obj, axis, tolerance, verbose=False):
     symMap.freeMesh()
 
     # Set the order map property.
-    setMap(obj, orderMap)
+    if isinstance(orderMap, list):
+        setMap(obj, orderMap)
 
-    # Prepare the operator info output.
-    mappedIslandCount = len(spanElements) + len(pairElements) * 2
-    info = "Mapped {}".format(utils.pluralize([mappedIslandCount, len(data)], "island"))
+        # Prepare the operator info output.
+        mappedIslandCount = len(spanElements) + len(pairElements) * 2
+        info = "{}{}".format(strings.INFO_MAPPED, utils.pluralize([mappedIslandCount, len(data)], "island"))
+    # The returned error message.
+    else:
+        info = orderMap
 
     return info
 
@@ -1399,7 +1466,7 @@ def addToMap(obj, axis, tolerance, verbose=False):
 
     data = symMap.getIslandFromSelection()
     if verbose:
-        msg = "Symmetry mapping found {}".format(utils.pluralize(len(data), "island"))
+        msg = "{}{}".format(strings.INFO_MAPPING_FOUND, utils.pluralize(len(data), "island"))
         outputVerbose(data, msg)
 
     # Get the elements for the mesh traversal.
@@ -1411,10 +1478,10 @@ def addToMap(obj, axis, tolerance, verbose=False):
         elements, ids = symMap.getSelectedPairElements(data)
         elements = [elements]
     else:
-        return "No valid edge selection found for symmetry mapping"
+        return strings.WARNING_NO_EDGE_SELECTION
 
     if verbose:
-        msg = "{} used for mapping".format(utils.pluralize(len(elements), "element"))
+        msg = "{}{}".format(utils.pluralize(len(elements), "element"), strings.INFO_USED_FOR_MAPPING)
         outputVerbose(elements, msg)
         print()
 
@@ -1425,9 +1492,13 @@ def addToMap(obj, axis, tolerance, verbose=False):
     symMap.freeMesh()
 
     # Set the order map property.
-    extendMap(obj, orderMap)
+    if isinstance(orderMap, list):
+        extendMap(obj, orderMap)
 
-    info = "Mapped {}".format(utils.pluralize(len(data), "island"))
+        info = "{}{}".format(strings.INFO_MAPPED, utils.pluralize(len(data), "island"))
+    # The returned error message.
+    else:
+        info = orderMap
 
     return info
 
@@ -1451,7 +1522,7 @@ def addPartialToMap(obj, axis, tolerance):
 
     orderMap, autoInfo = symMap.getSymmetryPoints(axis, tolerance)
     if not orderMap:
-        return "No selection or no symmetrical points found"
+        return "ERROR:{}".format(strings.ERROR_NO_POINTS_FOUND)
 
     # Finish processing the mesh.
     symMap.freeMesh()
@@ -1460,7 +1531,7 @@ def addPartialToMap(obj, axis, tolerance):
     extendMap(obj, orderMap)
 
     items = [i for i in orderMap if i != -1]
-    info = "Mapped {} vertices".format(len(items))
+    info = "{}{}{}".format(strings.INFO_MAPPED, len(items), strings.INFO_VERTICES)
     if len(autoInfo):
         info += ". " + autoInfo
 
@@ -1477,11 +1548,11 @@ def deleteMap(obj):
     :rtype: tuple(set, str)
     """
     if hasMapProperty(obj):
-        del obj.data[PROPERTY_NAME]
+        del obj.data[const.MAP_PROPERTY_NAME]
     else:
-        return {'WARNING'}, "The object has no symmetry mapping"
+        return {'WARNING'}, strings.WARNING_NO_MAPPING
 
-    return {'INFO'}, "Symmetry map removed"
+    return {'INFO'}, strings.INFO_MAP_REMOVED
 
 
 def selectMapped(obj):
@@ -1520,13 +1591,13 @@ def selectVertices(obj, mapped=True):
     :rtype: tuple(set, str)
     """
     if not hasMapProperty(obj):
-        return {'WARNING'}, "The object has no symmetry mapping"
+        return {'WARNING'}, strings.WARNING_NO_MAPPING
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='DESELECT')
     bpy.ops.object.mode_set(mode='OBJECT')
 
     count = 0
-    orderMap = obj.data[PROPERTY_NAME]
+    orderMap = obj.data[const.MAP_PROPERTY_NAME]
     for i, item in enumerate(orderMap):
         if (item != -1 and mapped) or (item == -1 and not mapped):
             obj.data.vertices[i].select = True
@@ -1535,7 +1606,7 @@ def selectVertices(obj, mapped=True):
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_mode(type='VERT')
 
-    return {'INFO'}, "{} vertices selected".format(count)
+    return {'INFO'}, "{}{}".format(count, strings.INFO_VERTICES_SELECTED)
 
 
 def selectSibling(obj):
@@ -1548,11 +1619,11 @@ def selectSibling(obj):
     :rtype: tuple(set, str)
     """
     if not hasMapProperty(obj):
-        return {'WARNING'}, "The object has no symmetry mapping"
+        return {'WARNING'}, strings.WARNING_NO_MAPPING
     bpy.ops.object.mode_set(mode='OBJECT')
 
     count = 0
-    orderMap = obj.data[PROPERTY_NAME]
+    orderMap = obj.data[const.MAP_PROPERTY_NAME]
     for vert in obj.data.vertices:
         if vert.select:
             otherVert = orderMap[vert.index]
@@ -1561,11 +1632,90 @@ def selectSibling(obj):
                 count += 1
 
     bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='VERT')
 
     if count:
-        return {'INFO'}, "{} selected".format(utils.pluralize(count, "sibling"))
+        return {'INFO'}, "{}{}".format(utils.pluralize(count, "sibling"), strings.INFO_SELECTED)
     else:
-        return {'WARNING'}, "No sibling/s found"
+        return {'WARNING'}, strings.WARNING_NO_SIBLING
+
+
+def walkSibling(obj, nextPair=True):
+    """Select the next sibling pair.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+    :param nextPair: True, if the next sibling pair should be selected.
+    :type nextPair: int
+
+    :return: A tuple with the report type and string.
+    :rtype: tuple(set, str)
+    """
+    orderMap = obj.data[const.MAP_PROPERTY_NAME]
+
+    # Create a symmetry map instance for access to the bmesh for getting
+    # the current vertex selection.
+    symMap = SymmetryMap(obj, const.AXIS, const.TOLERANCE)
+
+    # If an index is stored, use this as the starting point.
+    if hasWalkIndexProperty(obj):
+        # Determine the direction.
+        direction = 1 if nextPair else -1
+        # Get the last index.
+        index = obj.data[const.WALK_PROPERTY_NAME]
+        # Make sure that the index stays within the range of vertex
+        # indices.
+        if 0 <= index + direction < len(obj.data.vertices):
+            index += direction
+    else:
+        index = 0
+        for vert in symMap.bm.verts:
+            if vert.select:
+                index = vert.index
+                break
+
+    # Finish processing the mesh.
+    symMap.freeMesh()
+
+    # Clear the selection to make sure that only the pair is selected.
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Reselect the vertex.
+    obj.data.vertices[index].select = True
+
+    # Select the opposite vertex.
+    otherIndex = orderMap[index]
+    if otherIndex != -1:
+        obj.data.vertices[otherIndex].select = True
+
+    # Store the current index.
+    obj.data[const.WALK_PROPERTY_NAME] = index
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_mode(type='VERT')
+
+    if otherIndex != -1:
+        if index == otherIndex:
+            return {'INFO'}, "{}{}".format(strings.INFO_CENTER_VERTEX, index)
+        else:
+            return {'INFO'}, "{}{} and {}".format(strings.INFO_VERTEX_PAIR, index, otherIndex)
+    else:
+        return {'WARNING'}, strings.WARNING_NO_SIBLING
+
+
+def deleteWalkIndex(obj):
+    """Delete the sibling walk index property.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+
+    :return: A tuple with the report type and string.
+    :rtype: tuple(set, str) or None
+    """
+    if hasWalkIndexProperty(obj):
+        del obj.data[const.WALK_PROPERTY_NAME]
+        return {'INFO'}, strings.INFO_CLEARED_WALK_INDEX
 
 
 def outputVerbose(items, header):
@@ -1594,7 +1744,44 @@ def outputVerbose(items, header):
             print(item)
 
 
-def mirrorWeights(obj, axis, direction, tolerance, maxGroups=5, normalize=True):
+def getSourceVertices(obj, axisIndex, directionIndex):
+    """Return a set with vertex indices from the source side of the mesh
+    for a mirroring operation.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+    :param axisIndex: The symmetry axis index.
+    :type axisIndex: int
+    :param directionIndex: The direction index of the mirror.
+    :type directionIndex: int
+
+    :return: The set of vertex indices.
+    :rtype: set
+    """
+    if obj.mode == 'EDIT':
+        return utils.getVertexSelection(obj)
+    else:
+        orderMap = obj.data[const.MAP_PROPERTY_NAME]
+
+        verts = set()
+
+        for index in orderMap:
+            if orderMap[index] != -1:
+                if orderMap[index] not in verts:
+                    if index == orderMap[index]:
+                        verts.add(index)
+                    else:
+                        value1 = obj.data.vertices[index].co[axisIndex]
+                        value2 = obj.data.vertices[orderMap[index]].co[axisIndex]
+                        if value1 > value2 and directionIndex:
+                            verts.add(index)
+                        else:
+                            verts.add(orderMap[index])
+
+        return verts
+
+
+def mirrorWeights(obj, axis, direction, maxGroups=5, normalize=True):
     """Mirror the weights of all or only selected vertices.
 
     :param obj: The object.
@@ -1602,9 +1789,7 @@ def mirrorWeights(obj, axis, direction, tolerance, maxGroups=5, normalize=True):
     :param axis: The symmetry axis.
     :type axis: str
     :param direction: The direction of the mirror.
-    :type direction: int
-    :param tolerance: The tolerance for matching vertices.
-    :type tolerance: float
+    :type direction: str
     :param maxGroups: The maximum number of vertex groups. Zero for no
                       limit.
     :type maxGroups: int
@@ -1617,27 +1802,16 @@ def mirrorWeights(obj, axis, direction, tolerance, maxGroups=5, normalize=True):
     """
     weightObj = weights.Weights(obj)
 
-    axisIndex = AXIS_INDICES[axis]
-    directionIndex = DIRECTION_INDICES[direction]
+    axisIndex = const.AXIS_INDICES[axis]
+    directionIndex = const.DIRECTION_INDICES[direction]
 
-    # Set the tolerance to be dependent on the average edge length if
-    # the tolerance is set to auto.
-    if tolerance == 0:
-        tolerance = utils.averageEdgeLengthTotal(obj) * 0.25
-
-    verts = set()
-    if obj.mode == 'EDIT':
-        verts = utils.getVertexSelection(obj)
-    else:
-        # Get all vertices on one side of the symmetry axis.
-        for vert in obj.data.vertices:
-            if ((directionIndex and vert.co[axisIndex] >= -tolerance) or
-                    (not directionIndex and vert.co[axisIndex] <= tolerance)):
-                verts.add(vert.index)
+    # Get the vertices to mirror. Either from the current selection or
+    # from one side of the mesh.
+    verts = getSourceVertices(obj, axisIndex, directionIndex)
 
     weightData = {}
 
-    orderMap = obj.data[PROPERTY_NAME]
+    orderMap = obj.data[const.MAP_PROPERTY_NAME]
 
     for index in verts:
         # For the center vertices split the weights to either side if
@@ -1665,7 +1839,88 @@ def mirrorWeights(obj, axis, direction, tolerance, maxGroups=5, normalize=True):
 
     weightObj.setVertexWeights(weightData, editMode=True)
 
-    return "Mirrored {}".format(utils.pluralize(len(verts), "weight", "vertex"))
+    return "{}{}".format(strings.INFO_MIRRORED, utils.pluralize(len(verts), "weight", "vertex"))
+
+
+def symmetrizeMesh(obj, axis, direction):
+    """Mirror the vertices from one side of the mesh to the other to
+    to make the mesh symmetrical.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+    :param axis: The symmetry axis.
+    :type axis: str
+    :param direction: The direction of the mirror.
+    :type direction: int
+    """
+    axisIndex = const.AXIS_INDICES[axis]
+    directionIndex = const.DIRECTION_INDICES[direction]
+
+    # Get the vertices to mirror. Either from the current selection or
+    # from one side of the mesh.
+    verts = getSourceVertices(obj, axisIndex, directionIndex)
+
+    orderMap = obj.data[const.MAP_PROPERTY_NAME]
+
+    for index in verts:
+        # For the center vertices set the position to zero.
+        splitPos = index == orderMap[index]
+
+        # Only mirror the position if the target index is known.
+        if orderMap[index] != -1:
+            oppositeIndex = orderMap[index]
+
+            pos = obj.data.vertices[index].co.copy()
+            if splitPos:
+                pos[axisIndex] = 0
+            else:
+                pos[axisIndex] *= -1
+
+            obj.data.vertices[oppositeIndex].co = pos
+
+
+def flipMesh(obj, axis):
+    """Flip the mesh by exchanging the point positions between left and
+    right.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+    :param axis: The symmetry axis.
+    :type axis: str
+    """
+    axisIndex = const.AXIS_INDICES[axis]
+
+    orderMap = obj.data[const.MAP_PROPERTY_NAME]
+
+    # Get the vertices to mirror. Either from the current selection or
+    # from one side of the mesh.
+    if obj.mode == 'EDIT':
+        # Direction and tolerance arguments don't matter because in edit
+        # mode these are not required.
+        verts = getSourceVertices(obj, axisIndex, 1)
+    else:
+        verts = set()
+        for index in orderMap:
+            if orderMap[index] != -1 and orderMap[index] not in verts:
+                verts.add(index)
+
+    for index in verts:
+        # For the center vertices only one position needs to be flipped.
+        splitPos = index == orderMap[index]
+
+        # Only mirror the position if the target index is known.
+        if orderMap[index] != -1:
+            oppositeIndex = orderMap[index]
+
+            pos1 = obj.data.vertices[index].co.copy()
+            pos2 = obj.data.vertices[oppositeIndex].co.copy()
+
+            pos1[axisIndex] *= -1
+            pos2[axisIndex] *= -1
+
+            obj.data.vertices[index].co = pos2
+            if not splitPos:
+                obj.data.vertices[oppositeIndex].co = pos1
 
 
 # ----------------------------------------------------------------------
@@ -1675,37 +1930,37 @@ def mirrorWeights(obj, axis, direction, tolerance, maxGroups=5, normalize=True):
 class SymmetryMap_Properties(bpy.types.PropertyGroup):
     """Property group class to make the properties globally available.
     """
-    axis: bpy.props.EnumProperty(name=AXIS_LABEL,
+    axis: bpy.props.EnumProperty(name=strings.AXIS_LABEL,
                                  items=(('X', "X", "Symmetry on the x axis"),
                                         ('Y', "Y", "Symmetry on the y axis"),
                                         ('Z', "Z", "Symmetry on the z axis")),
-                                 default=AXIS,
-                                 description=ANN_AXIS)
+                                 default=const.AXIS,
+                                 description=strings.ANN_AXIS)
 
-    direction: bpy.props.EnumProperty(name=DIRECTION_LABEL,
+    direction: bpy.props.EnumProperty(name=strings.DIRECTION_LABEL,
                                       items=(('POSITIVE', "Positive", "Mirror positive to negative", 'TRIA_LEFT', 0),
                                              ('NEGATIVE', "Negative", "Mirror negative to positive", 'TRIA_RIGHT', 1)),
-                                      default=DIRECTION,
-                                      description=ANN_DIRECTION)
+                                      default=const.DIRECTION,
+                                      description=strings.ANN_DIRECTION)
 
-    maxGroups: bpy.props.IntProperty(name=MAX_GROUPS_LABEL,
-                                     default=MAX_GROUPS,
+    maxGroups: bpy.props.IntProperty(name=strings.MAX_GROUPS_LABEL,
+                                     default=const.MAX_GROUPS,
                                      min=0,
-                                     description=ANN_MAX_GROUPS)
+                                     description=strings.ANN_MAX_GROUPS)
 
-    normalize: bpy.props.BoolProperty(name=NORMALIZE_LABEL,
-                                      default=NORMALIZE,
-                                      description=ANN_NORMALIZE)
+    normalize: bpy.props.BoolProperty(name=strings.NORMALIZE_LABEL,
+                                      default=const.NORMALIZE,
+                                      description=strings.ANN_NORMALIZE)
 
-    tolerance: bpy.props.FloatProperty(name=TOLERANCE_LABEL,
-                                       default=TOLERANCE,
+    tolerance: bpy.props.FloatProperty(name=strings.TOLERANCE_LABEL,
+                                       default=const.TOLERANCE,
                                        min=0,
                                        precision=4,
-                                       description=ANN_TOLERANCE)
+                                       description=strings.ANN_TOLERANCE)
 
-    verbose: bpy.props.BoolProperty(name=VERBOSE_LABEL,
-                                    default=VERBOSE,
-                                    description=ANN_VERBOSE)
+    verbose: bpy.props.BoolProperty(name=strings.VERBOSE_LABEL,
+                                    default=const.VERBOSE,
+                                    description=strings.ANN_VERBOSE)
 
 
 # ----------------------------------------------------------------------
@@ -1737,7 +1992,14 @@ class SYMMETRYMAP_OT_createMap(bpy.types.Operator):
         info = createMap(context.object, axis, tolerance, verbose)
         duration = time.time() - start
 
-        self.report({'INFO'}, "Mapping finished in {:.3f} seconds. {}".format(duration, info))
+        if "ERROR:" in info:
+            self.report({'ERROR'}, info.replace("ERROR:", ""))
+        else:
+            msg = strings.INFO_MAPPING_FINISHED
+            timeInfo = ". "
+            if prefs.getPreferences().show_time:
+                timeInfo = " in {:.3f} seconds. ".format(duration)
+            self.report({'INFO'}, msg + timeInfo + info)
 
         return {'FINISHED'}
 
@@ -1786,7 +2048,14 @@ class SYMMETRYMAP_OT_addToMap(bpy.types.Operator):
         info = addToMap(context.object, axis, tolerance, verbose)
         duration = time.time() - start
 
-        self.report({'INFO'}, "Mapping finished in {:.3f} seconds. {}".format(duration, info))
+        if "ERROR:" in info:
+            self.report({'ERROR'}, info.replace("ERROR:", ""))
+        else:
+            msg = strings.INFO_MAPPING_FINISHED
+            timeInfo = ". "
+            if prefs.getPreferences().show_time:
+                timeInfo = " in {:.3f} seconds. ".format(duration)
+            self.report({'INFO'}, msg + timeInfo + info)
 
         return {'FINISHED'}
 
@@ -1815,7 +2084,14 @@ class SYMMETRYMAP_OT_addPartialToMap(bpy.types.Operator):
         info = addPartialToMap(context.object, axis, tolerance)
         duration = time.time() - start
 
-        self.report({'INFO'}, "Partial mapping finished in {:.3f} seconds. {}".format(duration, info))
+        if "ERROR:" in info:
+            self.report({'WARNING'}, info.replace("ERROR:", ""))
+        else:
+            msg = strings.INFO_PARTIAL_FINISHED
+            timeInfo = ". "
+            if prefs.getPreferences().show_time:
+                timeInfo = " in {:.3f} seconds. ".format(duration)
+            self.report({'INFO'}, msg + timeInfo + info)
 
         return {'FINISHED'}
 
@@ -1877,6 +2153,64 @@ class SYMMETRYMAP_OT_selectSibling(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SYMMETRYMAP_OT_selectNextSibling(bpy.types.Operator):
+    """Operator class for selecting the next sibling pair.
+    """
+    bl_idname = "symmetrymap.select_next_sibling"
+    bl_label = "Select Next Sibling"
+    bl_description = "Select the next sibling pair"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        result = walkSibling(context.object, nextPair=True)
+        self.report(result[0], result[1])
+        return {'FINISHED'}
+
+
+class SYMMETRYMAP_OT_selectPreviousSibling(bpy.types.Operator):
+    """Operator class for selecting the previous sibling pair.
+    """
+    bl_idname = "symmetrymap.select_previous_sibling"
+    bl_label = "Select Previous Sibling"
+    bl_description = "Select the previous sibling pair"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        result = walkSibling(context.object, nextPair=False)
+        self.report(result[0], result[1])
+        return {'FINISHED'}
+
+
+class SYMMETRYMAP_OT_clearSiblingIndex(bpy.types.Operator):
+    """Operator class for selecting the next sibling pair.
+    """
+    bl_idname = "symmetrymap.clear_sibling_index"
+    bl_label = "Clear Index"
+    bl_description = "Clear the sibling start index"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        result = deleteWalkIndex(context.object)
+        if result:
+            self.report(result[0], result[1])
+        return {'FINISHED'}
+
+
 class SYMMETRYMAP_OT_mirrorWeights(bpy.types.Operator):
     """Operator class for mirroring vertex weights.
     """
@@ -1898,13 +2232,81 @@ class SYMMETRYMAP_OT_mirrorWeights(bpy.types.Operator):
         direction = sm.direction
         maxGroups = sm.maxGroups
         normalize = sm.normalize
-        tolerance = sm.tolerance
 
         start = time.time()
-        info = mirrorWeights(context.object, axis, direction, tolerance, maxGroups, normalize)
+        info = mirrorWeights(context.object, axis, direction, maxGroups, normalize)
         duration = time.time() - start
 
-        self.report({'INFO'}, "Mirror weights finished in {:.3f} seconds. {}".format(duration, info))
+        msg = strings.INFO_MIRROR_WEIGHTS_FINISHED
+        timeInfo = ". "
+        if prefs.getPreferences().show_time:
+            timeInfo = " in {:.3f} seconds. ".format(duration)
+        self.report({'INFO'}, msg + timeInfo + info)
+
+        return {'FINISHED'}
+
+
+class SYMMETRYMAP_OT_symmetrizeMesh(bpy.types.Operator):
+    """Operator class for making the mesh symmetrical.
+    """
+    bl_idname = "symmetrymap.symmetrize_mesh"
+    bl_label = "Symmetrize Mesh"
+    bl_description = "Make the mesh symmetrical by copying the point position from one side to the other"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        sm = context.object.data.symmetry_map
+
+        # Get the mapping settings.
+        axis = sm.axis
+        direction = sm.direction
+
+        start = time.time()
+        symmetrizeMesh(context.object, axis, direction)
+        duration = time.time() - start
+
+        msg = strings.INFO_SYMMETRIZE_FINISHED
+        timeInfo = ""
+        if prefs.getPreferences().show_time:
+            timeInfo = " in {:.3f} seconds".format(duration)
+        self.report({'INFO'}, msg + timeInfo)
+
+        return {'FINISHED'}
+
+
+class SYMMETRYMAP_OT_flipMesh(bpy.types.Operator):
+    """Operator class for flipping the mesh.
+    """
+    bl_idname = "symmetrymap.flip_mesh"
+    bl_label = "Flip Mesh"
+    bl_description = "Flip the mesh by exchanging the point positions between left and right"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        sm = context.object.data.symmetry_map
+
+        # Get the mapping settings.
+        axis = sm.axis
+
+        start = time.time()
+        flipMesh(context.object, axis)
+        duration = time.time() - start
+
+        msg = strings.INFO_FLIP_MESH_FINISHED
+        timeInfo = ""
+        if prefs.getPreferences().show_time:
+            timeInfo = " in {:.3f} seconds".format(duration)
+        self.report({'INFO'}, msg + timeInfo)
 
         return {'FINISHED'}
 
@@ -1971,7 +2373,13 @@ class SYMMETRYMAP_PT_settings(bpy.types.Panel):
         col.separator()
         col.operator("symmetrymap.select_mapped", icon='RESTRICT_SELECT_OFF')
         col.operator("symmetrymap.select_unmapped", icon='RESTRICT_SELECT_ON')
-        col.operator("symmetrymap.select_sibling", icon='UV_SYNC_SELECT')
+        col.operator("symmetrymap.select_sibling", icon='BACK')
+        if prefs.getPreferences().extras and context.object.mode == 'EDIT':
+            col.label(text="Walk Siblings")
+            row = col.row()
+            row.operator("symmetrymap.select_previous_sibling", text="Previous", icon='TRIA_LEFT')
+            row.operator("symmetrymap.select_next_sibling", text="Next", icon='TRIA_RIGHT')
+            row.operator("symmetrymap.clear_sibling_index", text="Clear")
         col.separator()
         col.operator("symmetrymap.delete_map", icon='TRASH')
         col.separator()
@@ -1988,6 +2396,9 @@ class SYMMETRYMAP_PT_settings(bpy.types.Panel):
             col.prop(sm, "maxGroups")
             col.separator()
             col.operator("symmetrymap.mirror_weights", icon='MOD_MIRROR')
+            col.separator()
+            col.operator("symmetrymap.symmetrize_mesh", icon='MOD_MIRROR')
+            col.operator("symmetrymap.flip_mesh", icon='ARROW_LEFTRIGHT')
 
 
 # ----------------------------------------------------------------------
@@ -2003,7 +2414,12 @@ classes = [SymmetryMap_Properties,
            SYMMETRYMAP_OT_selectMapped,
            SYMMETRYMAP_OT_selectUnmapped,
            SYMMETRYMAP_OT_selectSibling,
+           SYMMETRYMAP_OT_selectPreviousSibling,
+           SYMMETRYMAP_OT_selectNextSibling,
+           SYMMETRYMAP_OT_clearSiblingIndex,
            SYMMETRYMAP_OT_mirrorWeights,
+           SYMMETRYMAP_OT_symmetrizeMesh,
+           SYMMETRYMAP_OT_flipMesh,
            SYMMETRYMAP_PT_settings]
 
 

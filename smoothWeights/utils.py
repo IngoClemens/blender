@@ -1,16 +1,11 @@
 # <pep8 compliant>
 
+from . import constants as const
+
 import bpy
 import bmesh
 
 from mathutils import kdtree
-
-
-SIDE_LABELS = {"left": "right",
-               "lt": "rt",
-               "lft": "rgt",
-               "lf": "rg",
-               "l": "r"}
 
 
 def srgb_to_linear(value):
@@ -105,16 +100,16 @@ def replaceSideIdentifier(name):
     for delimiter in [".", "_", "-"]:
         words = name.split(delimiter)
         for index, word in sorted(enumerate(words), reverse=True):
-            for label in SIDE_LABELS:
+            for label in const.SIDE_LABELS:
                 for i in range(3):
                     left = label
-                    right = SIDE_LABELS[label]
+                    right = const.SIDE_LABELS[label]
                     if i == 1:
                         left = label.capitalize()
-                        right = SIDE_LABELS[label].capitalize()
+                        right = const.SIDE_LABELS[label].capitalize()
                     elif i == 2:
                         left = label.upper()
-                        right = SIDE_LABELS[label].upper()
+                        right = const.SIDE_LABELS[label].upper()
 
                     if word == left:
                         words[index] = word.replace(left, right)
@@ -184,7 +179,7 @@ def getVertexSelection(obj):
     :type obj: bpy.types.Object
 
     :return: The set of selected vertex indices.
-    :rtype: set()
+    :rtype: set
     """
     verts = set()
 

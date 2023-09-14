@@ -1,6 +1,8 @@
 # <pep8 compliant>
 
-from . import symmetryMap, utils, weights
+from . import constants as const
+from . import preferences as prefs
+from . import strings, symmetryMap, utils, weights
 
 import blf
 import bpy
@@ -15,205 +17,66 @@ import time
 
 
 # ----------------------------------------------------------------------
-# Defaults
-# ----------------------------------------------------------------------
-
-NAME = "smoothWeights"
-# The name of the color attribute which stores the current selection.
-SELECT_COLOR_ATTRIBUTE = "smoothWeights_selection"
-# The number of points for the brush circle.
-CIRCLE_POINTS = 64
-
-# Switch for smoothing only selected vertices.
-AFFECT_SELECTED = True
-# The curve options.
-CURVE_ITEMS = (("NONE", "None", ""),
-               ("LINEAR", "Linear", ""),
-               ("SMOOTH", "Smooth", ""),
-               ("NARROW", "Narrow", ""))
-# The deselection state.
-DESELECT = False
-# Switch for ignoring backside faces.
-IGNORE_BACKSIDE = True
-# Switch for ignoring any locked weights.
-IGNORE_LOCK = False
-# The number of weight group assignments.
-MAX_GROUPS = 5
-# Normalization switch.
-NORMALIZE = True
-# The oversampling value.
-OVERSAMPLING = 1
-# The default radius of the brush.
-RADIUS = 0.25
-# The selection state.
-SELECT = False
-# The default strength of the brush.
-STRENGTH = 1.0
-# The tolerance value for matching vertex positions.
-TOLERANCE = 1e-6
-# Value for skipping evaluation steps.
-UNDERSAMPLING = 3
-# Switch for handling islands as a continuous mesh.
-USE_ISLANDS = False
-# Switch for using selected or unselected vertices.
-USE_SELECTION = False
-# Switch for using the symmetry map.
-USE_SYMMETRY = False
-# Switch for toggling between a volume-based and a surface-based brush.
-VOLUME = False
-# The radius multiplier for finding close vertices in volume mode.
-VOLUME_RANGE = 0.2
-
-# Keymaps
-AFFECTSELECTED_KEY = "A"
-CLEARSELECTION_KEY = "C"
-DESELECT_KEY = "E"
-FLOOD_KEY = "F"
-IGNOREBACKSIDE_KEY = "X"
-IGNORELOCK_KEY = "L"
-ISLANDS_KEY = "I"
-MAXGROUPS_KEY = "G"
-NORMALIZE_KEY = "N"
-OVERSAMPLING_KEY = "O"
-RADIUS_KEY = "B"
-SELECT_KEY = "W"
-USESELECTION_KEY = "Q"
-USESYMMETRY_KEY = "T"
-STRENGTH_KEY = "S"
-VALUE_UP_KEY = "PLUS"
-VALUE_DOWN_KEY = "MINUS"
-VOLUME_KEY = "V"
-VOLUMERANGE_KEY = "R"
-
-# Preferences
-BRUSH_COLOR = (0.263, 0.723, 0.0)
-INFO_COLOR = (0.263, 0.723, 0.0)
-KEEP_SELECTION = True
-SELECTED_COLOR = (0.03, 0.302, 1.0)
-SHOW_INFO = True
-UNDO_STEPS = 20
-UNSELECTED_COLOR = (1.0, 1.0, 1.0)
-
-# Labels
-AFFECT_SELECTED_LABEL = "Affect Selected"
-BRUSH_COLOR_LABEL = "Brush Color"
-CLEAR_SELECTION_LABEL = "Clear Selection"
-CURVE_LABEL = "Curve"
-DECREASE_VALUE_LABEL = "Decrease Value"
-DESELECT_LABEL = "Deselect"
-FLOOD_LABEL = "Flood"
-IGNORE_BACKSIDE_LABEL = "Ignore Backside"
-IGNORE_LOCK_LABEL = "Ignore Lock"
-INCREASE_VALUE_LABEL = "Increase Value"
-INFO_TEXT_COLOR_LABEL = "Tool Info Color"
-KEEP_SELECTION_LABEL = "Keep Selection After Finishing"
-MAX_GROUPS_LABEL = "Max Groups"
-NORMALIZE_LABEL = "Normalize"
-OVERSAMPLING_LABEL = "Oversampling"
-USE_ISLANDS_LABEL = "Use Islands"
-USE_SELECTION_LABEL = "Use Selection"
-USE_SYMMETRY_LABEL = "Use Symmetry"
-RADIUS_LABEL = "Radius"
-SELECT_LABEL = "Select"
-SELECTED_COLOR_LABEL = "Selected Color"
-SHOW_INFO_LABEL = "Show Tool Info"
-STRENGTH_LABEL = "Strength"
-UNDO_STEPS_LABEL = "Undo Steps"
-UNSELECTED_COLOR_LABEL = "Unselected Color"
-VOLUME_LABEL = "Use Volume"
-VOLUME_RANGE_LABEL = "Volume Range"
-
-# Annotations
-ANN_AFFECT_SELECTED = "Smooth only the selected vertices"
-ANN_BRUSH_COLOR = "Display color for the brush circle (not gamma corrected)"
-ANN_CLEAR_SELECTION = "Clear the selection"
-ANN_CURVE = "The brush falloff curve"
-ANN_DESELECT = "Deselect vertices"
-ANN_FLOOD = "Flood smooth the vertex weights"
-ANN_IGNORE_BACKSIDE = "Ignore faces which are viewed from the back"
-ANN_IGNORE_LOCK = "Ignore the lock status of a vertex group"
-ANN_INFO_COLOR = "Display color for the in-view info (not gamma corrected)"
-ANN_KEEP_SELECTION = "Keep the tool selection vertices as selected vertices after finishing the tool"
-ANN_MAX_GROUPS = "The number of vertex groups a vertex can share weights with. A zero value disables the limit"
-ANN_NORMALIZE = "Normalize the averaged weights to a sum of 1"
-ANN_OVERSAMPLING = "The number of iterations for the smoothing"
-ANN_RADIUS = "The brush radius in generic Blender units"
-ANN_SELECT = "Select vertices"
-ANN_SELECTED_COLOR = "The color for selected vertices"
-ANN_SHOW_INFO = "Display all tool settings and keymaps in the 3D view"
-ANN_STRENGTH = "The strength of the smoothing stroke"
-ANN_UNDO_STEPS = "Number of available undo steps"
-ANN_UNSELECTED_COLOR = "The color for unselected vertices"
-ANN_USE_ISLANDS = "Limit the smoothing to the current island when in surface mode"
-ANN_USE_SELECTION = "Use only selected or unselected vertices for smoothing"
-ANN_USE_SYMMETRY = "Use the symmetry map to mirror the weights according to the mesh topology"
-ANN_VALUE_DOWN = "Decrease the maximum vertex groups or oversampling"
-ANN_VALUE_UP = "Increase the maximum vertex groups or oversampling"
-ANN_VOLUME = "Smooth weights within the brush volume. When off the weights are averaged based on linked vertices"
-ANN_VOLUME_RANGE = "Scale factor for radius, determining neighboring vertices in volume mode"
-
-
-# ----------------------------------------------------------------------
 # Properties
 # ----------------------------------------------------------------------
 
 class SmoothWeights_Properties(bpy.types.PropertyGroup):
     """Property group class to make the properties globally available.
     """
-    affectSelected: bpy.props.BoolProperty(name=AFFECT_SELECTED_LABEL,
-                                           default=AFFECT_SELECTED,
-                                           description=ANN_AFFECT_SELECTED)
-    curve: bpy.props.EnumProperty(name=CURVE_LABEL,
-                                  items=CURVE_ITEMS,
+    affectSelected: bpy.props.BoolProperty(name=strings.AFFECT_SELECTED_LABEL,
+                                           default=const.AFFECT_SELECTED,
+                                           description=strings.ANN_AFFECT_SELECTED)
+    curve: bpy.props.EnumProperty(name=strings.CURVE_LABEL,
+                                  items=const.CURVE_ITEMS,
                                   default=2,
-                                  description=ANN_CURVE)
-    deselect: bpy.props.BoolProperty(default=DESELECT,
-                                     description=ANN_DESELECT)
-    ignoreBackside: bpy.props.BoolProperty(name=IGNORE_BACKSIDE_LABEL,
-                                           default=IGNORE_BACKSIDE,
-                                           description=ANN_IGNORE_BACKSIDE)
-    ignoreLock: bpy.props.BoolProperty(name=IGNORE_LOCK_LABEL,
-                                       default=IGNORE_LOCK,
-                                       description=ANN_IGNORE_LOCK)
-    islands: bpy.props.BoolProperty(name=USE_ISLANDS_LABEL,
-                                    default=USE_ISLANDS,
-                                    description=ANN_USE_ISLANDS)
-    maxGroups: bpy.props.IntProperty(name=MAX_GROUPS_LABEL,
-                                     default=MAX_GROUPS,
+                                  description=strings.ANN_CURVE)
+    deselect: bpy.props.BoolProperty(default=const.DESELECT,
+                                     description=strings.ANN_DESELECT)
+    ignoreBackside: bpy.props.BoolProperty(name=strings.IGNORE_BACKSIDE_LABEL,
+                                           default=const.IGNORE_BACKSIDE,
+                                           description=strings.ANN_IGNORE_BACKSIDE)
+    ignoreLock: bpy.props.BoolProperty(name=strings.IGNORE_LOCK_LABEL,
+                                       default=const.IGNORE_LOCK,
+                                       description=strings.ANN_IGNORE_LOCK)
+    islands: bpy.props.BoolProperty(name=strings.USE_ISLANDS_LABEL,
+                                    default=const.USE_ISLANDS,
+                                    description=strings.ANN_USE_ISLANDS)
+    maxGroups: bpy.props.IntProperty(name=strings.MAX_GROUPS_LABEL,
+                                     default=const.MAX_GROUPS,
                                      min=0,
-                                     description=ANN_MAX_GROUPS)
-    normalize: bpy.props.BoolProperty(name=NORMALIZE_LABEL,
-                                      default=NORMALIZE,
-                                      description=ANN_NORMALIZE)
-    oversampling: bpy.props.IntProperty(name=OVERSAMPLING_LABEL,
-                                        default=OVERSAMPLING,
+                                     description=strings.ANN_MAX_GROUPS)
+    normalize: bpy.props.BoolProperty(name=strings.NORMALIZE_LABEL,
+                                      default=const.NORMALIZE,
+                                      description=strings.ANN_NORMALIZE)
+    oversampling: bpy.props.IntProperty(name=strings.OVERSAMPLING_LABEL,
+                                        default=const.OVERSAMPLING,
                                         min=1,
-                                        description=ANN_OVERSAMPLING)
-    radius: bpy.props.FloatProperty(name=RADIUS_LABEL,
-                                    default=RADIUS,
+                                        description=strings.ANN_OVERSAMPLING)
+    radius: bpy.props.FloatProperty(name=strings.RADIUS_LABEL,
+                                    default=const.RADIUS,
                                     min=0,
-                                    description=ANN_RADIUS)
-    strength: bpy.props.FloatProperty(name=STRENGTH_LABEL,
-                                      default=STRENGTH,
+                                    description=strings.ANN_RADIUS)
+    strength: bpy.props.FloatProperty(name=strings.STRENGTH_LABEL,
+                                      default=const.STRENGTH,
                                       min=0.001,
                                       max=1,
-                                      description=ANN_STRENGTH)
-    select: bpy.props.BoolProperty(default=SELECT,
-                                   description=ANN_SELECT)
-    useSelection: bpy.props.BoolProperty(name=USE_SELECTION_LABEL,
-                                         default=USE_SELECTION,
-                                         description=ANN_USE_SELECTION)
-    useSymmetry: bpy.props.BoolProperty(name=USE_SYMMETRY_LABEL,
-                                        default=USE_SYMMETRY,
-                                        description=ANN_USE_SYMMETRY)
-    volume: bpy.props.BoolProperty(name=VOLUME_LABEL,
-                                   default=VOLUME,
-                                   description=ANN_VOLUME)
-    volumeRange: bpy.props.FloatProperty(name=VOLUME_RANGE_LABEL,
-                                         default=VOLUME_RANGE,
+                                      description=strings.ANN_STRENGTH)
+    select: bpy.props.BoolProperty(default=const.SELECT,
+                                   description=strings.ANN_SELECT)
+    useSelection: bpy.props.BoolProperty(name=strings.USE_SELECTION_LABEL,
+                                         default=const.USE_SELECTION,
+                                         description=strings.ANN_USE_SELECTION)
+    useSymmetry: bpy.props.BoolProperty(name=strings.USE_SYMMETRY_LABEL,
+                                        default=const.USE_SYMMETRY,
+                                        description=strings.ANN_USE_SYMMETRY)
+    volume: bpy.props.BoolProperty(name=strings.VOLUME_LABEL,
+                                   default=const.VOLUME,
+                                   description=strings.ANN_VOLUME)
+    volumeRange: bpy.props.FloatProperty(name=strings.VOLUME_RANGE_LABEL,
+                                         default=const.VOLUME_RANGE,
                                          min=0,
                                          max=1,
-                                         description=ANN_VOLUME_RANGE)
+                                         description=strings.ANN_VOLUME_RANGE)
 
 
 # ----------------------------------------------------------------------
@@ -269,9 +132,9 @@ class DrawInfo3D(object):
         :rtype: list
         """
         if item == "brush":
-            color = getPreferences().brush_color
+            color = prefs.getPreferences().brush_color
         else:
-            color = getPreferences().info_color
+            color = prefs.getPreferences().info_color
         # Gamma-correct the color.
         return [utils.linear_to_srgb(c) for c in color]
 
@@ -290,7 +153,7 @@ class DrawInfo3D(object):
         radius = context.object.smooth_weights.radius
 
         # The number of points for the brush circle.
-        numPoints = CIRCLE_POINTS
+        numPoints = const.CIRCLE_POINTS
 
         # The default normal for the brush circle.
         baseNormal = Vector((0.0, 0.0, 1.0))
@@ -359,27 +222,27 @@ class DrawInfo3D(object):
             selectState = "Deselect"
 
         # Show the full tool info.
-        if getPreferences().show_info:
+        if prefs.getPreferences().show_info:
             # Draw the settings in the lower left corner of the screen.
-            lines = ["{}  {}: {}".format(curveItems[curve], CURVE_LABEL, curve.lower().title()),
-                     "{}  {}: {:.3f}".format(self.radius_key, RADIUS_LABEL, radius),
-                     "{}  {}: {:.3f}".format(self.strength_key, STRENGTH_LABEL, strength),
+            lines = ["{}  {}: {}".format(curveItems[curve], strings.CURVE_LABEL, curve.lower().title()),
+                     "{}  {}: {:.3f}".format(self.radius_key, strings.RADIUS_LABEL, radius),
+                     "{}  {}: {:.3f}".format(self.strength_key, strings.STRENGTH_LABEL, strength),
                      "",
-                     "{}  {}: {}".format(self.useSelection_key, USE_SELECTION_LABEL, "On" if useSelection else "Off"),
-                     "{}  {} {}".format(self.affectSelected_key, AFFECT_SELECTED_LABEL, "On" if affectSelected else "Off"),
-                     "{}  {}: {}".format(self.ignoreBackside_key, IGNORE_BACKSIDE_LABEL, "On" if ignoreBackside else "Off"),
-                     "{}  {}: {}".format(self.ignoreLock_key, IGNORE_LOCK_LABEL, "On" if ignoreLock else "Off"),
-                     "{}  {} {}".format(self.islands_key, USE_ISLANDS_LABEL, "On" if islands else "Off"),
-                     "{}  {}: {}".format(self.normalize_key, NORMALIZE_LABEL, "On" if normalize else "Off"),
-                     "{}  {}: {}".format(self.oversampling_key, OVERSAMPLING_LABEL, oversampling),
+                     "{}  {}: {}".format(self.useSelection_key, strings.USE_SELECTION_LABEL, "On" if useSelection else "Off"),
+                     "{}  {} {}".format(self.affectSelected_key, strings.AFFECT_SELECTED_LABEL, "On" if affectSelected else "Off"),
+                     "{}  {}: {}".format(self.ignoreBackside_key, strings.IGNORE_BACKSIDE_LABEL, "On" if ignoreBackside else "Off"),
+                     "{}  {}: {}".format(self.ignoreLock_key, strings.IGNORE_LOCK_LABEL, "On" if ignoreLock else "Off"),
+                     "{}  {} {}".format(self.islands_key, strings.USE_ISLANDS_LABEL, "On" if islands else "Off"),
+                     "{}  {}: {}".format(self.normalize_key, strings.NORMALIZE_LABEL, "On" if normalize else "Off"),
+                     "{}  {}: {}".format(self.oversampling_key, strings.OVERSAMPLING_LABEL, oversampling),
                      "",
-                     "{}  {}: {}".format(self.volume_key, VOLUME_LABEL, "On" if volume else "Off"),
-                     "{}  {}: {:.3f}".format(self.volumeRange_key, VOLUME_RANGE_LABEL, volumeRange),
+                     "{}  {}: {}".format(self.volume_key, strings.VOLUME_LABEL, "On" if volume else "Off"),
+                     "{}  {}: {:.3f}".format(self.volumeRange_key, strings.VOLUME_RANGE_LABEL, volumeRange),
                      "",
-                     "{}  {}: {}".format(self.maxGroups_key, MAX_GROUPS_LABEL, maxGroups),
+                     "{}  {}: {}".format(self.maxGroups_key, strings.MAX_GROUPS_LABEL, maxGroups),
                      "Current Max Groups: {}".format(self.currentMaxGroups),
                      "",
-                     "{}  {}: {}".format(self.useSymmetry_key, USE_SYMMETRY_LABEL, "On" if useSymmetry else "Off"),
+                     "{}  {}: {}".format(self.useSymmetry_key, strings.USE_SYMMETRY_LABEL, "On" if useSymmetry else "Off"),
                      "",
                      "Selection: {}".format(selectState)]
         # Show only the minimum tool info.
@@ -451,22 +314,22 @@ class DrawInfo3D(object):
     def getKeymaps(self):
         """Get the current key maps.
         """
-        self.affectSelected_key = getPreferences().affectSelected_key.upper()
-        self.clearSelection_key = getPreferences().clearSelection_key.upper()
-        self.deselect_key = getPreferences().deselect_key.upper()
-        self.ignoreBackside_key = getPreferences().ignoreBackside_key.upper()
-        self.ignoreLock_key = getPreferences().ignoreLock_key.upper()
-        self.islands_key = getPreferences().islands_key.upper()
-        self.maxGroups_key = getPreferences().maxGroups_key.upper()
-        self.normalize_key = getPreferences().normalize_key.upper()
-        self.oversampling_key = getPreferences().oversampling_key.upper()
-        self.radius_key = getPreferences().radius_key.upper()
-        self.select_key = getPreferences().select_key.upper()
-        self.strength_key = getPreferences().strength_key.upper()
-        self.useSelection_key = getPreferences().useSelection_key.upper()
-        self.useSymmetry_key = getPreferences().useSymmetry_key.upper()
-        self.volume_key = getPreferences().volume_key.upper()
-        self.volumeRange_key = getPreferences().volumeRange_key.upper()
+        self.affectSelected_key = prefs.getPreferences().affectSelected_key.upper()
+        self.clearSelection_key = prefs.getPreferences().clearSelection_key.upper()
+        self.deselect_key = prefs.getPreferences().deselect_key.upper()
+        self.ignoreBackside_key = prefs.getPreferences().ignoreBackside_key.upper()
+        self.ignoreLock_key = prefs.getPreferences().ignoreLock_key.upper()
+        self.islands_key = prefs.getPreferences().islands_key.upper()
+        self.maxGroups_key = prefs.getPreferences().maxGroups_key.upper()
+        self.normalize_key = prefs.getPreferences().normalize_key.upper()
+        self.oversampling_key = prefs.getPreferences().oversampling_key.upper()
+        self.radius_key = prefs.getPreferences().radius_key.upper()
+        self.select_key = prefs.getPreferences().select_key.upper()
+        self.strength_key = prefs.getPreferences().strength_key.upper()
+        self.useSelection_key = prefs.getPreferences().useSelection_key.upper()
+        self.useSymmetry_key = prefs.getPreferences().useSymmetry_key.upper()
+        self.volume_key = prefs.getPreferences().volume_key.upper()
+        self.volumeRange_key = prefs.getPreferences().volumeRange_key.upper()
 
 
 # Global instance.
@@ -520,20 +383,20 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
     isModal = False
 
     # Settings
-    affectSelected = AFFECT_SELECTED
+    affectSelected = const.AFFECT_SELECTED
     curve = "SMOOTH"
-    ignoreBackside = IGNORE_BACKSIDE
-    ignoreLock = IGNORE_LOCK
-    islands = USE_ISLANDS
-    maxGroups = MAX_GROUPS
-    normalize = NORMALIZE
-    oversampling = OVERSAMPLING
-    radius = RADIUS
-    strength = STRENGTH
-    useSelection = USE_SELECTION
-    useSymmetry = USE_SYMMETRY
-    volume = VOLUME
-    volumeRange = VOLUME_RANGE
+    ignoreBackside = const.IGNORE_BACKSIDE
+    ignoreLock = const.IGNORE_LOCK
+    islands = const.USE_ISLANDS
+    maxGroups = const.MAX_GROUPS
+    normalize = const.NORMALIZE
+    oversampling = const.OVERSAMPLING
+    radius = const.RADIUS
+    strength = const.STRENGTH
+    useSelection = const.USE_SELECTION
+    useSymmetry = const.USE_SYMMETRY
+    volume = const.VOLUME
+    volumeRange = const.VOLUME_RANGE
 
     # Keys
     affectSelected_key = None
@@ -597,7 +460,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         self.getKeymaps()
 
         if not context.object:
-            self.report({'WARNING'}, "No object selected to place")
+            self.report({'WARNING'}, strings.WARNING_NO_OBJECT)
             return self.cancel(context)
 
         context.window.cursor_set("PAINT_CROSS")
@@ -715,7 +578,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
                 # Init the undo list.
                 # If the maximum size of the undo list has been reached
                 # remove the last element.
-                if getPreferences().undo_steps <= len(self.Mesh.undoIndices):
+                if prefs.getPreferences().undo_steps <= len(self.Mesh.undoIndices):
                     lastItem = len(self.Mesh.undoIndices) - 1
                     self.Mesh.undoIndices.pop(lastItem)
                     self.Mesh.undoWeights.pop(lastItem)
@@ -737,7 +600,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         if event.type == 'MOUSEMOVE' and self.isDragging:
             # Skip evaluation steps to improve performance.
             self.undersamplingSteps += 1
-            if self.undersamplingSteps < UNDERSAMPLING:
+            if self.undersamplingSteps < const.UNDERSAMPLING:
                 return {'RUNNING_MODAL'}
             self.undersamplingSteps = 0
 
@@ -776,7 +639,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         if event.type == 'MOUSEMOVE' and self.frameDrag:
             # Skip evaluation steps to improve performance.
             self.undersamplingSteps += 1
-            if self.undersamplingSteps < UNDERSAMPLING:
+            if self.undersamplingSteps < const.UNDERSAMPLING:
                 return {'RUNNING_MODAL'}
             self.undersamplingSteps = 0
 
@@ -1004,7 +867,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         # End the operator.
         if event.type in {'RET', 'NUMPAD_ENTER'}:
             # Match the vertex selection with the selection colors.
-            if getPreferences().keep_selection:
+            if prefs.getPreferences().keep_selection:
                 self.Mesh.colorToSelection()
             self.reset(context)
             return {'FINISHED'}
@@ -1266,25 +1129,25 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
     def getKeymaps(self):
         """Get the current key maps.
         """
-        self.affectSelected_key = getPreferences().affectSelected_key.upper()
-        self.clearSelection_key = getPreferences().clearSelection_key.upper()
-        self.deselect_key = getPreferences().deselect_key.upper()
-        self.flood_key = getPreferences().flood_key.upper()
-        self.ignoreBackside_key = getPreferences().ignoreBackside_key.upper()
-        self.ignoreLock_key = getPreferences().ignoreLock_key.upper()
-        self.islands_key = getPreferences().islands_key.upper()
-        self.maxGroups_key = getPreferences().maxGroups_key.upper()
-        self.normalize_key = getPreferences().normalize_key.upper()
-        self.oversampling_key = getPreferences().oversampling_key.upper()
-        self.radius_key = getPreferences().radius_key.upper()
-        self.select_key = getPreferences().select_key.upper()
-        self.strength_key = getPreferences().strength_key.upper()
-        self.useSelection_key = getPreferences().useSelection_key.upper()
-        self.useSymmetry_key = getPreferences().useSymmetry_key.upper()
-        self.value_up_key = getPreferences().value_up_key.upper()
-        self.value_down_key = getPreferences().value_down_key.upper()
-        self.volume_key = getPreferences().volume_key.upper()
-        self.volumeRange_key = getPreferences().volumeRange_key.upper()
+        self.affectSelected_key = prefs.getPreferences().affectSelected_key.upper()
+        self.clearSelection_key = prefs.getPreferences().clearSelection_key.upper()
+        self.deselect_key = prefs.getPreferences().deselect_key.upper()
+        self.flood_key = prefs.getPreferences().flood_key.upper()
+        self.ignoreBackside_key = prefs.getPreferences().ignoreBackside_key.upper()
+        self.ignoreLock_key = prefs.getPreferences().ignoreLock_key.upper()
+        self.islands_key = prefs.getPreferences().islands_key.upper()
+        self.maxGroups_key = prefs.getPreferences().maxGroups_key.upper()
+        self.normalize_key = prefs.getPreferences().normalize_key.upper()
+        self.oversampling_key = prefs.getPreferences().oversampling_key.upper()
+        self.radius_key = prefs.getPreferences().radius_key.upper()
+        self.select_key = prefs.getPreferences().select_key.upper()
+        self.strength_key = prefs.getPreferences().strength_key.upper()
+        self.useSelection_key = prefs.getPreferences().useSelection_key.upper()
+        self.useSymmetry_key = prefs.getPreferences().useSymmetry_key.upper()
+        self.value_up_key = prefs.getPreferences().value_up_key.upper()
+        self.value_down_key = prefs.getPreferences().value_down_key.upper()
+        self.volume_key = prefs.getPreferences().volume_key.upper()
+        self.volumeRange_key = prefs.getPreferences().volumeRange_key.upper()
 
         # Get the undo keymap.
         config = bpy.context.window_manager.keyconfigs.default.keymaps
@@ -1301,24 +1164,24 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         down = "-" if self.value_down_key == 'MINUS' else self.value_down_key
 
         lines = ["LMB-Drag: Smooth",
-                 "{}: {}".format(self.radius_key, RADIUS_LABEL),
-                 "{}: {}".format(self.strength_key, STRENGTH_LABEL),
+                 "{}: {}".format(self.radius_key, strings.RADIUS_LABEL),
+                 "{}: {}".format(self.strength_key, strings.STRENGTH_LABEL),
                  "Ctrl+{}/{}/{}: Slow".format(self.radius_key, self.strength_key, self.volumeRange_key),
                  "Shift+{}/{}/{}: Fast".format(self.radius_key, self.strength_key, self.volumeRange_key),
-                 "{}: {}".format(self.useSelection_key, USE_SELECTION_LABEL),
-                 "{}: {}".format(self.affectSelected_key, AFFECT_SELECTED_LABEL),
-                 "{}: {}".format(self.ignoreBackside_key, IGNORE_BACKSIDE_LABEL),
-                 "{}: {}".format(self.ignoreLock_key, IGNORE_LOCK_LABEL),
-                 "{}: {}".format(self.normalize_key, NORMALIZE_LABEL),
-                 "{}: {} {}/{}".format(self.oversampling_key, OVERSAMPLING_LABEL, up, down),
-                 "{}: {}".format(self.volume_key, VOLUME_LABEL),
-                 "{}: {}".format(self.islands_key, USE_ISLANDS_LABEL),
-                 "{}: {} {}/{}".format(self.maxGroups_key, MAX_GROUPS_LABEL, up, down),
-                 "{}: {}".format(self.useSymmetry_key, USE_SYMMETRY_LABEL),
+                 "{}: {}".format(self.useSelection_key, strings.USE_SELECTION_LABEL),
+                 "{}: {}".format(self.affectSelected_key, strings.AFFECT_SELECTED_LABEL),
+                 "{}: {}".format(self.ignoreBackside_key, strings.IGNORE_BACKSIDE_LABEL),
+                 "{}: {}".format(self.ignoreLock_key, strings.IGNORE_LOCK_LABEL),
+                 "{}: {}".format(self.normalize_key, strings.NORMALIZE_LABEL),
+                 "{}: {} {}/{}".format(self.oversampling_key, strings.OVERSAMPLING_LABEL, up, down),
+                 "{}: {}".format(self.volume_key, strings.VOLUME_LABEL),
+                 "{}: {}".format(self.islands_key, strings.USE_ISLANDS_LABEL),
+                 "{}: {} {}/{}".format(self.maxGroups_key, strings.MAX_GROUPS_LABEL, up, down),
+                 "{}: {}".format(self.useSymmetry_key, strings.USE_SYMMETRY_LABEL),
                  "{}: Toggle Select".format(self.select_key),
                  "{}: Toggle Deselect".format(self.deselect_key),
                  "{}: Clear Selection".format(self.clearSelection_key),
-                 "{}: {}".format(self.flood_key, FLOOD_LABEL),
+                 "{}: {}".format(self.flood_key, strings.FLOOD_LABEL),
                  "Shift+RMB-Drag: Change Time",
                  "Esc/RMB: Cancel"]
 
@@ -1387,46 +1250,46 @@ class SMOOTHWEIGHTS_OT_Flood(bpy.types.Operator):
     bl_description = "Smooth the weights of all selected or unselected vertices"
     bl_options = {'REGISTER', 'UNDO'}
 
-    radius: bpy.props.FloatProperty(name=RADIUS_LABEL,
-                                    default=RADIUS,
+    radius: bpy.props.FloatProperty(name=strings.RADIUS_LABEL,
+                                    default=const.RADIUS,
                                     min=0,
-                                    description=ANN_RADIUS)
-    strength: bpy.props.FloatProperty(name=STRENGTH_LABEL,
-                                      default=STRENGTH,
+                                    description=strings.ANN_RADIUS)
+    strength: bpy.props.FloatProperty(name=strings.STRENGTH_LABEL,
+                                      default=const.STRENGTH,
                                       min=0.001,
                                       max=1,
-                                      description=ANN_STRENGTH)
-    oversampling: bpy.props.IntProperty(name=OVERSAMPLING_LABEL,
-                                        default=OVERSAMPLING,
+                                      description=strings.ANN_STRENGTH)
+    oversampling: bpy.props.IntProperty(name=strings.OVERSAMPLING_LABEL,
+                                        default=const.OVERSAMPLING,
                                         min=1,
-                                        description=ANN_OVERSAMPLING)
-    useSelection: bpy.props.BoolProperty(name=USE_SELECTION_LABEL,
-                                         default=USE_SELECTION,
-                                         description=ANN_USE_SELECTION)
-    affectSelected: bpy.props.BoolProperty(name=AFFECT_SELECTED_LABEL,
-                                           default=AFFECT_SELECTED,
-                                           description=ANN_AFFECT_SELECTED)
-    ignoreLock: bpy.props.BoolProperty(name=IGNORE_LOCK_LABEL,
-                                       default=IGNORE_LOCK,
-                                       description=ANN_IGNORE_LOCK)
-    normalize: bpy.props.BoolProperty(name=NORMALIZE_LABEL,
-                                      default=NORMALIZE,
-                                      description=ANN_NORMALIZE)
-    maxGroups: bpy.props.IntProperty(name=MAX_GROUPS_LABEL,
-                                     default=MAX_GROUPS,
+                                        description=strings.ANN_OVERSAMPLING)
+    useSelection: bpy.props.BoolProperty(name=strings.USE_SELECTION_LABEL,
+                                         default=const.USE_SELECTION,
+                                         description=strings.ANN_USE_SELECTION)
+    affectSelected: bpy.props.BoolProperty(name=strings.AFFECT_SELECTED_LABEL,
+                                           default=const.AFFECT_SELECTED,
+                                           description=strings.ANN_AFFECT_SELECTED)
+    ignoreLock: bpy.props.BoolProperty(name=strings.IGNORE_LOCK_LABEL,
+                                       default=const.IGNORE_LOCK,
+                                       description=strings.ANN_IGNORE_LOCK)
+    normalize: bpy.props.BoolProperty(name=strings.NORMALIZE_LABEL,
+                                      default=const.NORMALIZE,
+                                      description=strings.ANN_NORMALIZE)
+    maxGroups: bpy.props.IntProperty(name=strings.MAX_GROUPS_LABEL,
+                                     default=const.MAX_GROUPS,
                                      min=0,
-                                     description=ANN_MAX_GROUPS)
-    volume: bpy.props.BoolProperty(name=VOLUME_LABEL,
-                                   default=VOLUME,
-                                   description=ANN_VOLUME)
-    volumeRange: bpy.props.FloatProperty(name=VOLUME_RANGE_LABEL,
-                                         default=VOLUME_RANGE,
+                                     description=strings.ANN_MAX_GROUPS)
+    volume: bpy.props.BoolProperty(name=strings.VOLUME_LABEL,
+                                   default=const.VOLUME,
+                                   description=strings.ANN_VOLUME)
+    volumeRange: bpy.props.FloatProperty(name=strings.VOLUME_RANGE_LABEL,
+                                         default=const.VOLUME_RANGE,
                                          min=0.001,
                                          max=1,
-                                         description=ANN_VOLUME_RANGE)
-    useSymmetry: bpy.props.BoolProperty(name=USE_SYMMETRY_LABEL,
-                                        default=USE_SYMMETRY,
-                                        description=ANN_USE_SYMMETRY)
+                                         description=strings.ANN_VOLUME_RANGE)
+    useSymmetry: bpy.props.BoolProperty(name=strings.USE_SYMMETRY_LABEL,
+                                        default=const.USE_SYMMETRY,
+                                        description=strings.ANN_USE_SYMMETRY)
 
     Mesh = None
     prevSelection = None
@@ -1448,10 +1311,12 @@ class SMOOTHWEIGHTS_OT_Flood(bpy.types.Operator):
         # Initialize the skin mesh.
         self.Mesh = Mesh(context.object)
 
+        start = time.time()
         self.Mesh.floodSmooth(useSelection=self.useSelection,
                               affectSelected=self.affectSelected,
                               useColorAttr=False,
                               strength=self.strength)
+        duration = time.time() - start
 
         # Reset the mesh.
         self.Mesh.reset()
@@ -1460,6 +1325,12 @@ class SMOOTHWEIGHTS_OT_Flood(bpy.types.Operator):
         self.setSettings(context)
         # Mark the operator ready for redo.
         self.redo = True
+
+        msg = strings.INFO_FLOOD_FINISHED
+        timeInfo = ". "
+        if prefs.getPreferences().show_time:
+            timeInfo = " in {:.3f} seconds.".format(duration)
+        self.report({'INFO'}, msg + timeInfo)
 
         return {'FINISHED'}
 
@@ -1584,14 +1455,14 @@ class SMOOTHWEIGHTS_OT_LimitGroups(bpy.types.Operator):
     bl_description = "Limits the vertex weights to a maximum number of vertex groups"
     bl_options = {'REGISTER', 'UNDO'}
 
-    maxGroups: bpy.props.IntProperty(name=MAX_GROUPS_LABEL,
-                                     default=MAX_GROUPS,
+    maxGroups: bpy.props.IntProperty(name=strings.MAX_GROUPS_LABEL,
+                                     default=const.MAX_GROUPS,
                                      min=0,
-                                     description=ANN_MAX_GROUPS)
+                                     description=strings.ANN_MAX_GROUPS)
 
-    normalize: bpy.props.BoolProperty(name=NORMALIZE_LABEL,
-                                      default=NORMALIZE,
-                                      description=ANN_NORMALIZE)
+    normalize: bpy.props.BoolProperty(name=strings.NORMALIZE_LABEL,
+                                      default=const.NORMALIZE,
+                                      description=strings.ANN_NORMALIZE)
 
     def execute(self, context):
         """Execute the operator.
@@ -2434,9 +2305,9 @@ class Mesh(object):
         :return: The color attribute for the selection.
         :rtype: bpy.types.Attribute
         """
-        colors = self.obj.data.color_attributes.get(SELECT_COLOR_ATTRIBUTE)
+        colors = self.obj.data.color_attributes.get(const.SELECT_COLOR_ATTRIBUTE)
         if not colors:
-            colors = self.obj.data.color_attributes.new(name=SELECT_COLOR_ATTRIBUTE,
+            colors = self.obj.data.color_attributes.new(name=const.SELECT_COLOR_ATTRIBUTE,
                                                         type='FLOAT_COLOR',
                                                         domain='POINT')
             self.resetColors(colors)
@@ -2492,7 +2363,7 @@ class Mesh(object):
         # Set the object mode.
         bpy.ops.object.mode_set(mode="OBJECT")
 
-        color = getPreferences().selected_color
+        color = prefs.getPreferences().selected_color
         color = [utils.linear_to_srgb(c) for c in color]
         for index in indices:
             self.selectionColors.data[index].color = (color[0], color[1], color[2], 1.0)
@@ -2514,7 +2385,7 @@ class Mesh(object):
         # Set the object mode.
         bpy.ops.object.mode_set(mode="OBJECT")
 
-        color = getPreferences().unselected_color
+        color = prefs.getPreferences().unselected_color
         color = [utils.linear_to_srgb(c) for c in color]
         for index in indices:
             self.selectionColors.data[index].color = (color[0], color[1], color[2], 1.0)
@@ -2543,7 +2414,7 @@ class Mesh(object):
         :param colorAttr: The color attribute.
         :type colorAttr: bpy.types.Attribute
         """
-        color = getPreferences().unselected_color
+        color = prefs.getPreferences().unselected_color
         color = [utils.linear_to_srgb(c) for c in color]
         for i in range(self.numVertices()):
             colorAttr.data[i].color = (color[0], color[1], color[2], 1.0)
@@ -2584,7 +2455,7 @@ class Mesh(object):
 
         The values are stored in the class variables.
         """
-        color = getPreferences().selected_color
+        color = prefs.getPreferences().selected_color
         color = [utils.linear_to_srgb(c) for c in color]
         for c in range(len(color)):
             if self.colorValue < color[c] < 0.99:
@@ -2744,169 +2615,14 @@ def menu_item(self, context):
         if context.object.mode in ['OBJECT', 'WEIGHT_PAINT']:
             self.layout.separator()
             self.layout.operator(SMOOTHWEIGHTS_OT_Paint.bl_idname,
-                                 text="Smooth Weights")
+                                 text=strings.MENU_SMOOTH_WEIGHTS)
             self.layout.operator(SMOOTHWEIGHTS_OT_Flood.bl_idname,
-                                 text="Flood Smooth Weights")
+                                 text=strings.MENU_FLOOD_SMOOTH)
             self.layout.operator(SMOOTHWEIGHTS_OT_LimitGroups.bl_idname,
-                                 text="Limit Weight Groups")
+                                 text=strings.MENU_LIMIT_GROUPS)
         if context.object.mode in ['EDIT']:
             self.layout.operator(SMOOTHWEIGHTS_OT_LimitGroups.bl_idname,
-                                 text="Limit Weight Groups")
-
-
-# ----------------------------------------------------------------------
-# Preferences
-# ----------------------------------------------------------------------
-
-def getPreferences():
-    """Return the preferences of the add-on.
-
-    :return: The add-on preferences.
-    :rtype: bpy.types.AddonPreferences
-    """
-    prefs = bpy.context.preferences.addons[NAME].preferences
-    return prefs
-
-
-class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
-    """Create the layout for the preferences.
-    """
-    bl_idname = NAME
-
-    brush_color: bpy.props.FloatVectorProperty(name=BRUSH_COLOR_LABEL,
-                                               description=ANN_BRUSH_COLOR,
-                                               subtype='COLOR',
-                                               default=BRUSH_COLOR)
-    info_color: bpy.props.FloatVectorProperty(name=INFO_TEXT_COLOR_LABEL,
-                                              description=ANN_INFO_COLOR,
-                                              subtype='COLOR',
-                                              default=INFO_COLOR)
-    keep_selection: bpy.props.BoolProperty(name=KEEP_SELECTION_LABEL,
-                                           description=ANN_KEEP_SELECTION,
-                                           default=KEEP_SELECTION)
-    selected_color: bpy.props.FloatVectorProperty(name=SELECTED_COLOR_LABEL,
-                                                  description=ANN_SELECTED_COLOR,
-                                                  subtype='COLOR',
-                                                  default=SELECTED_COLOR)
-    show_info: bpy.props.BoolProperty(name=SHOW_INFO_LABEL,
-                                      description=ANN_SHOW_INFO,
-                                      default=SHOW_INFO)
-    undo_steps: bpy.props.IntProperty(name=UNDO_STEPS_LABEL,
-                                      description=ANN_UNDO_STEPS,
-                                      default=UNDO_STEPS,
-                                      min=1,
-                                      max=100)
-    unselected_color: bpy.props.FloatVectorProperty(name=UNSELECTED_COLOR_LABEL,
-                                                    description=ANN_UNSELECTED_COLOR,
-                                                    subtype='COLOR',
-                                                    default=UNSELECTED_COLOR)
-
-    affectSelected_key: bpy.props.StringProperty(name=AFFECT_SELECTED_LABEL,
-                                                 description=ANN_AFFECT_SELECTED,
-                                                 default=AFFECTSELECTED_KEY)
-    clearSelection_key: bpy.props.StringProperty(name=CLEAR_SELECTION_LABEL,
-                                                 description=ANN_CLEAR_SELECTION,
-                                                 default=CLEARSELECTION_KEY)
-    deselect_key: bpy.props.StringProperty(name=DESELECT_LABEL,
-                                           description=ANN_DESELECT,
-                                           default=DESELECT_KEY)
-    flood_key: bpy.props.StringProperty(name=FLOOD_LABEL,
-                                        description=ANN_FLOOD,
-                                        default=FLOOD_KEY)
-    ignoreBackside_key: bpy.props.StringProperty(name=IGNORE_BACKSIDE_LABEL,
-                                                 description=ANN_IGNORE_BACKSIDE,
-                                                 default=IGNOREBACKSIDE_KEY)
-    ignoreLock_key: bpy.props.StringProperty(name=IGNORE_LOCK_LABEL,
-                                             description=ANN_IGNORE_LOCK,
-                                             default=IGNORELOCK_KEY)
-    islands_key: bpy.props.StringProperty(name=USE_ISLANDS_LABEL,
-                                          description=ANN_USE_ISLANDS,
-                                          default=ISLANDS_KEY)
-    maxGroups_key: bpy.props.StringProperty(name=MAX_GROUPS_LABEL,
-                                            description=ANN_MAX_GROUPS,
-                                            default=MAXGROUPS_KEY)
-    normalize_key: bpy.props.StringProperty(name=NORMALIZE_LABEL,
-                                            description=ANN_NORMALIZE,
-                                            default=NORMALIZE_KEY)
-    oversampling_key: bpy.props.StringProperty(name=OVERSAMPLING_LABEL,
-                                               description=ANN_OVERSAMPLING,
-                                               default=OVERSAMPLING_KEY)
-    radius_key: bpy.props.StringProperty(name=RADIUS_LABEL,
-                                         description=ANN_RADIUS,
-                                         default=RADIUS_KEY)
-    select_key: bpy.props.StringProperty(name=SELECT_LABEL,
-                                         description=ANN_SELECT,
-                                         default=SELECT_KEY)
-    strength_key: bpy.props.StringProperty(name=STRENGTH_LABEL,
-                                           description=ANN_STRENGTH,
-                                           default=STRENGTH_KEY)
-    useSelection_key: bpy.props.StringProperty(name=USE_SELECTION_LABEL,
-                                               description=ANN_USE_SELECTION,
-                                               default=USESELECTION_KEY)
-    useSymmetry_key: bpy.props.StringProperty(name=USE_SYMMETRY_LABEL,
-                                              description=ANN_USE_SYMMETRY,
-                                              default=USESYMMETRY_KEY)
-    value_up_key: bpy.props.StringProperty(name=INCREASE_VALUE_LABEL,
-                                           description=ANN_VALUE_UP,
-                                           default=VALUE_UP_KEY)
-    value_down_key: bpy.props.StringProperty(name=DECREASE_VALUE_LABEL,
-                                             description=ANN_VALUE_DOWN,
-                                             default=VALUE_DOWN_KEY)
-    volume_key: bpy.props.StringProperty(name=VOLUME_LABEL,
-                                         description=ANN_VOLUME,
-                                         default=VOLUME_KEY)
-    volumeRange_key: bpy.props.StringProperty(name=VOLUME_RANGE_LABEL,
-                                              description=ANN_VOLUME_RANGE,
-                                              default=VOLUMERANGE_KEY)
-
-    def draw(self, context):
-        """Draw the panel and it's properties.
-
-        :param context: The current context.
-        :type context: bpy.context
-        """
-        self.layout.use_property_split = True
-
-        col = self.layout.column(align=True)
-        box = col.box()
-        colBox = box.column(align=True)
-        colBox.label(text="General")
-        colBox.prop(self, "show_info")
-        colBox.prop(self, "keep_selection")
-        colBox.prop(self, "undo_steps")
-        colBox.separator()
-        colBox.prop(self, "brush_color")
-        colBox.prop(self, "info_color")
-        colBox.prop(self, "selected_color")
-        colBox.prop(self, "unselected_color")
-
-        box = col.box()
-        colBox = box.column(align=True)
-        colBox.label(text="Keymaps")
-        colBox.prop(self, "radius_key")
-        colBox.prop(self, "strength_key")
-        colBox.prop(self, "useSelection_key")
-        colBox.prop(self, "affectSelected_key")
-        colBox.prop(self, "ignoreBackside_key")
-        colBox.prop(self, "ignoreLock_key")
-        colBox.prop(self, "islands_key")
-        colBox.prop(self, "normalize_key")
-        colBox.prop(self, "oversampling_key")
-        colBox.prop(self, "useSymmetry_key")
-        colBox.separator()
-        colBox.prop(self, "volume_key")
-        colBox.prop(self, "volumeRange_key")
-        colBox.separator()
-        colBox.prop(self, "maxGroups_key")
-        colBox.separator()
-        colBox.prop(self, "value_up_key")
-        colBox.prop(self, "value_down_key")
-        colBox.separator()
-        colBox.prop(self, "select_key")
-        colBox.prop(self, "deselect_key")
-        colBox.prop(self, "clearSelection_key")
-        colBox.separator()
-        colBox.prop(self, "flood_key")
+                                 text=menu.MENU_LIMIT_GROUPS)
 
 
 # ----------------------------------------------------------------------
@@ -2918,8 +2634,7 @@ classes = [SmoothWeights_Properties,
            SMOOTHWEIGHTS_OT_Paint,
            SMOOTHWEIGHTS_OT_Flood,
            SMOOTHWEIGHTS_OT_LimitGroups,
-           SMOOTHWEIGHTS_PT_settings,
-           SMOOTHWEIGHTSPreferences]
+           SMOOTHWEIGHTS_PT_settings]
 
 
 def register():
