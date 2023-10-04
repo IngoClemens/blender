@@ -1,0 +1,72 @@
+0.13.0 - 2023-10-04
+       - Added compatibility for non-english characters for names and
+         tooltips.
+       - Added a language selector with 8 languages.
+
+0.12.1 - 2023-06-09
+       - Assigned the PointerProperty to the WindowManager.
+
+0.12.0 - 2023-04-17
+       - Included a new option to add a color property.
+
+0.11.0 - 2023-03-24
+       - Added the option to open a file browser to provide a file path
+         for the operator via the BROWSER_GET_FILE placeholder.
+         Because of a current Blender bug only files can be selected,
+         not folders.
+       - Fixed that expanded enum properties are not displayed anymore.
+
+0.10.0 - 2022-11-25
+       - Property placeholders for single properties can now also be
+         PROP1, to be consistent with the formatting for multiple
+         properties.
+       - Added a basic spell check for string and boolean property
+         types.
+       - Fixed that entries ending with a colon caused the tool to fail.
+       - Added Substance3DInBlender to the black list of add-ons.
+
+0.9.0 - 2022-02-10
+      - Added an option to set a group to be expanded by default.
+      - Added undo capability to operator buttons.
+      - Fixed that editing is not possible when New Group is active in
+        Add Mode.
+
+0.8.0 - 2021-06-01
+      - Added tooltips for enum properties.
+      - Fixed that enum items don't show their labels.
+
+0.7.0 - 2021-05-31
+      - Changed that drawing of labels for properties in a row doesn't
+        depend on the total number of properties but just the number of
+        properties in a single row.
+      - Added the option to expand enum properties to appear as a line
+        of buttons.
+      - Added the option to use the tool command as a property callback
+        as an alternative to having to press the tool button to execute
+        the tool.
+
+0.6.0 - 2021-05-27
+      - Added the option to add enum properties.
+      - Added the option to align multiple properties in a row rather
+        than having them appear as a column.
+
+0.5.0 - 2021-05-20
+      - Added the option to use unicode characters instead of a label
+        for a button.
+      - Added the option to only show the button icon.
+      - String properties can be defined by entering string in the value
+        field.
+
+0.4.0 - 2021-05-16
+      - Added the option to add properties to a tool or tool set.
+
+0.3.0 - 2021-05-09
+      - Added the option to combine multiple buttons as a set.
+      - Tool names can be repeated across all groups.
+      - Import of groups and tools from another configuration file.
+
+0.2.0 - 2021-04-29
+      - Added an option to define a button as an add-on toggle.
+
+0.1.0 - 2021-04-22
+      - First public release
