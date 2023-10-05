@@ -40,7 +40,7 @@ from . import preferences, toolShelf
 
 bl_info = {"name": "Tool Shelf",
            "author": "Ingo Clemens, braverabbit.com",
-           "version": (0, 13, 0),
+           "version": (0, 14, 1),
            "blender": (2, 92, 0),
            "category": "Interface",
            "location": "View3D",

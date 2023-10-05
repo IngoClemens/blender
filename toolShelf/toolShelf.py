@@ -917,14 +917,15 @@ def toAscii(name):
     :return: The name.
     :rtype: str
     """
+    isAscii = name.isascii()
+
     name = re.sub(r"[^\x00-\x7F]+", lambda x: "".join([f"{ord(c):02x}" for c in x.group()]), name)
 
     # If the name is too long, exclude every other character.
-    if len(name) > 20:
-        name = "".join(name[i] for i in range(0, len(name), 2))
-    # If the name is still too long, truncate it.
-    if len(name) > 10:
-        name = name[len(name) - 10:]
+    if not isAscii:
+        # If the name is too long, truncate it.
+        if len(name) > 16:
+            name = name[len(name) - 16:]
 
     return name
 

@@ -1,3 +1,6 @@
+0.14.0 - 2023-10-05
+       - Abbreviate only non-english operator and property names.
+
 0.13.0 - 2023-10-04
        - Added compatibility for non-english characters for names and
          tooltips.
