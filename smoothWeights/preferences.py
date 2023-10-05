@@ -1,10 +1,170 @@
 # <pep8 compliant>
 
 from . import constants as const
-from . import keymap, strings
+from . import language, panel
 
 import bpy
 
+import io
+import json
+import mathutils
+import os
+
+
+LOCAL_PATH = os.path.dirname(__file__)
+CONFIG_PATH = os.path.join(LOCAL_PATH, const.CONFIG_NAME)
+
+
+# Get the current language.
+strings = language.getLanguage()
+
+
+# ----------------------------------------------------------------------
+# Configuration
+# ----------------------------------------------------------------------
+
+def readConfig():
+    """Read the configuration file.
+    If the file doesn't exist create and return the basic configuration.
+
+    :return: The content of the configuration file.
+    :rtype: dict
+    """
+    if os.path.exists(CONFIG_PATH):
+        config = jsonRead(CONFIG_PATH)
+        if config:
+            return config
+        return const.DEFAULT_CONFIG
+    else:
+        config = const.DEFAULT_CONFIG
+        jsonWrite(CONFIG_PATH, config)
+        return config
+
+
+def writeConfig(data):
+    """Write the configuration file.
+
+    :param data: The data to write.
+    :type data: dict or list
+    """
+    jsonWrite(CONFIG_PATH, data)
+
+
+def jsonRead(filePath):
+    """Return the content of the given json file. Return an empty
+    dictionary if the file doesn't exist.
+
+    :param filePath: The file path of the file to read.
+    :type filePath: str
+
+    :return: The content of the json file.
+    :rtype: dict
+    """
+    if os.path.exists(filePath):
+        try:
+            with open(filePath, "r") as fileObj:
+                return json.load(fileObj)
+        except OSError as exception:
+            print(exception)
+
+
+def jsonWrite(filePath, data):
+    """Export the given data to the given json file.
+
+    :param filePath: The file path of the file to write.
+    :type filePath: str
+    :param data: The data to write.
+    :type data: dict or list
+
+    :return: True, if writing was successful.
+    :rtype: bool
+    """
+    try:
+        with io.open(filePath, "w", encoding="utf8") as fileObj:
+            writeString = json.dumps(data, sort_keys=True, indent=4, ensure_ascii=False)
+            fileObj.write(str(writeString))
+        return True
+    except OSError as exception:
+        print(exception)
+    return False
+
+
+def updateConfiguration(self, context):
+    """Property callback for updating the current configuration.
+
+    :param context: The current context.
+    :type context: bpy.context
+    """
+    props = {"language": "language",
+             "extras": "extras",
+             "brush_color": "brushColor",
+             "info_color":  "infoColor",
+             "keep_selection": "keepSelection",
+             "panel_location": "panelLocation",
+             "panel_name": "panelName",
+             "pie_menu": "pieMenu",
+             "selected_color": "selectedColor",
+             "show_info": "showInfo",
+             "show_time": "showTime",
+             "undo_steps": "undoSteps",
+             "unselected_color": "unselectedColor"}
+    keys = {"affectSelected_key": "affectSelected",
+            "blend_key": "blend",
+            "clearSelection_key": "clearSelection",
+            "deselect_key": "deselect",
+            "flood_key": "flood",
+            "ignoreBackside_key": "ignoreBackside",
+            "ignoreLock_key": "ignoreLock",
+            "islands_key": "islands",
+            "maxGroups_key": "maxGroups",
+            "normalize_key": "normalize",
+            "oversampling_key": "oversampling",
+            "pieMenu_key": "pieMenu",
+            "radius_key": "radius",
+            "select_key": "select",
+            "strength_key": "strength",
+            "useSelection_key": "useSelection",
+            "useSymmetry_key": "useSymmetry",
+            "value_up_key": "value_up",
+            "value_down_key": "value_down",
+            "vertexGroups_key": "vertexGroups",
+            "volume_key": "volume",
+            "volumeRange_key": "volumeRange"}
+
+    const.PIE_AREAS
+
+    prefs = getPreferences()
+    config = {}
+
+    # Get all regular properties.
+    for prop in props:
+        data  = getattr(prefs, prop)
+        # Convert the colors to a list.
+        if isinstance(data, mathutils.Color):
+            data = [i for i in data]
+        config[props[prop]] = data
+
+    # Get all keymaps
+    keymap = {}
+    for key in keys:
+        keymap[keys[key]] = getattr(prefs, key)
+    config["keymap"] = keymap
+
+    # Get the pie areas.
+    pieAreas = []
+    for area in const.PIE_AREAS:
+        pieAreas.append(getattr(prefs, area))
+
+    # Compile the configuration.
+    config["smoothPie"] = pieAreas
+
+    # Write the configuration.
+    writeConfig(config)
+
+
+# ----------------------------------------------------------------------
+# Preferences
+# ----------------------------------------------------------------------
 
 def getPreferences():
     """Return the preferences of the add-on.
@@ -16,102 +176,235 @@ def getPreferences():
     return prefs
 
 
+def updateLanguageCallback(self, context):
+    """Property callback for changing the active language.
+
+    :param context: The current context.
+    :type context: bpy.context
+    """
+    updateConfiguration(self, context)
+    language.reloadDependencies()
+    # Reload the add-on.
+    bpy.ops.script.reload()
+
+
+def updatePanelLocationCallback(self, context):
+    """Property callback for changing the panel location and name.
+
+    This is just a wrapper for calling the actual update function
+    because of the necessary arguments used by the property callback.
+
+    :param context: The current context.
+    :type context: bpy.context
+    """
+    updateConfiguration(self, context)
+    updatePanelLocation()
+
+
+def updatePanelLocation():
+    """Remove the current panel and create a new one with an updated
+    location and name.
+    """
+    # Unregister the panel.
+    panel.unregister()
+
+    area = getPreferences().panel_location
+    name = getPreferences().panel_name
+    panel.register(area, name)
+
+
 class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
     """Create the layout for the preferences.
     """
     bl_idname = const.NAME
 
+    # Get the keymaps and pie menu.
+    config = readConfig()
+    keymap = config["keymap"]
+    pieItems = config["smoothPie"]
+
     extras: bpy.props.BoolProperty(name=strings.EXTRAS_LABEL,
                                    description=strings.ANN_EXTRAS,
-                                   default=const.EXTRAS)
+                                   default=config["extras"],
+                                   update=updateConfiguration)
     brush_color: bpy.props.FloatVectorProperty(name=strings.BRUSH_COLOR_LABEL,
                                                description=strings.ANN_BRUSH_COLOR,
                                                subtype='COLOR',
-                                               default=const.BRUSH_COLOR)
+                                               default=config["brushColor"],
+                                               update=updateConfiguration)
     info_color: bpy.props.FloatVectorProperty(name=strings.INFO_TEXT_COLOR_LABEL,
                                               description=strings.ANN_INFO_COLOR,
                                               subtype='COLOR',
-                                              default=const.INFO_COLOR)
+                                              default=config["infoColor"],
+                                              update=updateConfiguration)
     keep_selection: bpy.props.BoolProperty(name=strings.KEEP_SELECTION_LABEL,
                                            description=strings.ANN_KEEP_SELECTION,
-                                           default=const.KEEP_SELECTION)
+                                           default=config["keepSelection"],
+                                           update=updateConfiguration)
+    language: bpy.props.EnumProperty(name=strings.LANGUAGE_LABEL,
+                                     items=language.LANGUAGE_ITEMS,
+                                     description=strings.ANN_LANGUAGE,
+                                     default=config["language"],
+                                     update=updateLanguageCallback)
+    panel_location: bpy.props.EnumProperty(name=strings.PANEL_LOCATION_LABEL,
+                                           items=const.PANEL_LOCATION_ITEMS,
+                                           description=strings.ANN_PANEL_LOCATION,
+                                           default=config["panelLocation"],
+                                           update=updatePanelLocationCallback)
+    panel_name: bpy.props.StringProperty(name=strings.PANEL_NAME_LABEL,
+                                           description=strings.ANN_PANEL_NAME,
+                                           default=config["panelName"],
+                                           update=updatePanelLocationCallback)
+    pie_menu: bpy.props.BoolProperty(name=strings.PIE_MENU_LABEL,
+                                     description=strings.ANN_PIE_MENU,
+                                     default=config["pieMenu"],
+                                     update=updateConfiguration)
     selected_color: bpy.props.FloatVectorProperty(name=strings.SELECTED_COLOR_LABEL,
                                                   description=strings.ANN_SELECTED_COLOR,
                                                   subtype='COLOR',
-                                                  default=const.SELECTED_COLOR)
+                                                  default=config["selectedColor"],
+                                                  update=updateConfiguration)
     show_info: bpy.props.BoolProperty(name=strings.SHOW_INFO_LABEL,
                                       description=strings.ANN_SHOW_INFO,
-                                      default=const.SHOW_INFO)
+                                      default=config["showInfo"],
+                                      update=updateConfiguration)
     show_time: bpy.props.BoolProperty(name=strings.SHOW_TIME_LABEL,
                                       description=strings.ANN_SHOW_TIME,
-                                      default=const.SHOW_TIME)
+                                      default=config["showTime"],
+                                      update=updateConfiguration)
     undo_steps: bpy.props.IntProperty(name=strings.UNDO_STEPS_LABEL,
                                       description=strings.ANN_UNDO_STEPS,
-                                      default=const.UNDO_STEPS,
+                                      default=config["undoSteps"],
                                       min=1,
-                                      max=100)
+                                      max=100,
+                                      update=updateConfiguration)
     unselected_color: bpy.props.FloatVectorProperty(name=strings.UNSELECTED_COLOR_LABEL,
                                                     description=strings.ANN_UNSELECTED_COLOR,
                                                     subtype='COLOR',
-                                                    default=const.UNSELECTED_COLOR)
+                                                    default=config["unselectedColor"],
+                                                    update=updateConfiguration)
 
     affectSelected_key: bpy.props.StringProperty(name=strings.AFFECT_SELECTED_LABEL,
                                                  description=strings.ANN_AFFECT_SELECTED,
-                                                 default=keymap.AFFECTSELECTED_KEY)
+                                                 default=keymap["affectSelected"],
+                                                 update=updateConfiguration)
+    blend_key: bpy.props.StringProperty(name=strings.BLEND_LABEL,
+                                        description=strings.ANN_BLEND,
+                                        default=keymap["blend"],
+                                        update=updateConfiguration)
     clearSelection_key: bpy.props.StringProperty(name=strings.CLEAR_SELECTION_LABEL,
                                                  description=strings.ANN_CLEAR_SELECTION,
-                                                 default=keymap.CLEARSELECTION_KEY)
+                                                 default=keymap["clearSelection"],
+                                                 update=updateConfiguration)
     deselect_key: bpy.props.StringProperty(name=strings.DESELECT_LABEL,
                                            description=strings.ANN_DESELECT,
-                                           default=keymap.DESELECT_KEY)
+                                           default=keymap["deselect"],
+                                           update=updateConfiguration)
     flood_key: bpy.props.StringProperty(name=strings.FLOOD_LABEL,
                                         description=strings.ANN_FLOOD,
-                                        default=keymap.FLOOD_KEY)
+                                        default=keymap["flood"],
+                                        update=updateConfiguration)
     ignoreBackside_key: bpy.props.StringProperty(name=strings.IGNORE_BACKSIDE_LABEL,
                                                  description=strings.ANN_IGNORE_BACKSIDE,
-                                                 default=keymap.IGNOREBACKSIDE_KEY)
+                                                 default=keymap["ignoreBackside"],
+                                                 update=updateConfiguration)
     ignoreLock_key: bpy.props.StringProperty(name=strings.IGNORE_LOCK_LABEL,
                                              description=strings.ANN_IGNORE_LOCK,
-                                             default=keymap.IGNORELOCK_KEY)
+                                             default=keymap["ignoreLock"],
+                                             update=updateConfiguration)
     islands_key: bpy.props.StringProperty(name=strings.USE_ISLANDS_LABEL,
                                           description=strings.ANN_USE_ISLANDS,
-                                          default=keymap.ISLANDS_KEY)
+                                          default=keymap["islands"],
+                                          update=updateConfiguration)
     maxGroups_key: bpy.props.StringProperty(name=strings.MAX_GROUPS_LABEL,
                                             description=strings.ANN_MAX_GROUPS,
-                                            default=keymap.MAXGROUPS_KEY)
+                                            default=keymap["maxGroups"],
+                                            update=updateConfiguration)
     normalize_key: bpy.props.StringProperty(name=strings.NORMALIZE_LABEL,
                                             description=strings.ANN_NORMALIZE,
-                                            default=keymap.NORMALIZE_KEY)
+                                            default=keymap["normalize"],
+                                            update=updateConfiguration)
     oversampling_key: bpy.props.StringProperty(name=strings.OVERSAMPLING_LABEL,
                                                description=strings.ANN_OVERSAMPLING,
-                                               default=keymap.OVERSAMPLING_KEY)
+                                               default=keymap["oversampling"],
+                                               update=updateConfiguration)
+    pieMenu_key: bpy.props.StringProperty(name=strings.PIE_MENU_LABEL,
+                                          description=strings.ANN_PIE_MENU,
+                                          default=keymap["pieMenu"],
+                                          update=updateConfiguration)
     radius_key: bpy.props.StringProperty(name=strings.RADIUS_LABEL,
                                          description=strings.ANN_RADIUS,
-                                         default=keymap.RADIUS_KEY)
+                                         default=keymap["radius"],
+                                         update=updateConfiguration)
     select_key: bpy.props.StringProperty(name=strings.SELECT_LABEL,
                                          description=strings.ANN_SELECT,
-                                         default=keymap.SELECT_KEY)
+                                         default=keymap["select"],
+                                         update=updateConfiguration)
     strength_key: bpy.props.StringProperty(name=strings.STRENGTH_LABEL,
                                            description=strings.ANN_STRENGTH,
-                                           default=keymap.STRENGTH_KEY)
+                                           default=keymap["strength"],
+                                           update=updateConfiguration)
     useSelection_key: bpy.props.StringProperty(name=strings.USE_SELECTION_LABEL,
                                                description=strings.ANN_USE_SELECTION,
-                                               default=keymap.USESELECTION_KEY)
+                                               default=keymap["useSelection"],
+                                               update=updateConfiguration)
     useSymmetry_key: bpy.props.StringProperty(name=strings.USE_SYMMETRY_LABEL,
                                               description=strings.ANN_USE_SYMMETRY,
-                                              default=keymap.USESYMMETRY_KEY)
+                                              default=keymap["useSymmetry"],
+                                              update=updateConfiguration)
     value_up_key: bpy.props.StringProperty(name=strings.INCREASE_VALUE_LABEL,
                                            description=strings.ANN_VALUE_UP,
-                                           default=keymap.VALUE_UP_KEY)
+                                           default=keymap["value_up"],
+                                           update=updateConfiguration)
     value_down_key: bpy.props.StringProperty(name=strings.DECREASE_VALUE_LABEL,
                                              description=strings.ANN_VALUE_DOWN,
-                                             default=keymap.VALUE_DOWN_KEY)
+                                             default=keymap["value_down"],
+                                             update=updateConfiguration)
+    vertexGroups_key: bpy.props.StringProperty(name=strings.VERTEX_GROUPS_LABEL,
+                                               description=strings.ANN_VERTEX_GROUPS,
+                                               default=keymap["vertexGroups"],
+                                               update=updateConfiguration)
     volume_key: bpy.props.StringProperty(name=strings.VOLUME_LABEL,
                                          description=strings.ANN_VOLUME,
-                                         default=keymap.VOLUME_KEY)
+                                         default=keymap["volume"],
+                                         update=updateConfiguration)
     volumeRange_key: bpy.props.StringProperty(name=strings.VOLUME_RANGE_LABEL,
                                               description=strings.ANN_VOLUME_RANGE,
-                                              default=keymap.VOLUMERANGE_KEY)
+                                              default=keymap["volumeRange"],
+                                              update=updateConfiguration)
+
+    pie_north: bpy.props.EnumProperty(name=strings.PIE_NORTH_LABEL,
+                                      items=const.PIE_ENUMS,
+                                      default=const.PIE_ITEMS[3],
+                                      update=updateConfiguration)
+    pie_north_east: bpy.props.EnumProperty(name=strings.PIE_NORTH_EAST_LABEL,
+                                      items=const.PIE_ENUMS,
+                                      default=const.PIE_ITEMS[5],
+                                      update=updateConfiguration)
+    pie_east: bpy.props.EnumProperty(name=strings.PIE_EAST_LABEL,
+                                      items=const.PIE_ENUMS,
+                                      default=const.PIE_ITEMS[1],
+                                      update=updateConfiguration)
+    pie_south_east: bpy.props.EnumProperty(name=strings.PIE_SOUTH_EAST_LABEL,
+                                      items=const.PIE_ENUMS,
+                                      default=const.PIE_ITEMS[7],
+                                      update=updateConfiguration)
+    pie_south: bpy.props.EnumProperty(name=strings.PIE_SOUTH_LABEL,
+                                      items=const.PIE_ENUMS,
+                                      default=const.PIE_ITEMS[2],
+                                      update=updateConfiguration)
+    pie_south_west: bpy.props.EnumProperty(name=strings.PIE_SOUTH_WEST_LABEL,
+                                      items=const.PIE_ENUMS,
+                                      default=const.PIE_ITEMS[6],
+                                      update=updateConfiguration)
+    pie_west: bpy.props.EnumProperty(name=strings.PIE_WEST_LABEL,
+                                      items=const.PIE_ENUMS,
+                                      default=const.PIE_ITEMS[0],
+                                      update=updateConfiguration)
+    pie_north_west: bpy.props.EnumProperty(name=strings.PIE_NORTH_WEST_LABEL,
+                                      items=const.PIE_ENUMS,
+                                      default=const.PIE_ITEMS[4],
+                                      update=updateConfiguration)
 
     def draw(self, context):
         """Draw the panel and it's properties.
@@ -124,7 +417,11 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
         col = self.layout.column(align=True)
         box = col.box()
         colBox = box.column(align=True)
-        colBox.label(text="General")
+        colBox.label(text=strings.PREFS_GENERAL_LABEL)
+        colBox.prop(self, "language")
+        colBox.prop(self, "panel_location")
+        colBox.prop(self, "panel_name")
+        colBox.separator()
         colBox.prop(self, "show_info")
         colBox.prop(self, "keep_selection")
         colBox.prop(self, "undo_steps")
@@ -138,7 +435,7 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
 
         box = col.box()
         colBox = box.column(align=True)
-        colBox.label(text="Keymaps")
+        colBox.label(text=strings.PREFS_KEYMAPS_LABEL)
         colBox.prop(self, "radius_key")
         colBox.prop(self, "strength_key")
         colBox.prop(self, "useSelection_key")
@@ -154,6 +451,8 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
         colBox.prop(self, "volumeRange_key")
         colBox.separator()
         colBox.prop(self, "maxGroups_key")
+        colBox.prop(self, "vertexGroups_key")
+        colBox.prop(self, "blend_key")
         colBox.separator()
         colBox.prop(self, "value_up_key")
         colBox.prop(self, "value_down_key")
@@ -163,6 +462,36 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
         colBox.prop(self, "clearSelection_key")
         colBox.separator()
         colBox.prop(self, "flood_key")
+
+        box = col.box()
+
+        colBox = box.column(align=True)
+        colBox.label(text=strings.PREFS_PIE_LABEL)
+        colBox.prop(self, "pie_menu")
+        colBox.prop(self, "pieMenu_key")
+        colBox.separator()
+
+        colFlow = box.column_flow(columns=3)
+        colFlow.separator_spacer()
+        colFlow.prop(self, "pie_north", text="")
+        colFlow.separator_spacer()
+
+        colFlow = box.column_flow(columns=2)
+        colFlow.prop(self, "pie_north_west", text="")
+        colFlow.prop(self, "pie_north_east", text="")
+
+        colFlow = box.column_flow(columns=2)
+        colFlow.prop(self, "pie_west", text="")
+        colFlow.prop(self, "pie_east", text="")
+
+        colFlow = box.column_flow(columns=2)
+        colFlow.prop(self, "pie_south_west", text="")
+        colFlow.prop(self, "pie_south_east", text="")
+
+        colFlow = box.column_flow(columns=3)
+        colFlow.separator_spacer()
+        colFlow.prop(self, "pie_south", text="")
+        colFlow.separator_spacer()
 
 
 # ----------------------------------------------------------------------

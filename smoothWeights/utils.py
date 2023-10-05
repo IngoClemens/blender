@@ -261,7 +261,7 @@ def averageEdgeLengthTotal(obj):
     return length / count
 
 
-def sortDict(data, reverse=False, maxCount=None):
+def sortDict(data, reverse=False, maxCount=None, skipIndices=[]):
     """Sort the values in the given dictionary.
 
     :param data: The dictionary to sort.
@@ -271,11 +271,109 @@ def sortDict(data, reverse=False, maxCount=None):
     :type reverse: bool
     :param maxCount: The maximum number of entries.
     :type maxCount: int or None
+    :param skipIndices: The list of group indices which should not be
+                        considered.
+    :type skipIndices: list(int)
 
-    :return: The sorted dictionary.
+    :return: The sorted and limited dictionary.
     :rtype: dict
     """
+    sortedData = dict(sorted(data.items(), key=lambda x: x[1], reverse=reverse))
+
     if maxCount is None:
-        return dict(sorted(data.items(), key=lambda x: x[1], reverse=reverse))
+        return sortedData
+
+    limitedData = {}
+    counter = 0
+    for i in sortedData:
+        # Only limit vertex groups which match the filter mode.
+        if i not in skipIndices:
+            if counter < maxCount:
+                limitedData[i] = sortedData[i]
+                counter += 1
+        # Keep the group assignments which are not related to
+        # the filter mode.
+        else:
+            limitedData[i] = sortedData[i]
+
+    return limitedData
+
+
+def getDeformBones(obj, deform=True):
+    """Return all deformation or non-deformation bone names of the given
+    object.
+
+    :param obj: The mesh object.
+    :type obj: bpy.types.Object
+    :param deform: True, if only the bones affecting the deformation
+                   should be returned. False for non-deforming bones.
+    :type deform: bool
+
+    :return: The set of bone names.
+    :rtype: set(str)
+    """
+    bones = set()
+
+    for mod in obj.modifiers:
+        if mod.type == 'ARMATURE':
+            if mod.object.type == 'ARMATURE':
+                armature = mod.object.data
+                for bone in armature.bones:
+                    if bone.use_deform == deform:
+                        bones.add(bone.name)
+
+    return bones
+
+
+def filterDeformGroupIndices(obj, deform=True):
+    """Return the vertex group indices which are either related or not
+    related to deforming bones.
+
+    :param obj: The mesh object.
+    :type obj: bpy.types.Object
+    :param deform: True, if only the indices of vertex groups in respect
+                   to bones affecting the deformation should be
+                   returned. False for non-deforming vertex groups.
+    :type deform: bool
+
+    :return: The list of vertex group indices.
+    :rtype: list(int)
+    """
+    indices = set()
+
+    bones = getDeformBones(obj, deform=True)
+    for i, item in enumerate(obj.vertex_groups):
+        exists = item.name in bones
+        if not deform:
+            exists = not exists
+        if exists:
+            indices.add(i)
+
+    return list(indices)
+
+
+def getUnaffectedGroupIndices(obj, vertexGroups="DEFORM"):
+    """Return all vertex group indices which don't belong to the given
+    vertex group type.
+
+    Returning non-relevant indices is more effective because when using
+    the default DEFORM mode it is expected that there are ids to ignore
+    than to use, thus keeping the comparison list short.
+
+    :param obj: The mesh object.
+    :type obj: bpy.types.Object
+    :param vertexGroups: The string defining which vertex groups are
+                         affected. (ALL, DEFORM, OTHER)
+    :type vertexGroups: str
+
+    :return: The list of vertex group indices which aren't matching the
+             given group mode.
+    :rtype: list(int)
+    """
+    if vertexGroups == "ALL":
+        return []
     else:
-        return dict(sorted(data.items(), key=lambda x: x[1], reverse=reverse)[:maxCount])
+        deform = vertexGroups == "DEFORM"
+        # Filtering leaves only the indices which should not be
+        # affected.
+        return filterDeformGroupIndices(obj, deform=not deform)

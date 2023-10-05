@@ -5,6 +5,8 @@ item to show.
 1. Select the mesh in object mode. There is no need to enter weight
    painting mode.
 2. From the side panel in the 3D view choose the tool tab.
+   It's possible to customize the location of the tool from the add-on
+   preferences.
 3. Open the folder "Smooth Weights"
 4. Press "Brush".
 
@@ -49,6 +51,10 @@ R: Volume Range
 G: Groups
    Hold G while pressing + or - to increase or decrease the number of
    vertex groups. Zero ignores any group limit.
+D: Vertex Group Type
+   Hold D while pressing + or - to define which vertex group type is
+   affected: Deformation, Non-Deformation or All
+J: Blend Open Vertex Group Borders (available with Vertex Group Type 'Other')
 T: Use Symmetry
 F: Flood Smooth
 Shift + RMB: Frame Change
@@ -56,6 +62,8 @@ Shift + RMB: Frame Change
 W: Toggle Select mode.
 E: Toggle Deselect mode.
 C: Clear Selection
+
+Y: Pie menu
 
 All keymaps, except the frame change, are customizable from the add-on
 preferences.

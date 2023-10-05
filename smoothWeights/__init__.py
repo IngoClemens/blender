@@ -19,12 +19,12 @@ Copyright (C) 2023, Ingo Clemens, brave rabbit, www.braverabbit.com
     If not, see <https://www.gnu.org/licenses/>.
 """
 
-from . import preferences, smoothWeights, symmetryMap
+from . import panel, pies, preferences, smoothWeights, symmetryMap
 
 
 bl_info = {"name": "Smooth Weights",
            "author": "Ingo Clemens, braverabbit.com",
-           "version": (2, 3, 0),
+           "version": (2, 4, 0),
            "blender": (3, 6, 0),
            "category": "Rigging",
            "location": "View3D > Object",
@@ -42,16 +42,22 @@ def register():
     """Register the add-on.
     """
     preferences.register()
+    pies.register()
     smoothWeights.register()
     symmetryMap.register()
+
+    preferences.updatePanelLocation()
 
 
 def unregister():
     """Unregister the add-on.
     """
     preferences.unregister()
+    pies.unregister()
     smoothWeights.unregister()
     symmetryMap.unregister()
+
+    panel.unregister()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from . import utils
 
 import bpy
+import bmesh
 
 
 class Weights(object):
@@ -16,6 +17,8 @@ class Weights(object):
         """
         self.obj = obj
         self.data = obj.data
+
+        self.numGroups = len(self.obj.vertex_groups)
 
     def numVertices(self):
         """Return the number of vertices for the current mesh.
@@ -53,7 +56,9 @@ class Weights(object):
         :return: True, if the group is considered to be locked.
         :rtype: bool
         """
-        return self.locks()[groupIndex] and not ignoreLock
+        if groupIndex < self.numGroups:
+            return self.locks()[groupIndex] and not ignoreLock
+        return False
 
     def vertexGroup(self, groupId):
         """Return the vertex group at the given vertex.
@@ -86,6 +91,14 @@ class Weights(object):
         """Return a list with the vertex groups weights for the given
         vertex.
 
+        Note:
+        Replaced by weightsForVertexIndices() because if the mesh is in
+        Edit mode and the order of the vertex groups change the group id
+        assignment is not correct unless the mode is set to Object and
+        back to Edit.
+        Also, querying the deform layer for weight values appears to be
+        faster than querying the group through the mesh data block.
+
         :param index: The vertex index.
         :type index: int
         :param maxGroups: Optional list argument to return and update
@@ -111,6 +124,63 @@ class Weights(object):
 
         return w
 
+    def weightsForVertexIndices(self, indices, maxGroups=None, skipIndices=[]):
+        """Return a list with the vertex groups weights for the given
+        vertex or list of vertex indices.
+
+        :param index: The vertex index or list of indices.
+        :type index: int or list(int)
+        :param maxGroups: Optional list argument to return and update
+                          the maximum number of groups per vertex.
+                          If the list is provided it only contains one
+                          element.
+        :type maxGroups: None or list(int)
+        :param skipIndices: The list of group indices which don't match
+                            the current group filter.
+                            This is only used on conjunction with
+                            maxGroups to identify what the current
+                            number of maximum groups are.
+        :type skipIndices: list(int)
+
+        :return: A list of dictionaries for the vertices storing the
+                 group indices and weight values as key/value pairs.
+        :rtype: list(dict)
+        """
+        w = {}
+
+        # Convert single indices to a list.
+        if isinstance(indices, int):
+            indices = [indices]
+
+        # Create a bmesh from the mesh depending on the mode.
+        if self.obj.mode == 'EDIT':
+            bm = bmesh.from_edit_mesh(self.data)
+        else:
+            bm = bmesh.new()
+            bm.from_mesh(self.data)
+
+        bm.verts.ensure_lookup_table()
+
+        # Get the current deform layer.
+        layer = bm.verts.layers.deform.active
+
+        # Get the weights for each vertex and convert the groupId/weight
+        # tuple to a dictionary.
+        for i in indices:
+            items = {key: value for key, value in bm.verts[i][layer].items()}
+            w[i] = items
+
+            # Update the current max number of vertex groups.
+            if maxGroups is not None and len(maxGroups):
+                # Remove all invalid group indices.
+                groupItems = [j for j in items if j not in skipIndices]
+                if len(groupItems) > maxGroups[0]:
+                    maxGroups[0] = len(groupItems)
+
+        bm.free()
+
+        return w
+
     def setWeightsForVertex(self, index, weightData, clear=True):
         """Set the weight for the given vertex for all vertex groups.
 
@@ -127,6 +197,12 @@ class Weights(object):
         :type clear: bool
         """
         for groupId in weightData:
+            # If the group index is the helper index for smoothing
+            # border vertices of non-deformer groups, setting the weight
+            # can be skipped.
+            if groupId == self.numGroups:
+                continue
+
             value = weightData[groupId]
 
             group = self.vertexGroup(groupId)
@@ -154,7 +230,7 @@ class Weights(object):
         :rtype: bool
         """
         mode = self.obj.mode
-        if mode != 'OBJECT':
+        if mode not in ['OBJECT', 'WEIGHT_PAINT']:
             if not editMode:
                 return False
             else:
@@ -191,7 +267,7 @@ class Weights(object):
         :type weightData: dict(dict)
         """
         mode = self.obj.mode
-        if mode != 'OBJECT':
+        if mode not in ['OBJECT', 'WEIGHT_PAINT']:
             bpy.ops.object.mode_set(mode="OBJECT")
 
         self.clearVertexWeights(indices)
@@ -215,16 +291,24 @@ class Weights(object):
         for group in self.obj.vertex_groups:
             group.remove(indices)
 
-    def mirrorGroupAssignment(self, weightData, splitWeight=False):
+    def mirrorGroupAssignment(self, weightData, weightDataMirror, splitWeight=False,
+                              skipIndices=[]):
         """Replace the group indices in the given weight data list with
         the indices of the opposite groups.
 
         :param weightData: A dictionary for the vertex storing the group
                            indices and weight values as key/value pairs.
         :type weightData: dict
+        :param weightDataMirror: A dictionary for the opposite vertex
+                                 storing the group indices and weight
+                                 values as key/value pairs.
+        :type weightDataMirror: dict
         :param splitWeight: True, if the weight should be equally split
                             between both sides.
         :type splitWeight: bool
+        :param skipIndices: The list of group indices which should not
+                            be considered.
+        :type skipIndices: list(int)
 
         :return: The weight dictionary with the mirrored group indices.
         :rtype: dict
@@ -232,13 +316,25 @@ class Weights(object):
         groupNames = self.allVertexGroupNames()
 
         vertWeights = {}
+        processedIds = set()
         for groupId in weightData:
+            # If the group index is the helper index for smoothing
+            # border vertices of non-deformer groups, setting the weight
+            # can be skipped.
+            if groupId == self.numGroups:
+                continue
+
+            # Only limit vertex groups which match the filter mode.
+            if groupId in skipIndices:
+                continue
+
             # Rename the source vertex group name.
             oppositeName = utils.replaceSideIdentifier(groupNames[groupId])
             # Check if the mirrored name exists.
             if oppositeName in groupNames:
                 # Get the according index for the mirrored name.
                 oppositeId = groupNames.index(oppositeName)
+                processedIds.add(oppositeId)
                 if not splitWeight:
                     # Store the value for the group index.
                     vertWeights[oppositeId] = weightData[groupId]
@@ -248,21 +344,46 @@ class Weights(object):
                     vertWeights[groupId] = value
                     vertWeights[oppositeId] = value
 
+        # Keep all group assignments and weights of the target side
+        # which haven't been object to mirroring.
+        for groupId in weightDataMirror:
+
+            # If the group index is the helper index for smoothing
+            # border vertices of non-deformer groups, setting the weight
+            # can be skipped.
+            if groupId == self.numGroups:
+                continue
+
+            if groupId not in processedIds:
+                vertWeights[groupId] = weightDataMirror[groupId]
+
         return vertWeights
 
     @classmethod
-    def normalizeVertexGroup(cls, weightData):
+    def normalizeVertexGroup(cls, weightData, skipIndices=[]):
         """Normalize the weights of the given list of weights.
 
         :param weightData: A dictionary for the vertex storing the group
                            indices and weight values as key/value pairs.
         :type weightData: dict
+        :param skipIndices: The list of group indices which should not
+                            be considered.
+        :type skipIndices: list(int)
 
         :return: The normalized dictionary of vertex weights.
         :rtype: dict
         """
-        sumWeight = sum(weightData.values())
+        # Separate the weights into different data sets.
+        normData = {}
+        rawData = {}
+        for item in weightData:
+            if item in skipIndices:
+                rawData[item] = weightData[item]
+            else:
+                normData[item] = weightData[item]
 
-        normalizedData = {key: value / sumWeight for key, value in weightData.items()}
+        sumWeight = sum(normData.values())
 
-        return normalizedData
+        normalizedData = {key: value / sumWeight for key, value in normData.items()}
+
+        return {**normalizedData, **rawData}

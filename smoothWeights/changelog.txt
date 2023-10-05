@@ -1,3 +1,12 @@
+2.4.0 - 2023-10-05
+      - Added vertex group types to smooth either all, only deforming or
+        only non-deforming vertex groups.
+      - Added a preference setting to define which panel the add-on
+        appears in.
+      - Added a pie menu as alternative option to the existing keymaps.
+      - Added a language selector with 8 languages.
+      - Fixed that the tool doesn't work in Weight Paint mode.
+
 2.3.0 - 2023-09-14
       - Detection of non-manifold geometry when creating the symmetry
         map.

@@ -2,12 +2,17 @@
 
 from . import constants as const
 from . import preferences as prefs
-from . import strings, utils, weights
+from . import language, utils, weights
 
 import bpy
 import bmesh
 
+import json
 import time
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 # ----------------------------------------------------------------------
@@ -1223,6 +1228,19 @@ def hasMapProperty(obj):
     return const.MAP_PROPERTY_NAME in obj.data
 
 
+def hasMetaProperty(obj):
+    """Return if the meta data property exists in the object's data
+    block.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+
+    :return: True, if the property exists.
+    :rtype: bool
+    """
+    return const.META_PROPERTY_NAME in obj.data
+
+
 def hasWalkIndexProperty(obj):
     """Return if the walk index property exists in the object's data
     block.
@@ -1267,22 +1285,6 @@ def hasValidOrderMap(obj):
         return False
 
 
-def isComplete(obj):
-    """Return if all vertices are mapped.
-
-    :param obj: The object.
-    :type obj: bpy.types.Object
-
-    :return: True, if all vertices are mapped and there are no -1
-             entries in the order map.
-    :rtype: bool
-    """
-    if hasMapProperty(obj):
-        return not any(item == -1 for item in obj.data[const.MAP_PROPERTY_NAME])
-    else:
-        return False
-
-
 def getUnmappedNum(obj):
     """Return the number of unmapped vertices.
 
@@ -1305,6 +1307,7 @@ def setMap(obj, indices):
     :type indices: list(int)
     """
     obj.data[const.MAP_PROPERTY_NAME] = indices
+    setMetadata(obj)
 
 
 def extendMap(obj, indices):
@@ -1323,6 +1326,7 @@ def extendMap(obj, indices):
         for i, index in enumerate(indices):
             if index != -1:
                 obj.data[const.MAP_PROPERTY_NAME][i] = index
+    setMetadata(obj)
 
 
 def getMapInfo(obj):
@@ -1335,27 +1339,42 @@ def getMapInfo(obj):
              displaying further UI elements.
     :rtype: tuple(str, str, bool)
     """
-    # The property doesn't exist.
-    if not hasMapProperty(obj):
-        return "No mapping", 'INFO', False
+    # The symmetry meta data is missing or hasn't been set yet in case
+    # the mesh mapped has been mapped with version 2.3.0 or earlier.
+    if not hasMetaProperty(obj):
+        return strings.INFO_MAPPING_UNDEFINED, 'INFO', False
     else:
+        data = json.loads(obj.data[const.META_PROPERTY_NAME])
+        unmappedCount = data["unmapped"]
+        vtxCount = data["vertices"]
         # Check if the vertex count matches.
         if hasValidOrderMap(obj):
-            count = getUnmappedNum(obj)
-            vtxCount = len(obj.data.vertices)
-            if count == 0:
+            if unmappedCount == 0:
                 return strings.INFO_MAPPING_COMPLETE, 'CHECKMARK', True
-            elif count == vtxCount:
+            elif unmappedCount == vtxCount:
                 return strings.INFO_MAPPING_NOT_SET, 'ERROR', False
             else:
                 return ("{}{}/{}{}".format(strings.INFO_PARTIAL_MAP,
-                                           vtxCount - count,
+                                           vtxCount - unmappedCount,
                                            vtxCount,
                                            strings.INFO_VERTICES), 'ERROR', True)
-
         # The vertex count differs.
         else:
             return strings.ERROR_VERTEX_COUNT_MISMATCH, 'ERROR', False
+
+
+def setMetadata(obj):
+    """Write the current symmetry map state to the meta data property.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+    """
+    unmappedCount = getUnmappedNum(obj)
+    vtxCount = len(obj.data.vertices)
+    data = {"vertices": vtxCount, "unmapped": unmappedCount}
+    # Store the meta data.
+    dataString = json.dumps(data)
+    obj.data[const.META_PROPERTY_NAME] = dataString
 
 
 def createMap(obj, axis, tolerance, verbose=False):
@@ -1549,6 +1568,7 @@ def deleteMap(obj):
     """
     if hasMapProperty(obj):
         del obj.data[const.MAP_PROPERTY_NAME]
+        del obj.data[const.META_PROPERTY_NAME]
     else:
         return {'WARNING'}, strings.WARNING_NO_MAPPING
 
@@ -1755,33 +1775,70 @@ def getSourceVertices(obj, axisIndex, directionIndex):
     :param directionIndex: The direction index of the mirror.
     :type directionIndex: int
 
-    :return: The set of vertex indices.
-    :rtype: set
+    :return: A tuple with the set of vertex indices and opposite
+             indices.
+    :rtype: tuple(set(int), set(int))
     """
-    if obj.mode == 'EDIT':
-        return utils.getVertexSelection(obj)
-    else:
-        orderMap = obj.data[const.MAP_PROPERTY_NAME]
+    orderMap = obj.data[const.MAP_PROPERTY_NAME]
 
+    if obj.mode == 'EDIT':
+        oppositeVerts = set()
+        verts = utils.getVertexSelection(obj)
+        for v in verts:
+            if orderMap[v] != -1:
+                oppositeVerts.add(orderMap[v])
+        return verts, oppositeVerts
+    else:
         verts = set()
+        oppositeVerts = set()
 
         for index in orderMap:
             if orderMap[index] != -1:
                 if orderMap[index] not in verts:
-                    if index == orderMap[index]:
-                        verts.add(index)
-                    else:
-                        value1 = obj.data.vertices[index].co[axisIndex]
-                        value2 = obj.data.vertices[orderMap[index]].co[axisIndex]
-                        if value1 > value2 and directionIndex:
-                            verts.add(index)
-                        else:
-                            verts.add(orderMap[index])
+                    id1, id2 = getOrderedSiblings(obj,
+                                                  index,
+                                                  orderMap[index],
+                                                  axisIndex,
+                                                  directionIndex)
+                    verts.add(id1)
+                    oppositeVerts.add(id2)
 
-        return verts
+        return verts, oppositeVerts
 
 
-def mirrorWeights(obj, axis, direction, maxGroups=5, normalize=True):
+def getOrderedSiblings(obj, index1, index2, axisIndex, directionIndex):
+    """Return the sibling index pair based on the given direction.
+
+    The result depends on whether the two indices match, in case of a
+    center vertex, or which one clearly identifies as the opposite index
+    based on the it's position.
+
+    :param obj: The object.
+    :type obj: bpy.types.Object
+    :param index1: The first vertex index.
+    :type index1: int
+    :param index2: The second vertex index.
+    :type index2: int
+    :param axisIndex: The symmetry axis index.
+    :type axisIndex: int
+    :param directionIndex: The direction index of the mirror.
+    :type directionIndex: int
+
+    :return: A tuple with the ordered sibling indices.
+    :rtype: tuple(int, int)
+    """
+    if index1 == index2:
+        return index1, index2
+    else:
+        value1 = obj.data.vertices[index1].co[axisIndex]
+        value2 = obj.data.vertices[index2].co[axisIndex]
+        if value1 > value2 and directionIndex:
+            return index1, index2
+        else:
+            return index2, index1
+
+
+def mirrorWeights(obj, axis, direction, maxGroups=5, normalize=True, vertexGroups="DEFORM"):
     """Mirror the weights of all or only selected vertices.
 
     :param obj: The object.
@@ -1796,6 +1853,9 @@ def mirrorWeights(obj, axis, direction, maxGroups=5, normalize=True):
     :param normalize: True, if the weights across all groups should be
                       normalized.
     :type normalize: bool
+    :param vertexGroups: The string defining which vertex groups are
+                         affected. (ALL, DEFORM, OTHER)
+    :type vertexGroups: str
 
     :return: A message string.
     :rtype: str
@@ -1807,26 +1867,49 @@ def mirrorWeights(obj, axis, direction, maxGroups=5, normalize=True):
 
     # Get the vertices to mirror. Either from the current selection or
     # from one side of the mesh.
-    verts = getSourceVertices(obj, axisIndex, directionIndex)
+    # The returned tuple also contains the matching indices for the
+    # opposite side, which are required for reading the original weight
+    # values from the target side.
+    verts, oppositeVerts = getSourceVertices(obj, axisIndex, directionIndex)
 
     weightData = {}
 
     orderMap = obj.data[const.MAP_PROPERTY_NAME]
+
+    # Get the weights for all indices.
+    weightMap = weightObj.weightsForVertexIndices(verts)
+    # Get the weight values from the target side.
+    weightMapMirror = weightObj.weightsForVertexIndices(oppositeVerts)
+
+    # Get the group indices which don't match the current filter mode.
+    skipGroupIds = utils.getUnaffectedGroupIndices(obj, vertexGroups=vertexGroups)
 
     for index in verts:
         # For the center vertices split the weights to either side if
         # necessary.
         splitWeight = index == orderMap[index]
 
-        weightList = weightObj.vertexWeights(index)
+        weightList = weightMap[index]
+        weightListMirror = {}
+        if orderMap[index] != -1:
+            weightListMirror = weightMapMirror[orderMap[index]]
         # Mirror the groups.
-        vertWeights = weightObj.mirrorGroupAssignment(weightList, splitWeight)
+        vertWeights = weightObj.mirrorGroupAssignment(weightData=weightList,
+                                                      weightDataMirror=weightListMirror,
+                                                      splitWeight=splitWeight,
+                                                      skipIndices=skipGroupIds)
+
         # Set max influences.
         if maxGroups > 0:
-            vertWeights = utils.sortDict(vertWeights, reverse=True, maxCount=maxGroups)
+            vertWeights = utils.sortDict(data=vertWeights,
+                                         reverse=True,
+                                         maxCount=maxGroups,
+                                         skipIndices=skipGroupIds)
+
         # Normalize.
         if normalize:
-            vertWeights = weightObj.normalizeVertexGroup(vertWeights)
+            vertWeights = weightObj.normalizeVertexGroup(weightData=vertWeights,
+                                                         skipIndices=skipGroupIds)
 
         # Only mirror the weights if there are weight values to set and
         # if the target index is known.
@@ -1835,7 +1918,9 @@ def mirrorWeights(obj, axis, direction, maxGroups=5, normalize=True):
 
         # Also edit the source side in case of split weights.
         if splitWeight:
-            weightData[index] = vertWeights
+            for groupId in vertWeights:
+                if groupId in weightData[index]:
+                    weightData[index][groupId] = vertWeights[groupId]
 
     weightObj.setVertexWeights(weightData, editMode=True)
 
@@ -1931,36 +2016,34 @@ class SymmetryMap_Properties(bpy.types.PropertyGroup):
     """Property group class to make the properties globally available.
     """
     axis: bpy.props.EnumProperty(name=strings.AXIS_LABEL,
-                                 items=(('X', "X", "Symmetry on the x axis"),
-                                        ('Y', "Y", "Symmetry on the y axis"),
-                                        ('Z', "Z", "Symmetry on the z axis")),
+                                 items=(('X', "X", strings.ANN_AXIS_X),
+                                        ('Y', "Y", strings.ANN_AXIS_Y),
+                                        ('Z', "Z", strings.ANN_AXIS_Z)),
                                  default=const.AXIS,
                                  description=strings.ANN_AXIS)
-
     direction: bpy.props.EnumProperty(name=strings.DIRECTION_LABEL,
-                                      items=(('POSITIVE', "Positive", "Mirror positive to negative", 'TRIA_LEFT', 0),
-                                             ('NEGATIVE', "Negative", "Mirror negative to positive", 'TRIA_RIGHT', 1)),
+                                      items=(('POSITIVE', strings.POSITIVE_LABEL, strings.ANN_POSITIVE, 'TRIA_LEFT', 0),
+                                             ('NEGATIVE', strings.NEGATIVE_LABEL, strings.ANN_NEGATIVE, 'TRIA_RIGHT', 1)),
                                       default=const.DIRECTION,
                                       description=strings.ANN_DIRECTION)
-
     maxGroups: bpy.props.IntProperty(name=strings.MAX_GROUPS_LABEL,
                                      default=const.MAX_GROUPS,
                                      min=0,
                                      description=strings.ANN_MAX_GROUPS)
-
     normalize: bpy.props.BoolProperty(name=strings.NORMALIZE_LABEL,
                                       default=const.NORMALIZE,
                                       description=strings.ANN_NORMALIZE)
-
     tolerance: bpy.props.FloatProperty(name=strings.TOLERANCE_LABEL,
                                        default=const.TOLERANCE,
                                        min=0,
                                        precision=4,
                                        description=strings.ANN_TOLERANCE)
-
     verbose: bpy.props.BoolProperty(name=strings.VERBOSE_LABEL,
                                     default=const.VERBOSE,
                                     description=strings.ANN_VERBOSE)
+    vertexGroups: bpy.props.EnumProperty(name=strings.VERTEX_GROUPS_LABEL,
+                                         items=const.VERTEX_GROUPS,
+                                         default=1)
 
 
 # ----------------------------------------------------------------------
@@ -1971,8 +2054,8 @@ class SYMMETRYMAP_OT_createMap(bpy.types.Operator):
     """Operator class for creating the symmetry map.
     """
     bl_idname = "symmetrymap.create_map"
-    bl_label = "Create Map"
-    bl_description = "Create a new symmetry map"
+    bl_label = strings.CREATE_MAP_LABEL
+    bl_description = strings.DESCR_CREATE_MAP
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2008,8 +2091,8 @@ class SYMMETRYMAP_OT_deleteMap(bpy.types.Operator):
     """Operator class for deleting the symmetry map.
     """
     bl_idname = "symmetrymap.delete_map"
-    bl_label = "Delete Map"
-    bl_description = "Delete the symmetry map"
+    bl_label = strings.DELETE_MAP_LABEL
+    bl_description = strings.DESCR_DELETE_MAP
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2027,8 +2110,8 @@ class SYMMETRYMAP_OT_addToMap(bpy.types.Operator):
     """Operator class for adding one or more islands to the map.
     """
     bl_idname = "symmetrymap.add_to_map"
-    bl_label = "Add To Map"
-    bl_description = "Add a single island or island pair to the map"
+    bl_label = strings.ADD_TO_MAP_LABEL
+    bl_description = strings.DESCR_ADD_TO_MAP
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2064,8 +2147,8 @@ class SYMMETRYMAP_OT_addPartialToMap(bpy.types.Operator):
     """Operator class for adding partial symmetry to the map.
     """
     bl_idname = "symmetrymap.add_partial"
-    bl_label = "Add Partial Symmetry"
-    bl_description = "Add partial symmetry to the map"
+    bl_label = strings.ADD_PARTIAL_LABEL
+    bl_description = strings.DESCR_ADD_PARTIAL
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2100,8 +2183,8 @@ class SYMMETRYMAP_OT_selectMapped(bpy.types.Operator):
     """Operator class for selecting mapped vertices.
     """
     bl_idname = "symmetrymap.select_mapped"
-    bl_label = "Select Mapped"
-    bl_description = "Select mapped vertices"
+    bl_label = strings.SELECT_MAPPED_LABEL
+    bl_description = strings.DESCR_SELECT_MAPPED
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2119,8 +2202,8 @@ class SYMMETRYMAP_OT_selectUnmapped(bpy.types.Operator):
     """Operator class for selecting unmapped vertices.
     """
     bl_idname = "symmetrymap.select_unmapped"
-    bl_label = "Select Unmapped"
-    bl_description = "Select unmapped vertices"
+    bl_label = strings.SELECT_UNMAPPED_LABEL
+    bl_description = strings.DESCR_SELECT_UNMAPPED
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2138,8 +2221,8 @@ class SYMMETRYMAP_OT_selectSibling(bpy.types.Operator):
     """Operator class for selecting sibling vertices.
     """
     bl_idname = "symmetrymap.select_sibling"
-    bl_label = "Select Sibling"
-    bl_description = "Select sibling vertices based on the current selection"
+    bl_label = strings.SELECT_SIBLING_LABEL
+    bl_description = strings.DESCR_SELECT_SIBLING
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2157,8 +2240,8 @@ class SYMMETRYMAP_OT_selectNextSibling(bpy.types.Operator):
     """Operator class for selecting the next sibling pair.
     """
     bl_idname = "symmetrymap.select_next_sibling"
-    bl_label = "Select Next Sibling"
-    bl_description = "Select the next sibling pair"
+    bl_label = strings.SELECT_SIBLING_NEXT_LABEL
+    bl_description = strings.DESCR_SELECT_SIBLING_NEXT
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2176,8 +2259,8 @@ class SYMMETRYMAP_OT_selectPreviousSibling(bpy.types.Operator):
     """Operator class for selecting the previous sibling pair.
     """
     bl_idname = "symmetrymap.select_previous_sibling"
-    bl_label = "Select Previous Sibling"
-    bl_description = "Select the previous sibling pair"
+    bl_label = strings.SELECT_SIBLING_PREVIOUS_LABEL
+    bl_description = strings.DESCR_SELECT_SIBLING_PREVIOUS
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2195,8 +2278,8 @@ class SYMMETRYMAP_OT_clearSiblingIndex(bpy.types.Operator):
     """Operator class for selecting the next sibling pair.
     """
     bl_idname = "symmetrymap.clear_sibling_index"
-    bl_label = "Clear Index"
-    bl_description = "Clear the sibling start index"
+    bl_label = strings.CLEAR_INDEX_LABEL
+    bl_description = strings.DESCR_CLEAR_INDEX
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2215,8 +2298,8 @@ class SYMMETRYMAP_OT_mirrorWeights(bpy.types.Operator):
     """Operator class for mirroring vertex weights.
     """
     bl_idname = "symmetrymap.mirror_weights"
-    bl_label = "Mirror Weights"
-    bl_description = "Mirror the weights of all or only selected vertices"
+    bl_label = strings.MIRROR_WEIGHTS_LABEL
+    bl_description = strings.DESCR_MIRROR_WEIGHTS
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2232,9 +2315,10 @@ class SYMMETRYMAP_OT_mirrorWeights(bpy.types.Operator):
         direction = sm.direction
         maxGroups = sm.maxGroups
         normalize = sm.normalize
+        vertexGroups = sm.vertexGroups
 
         start = time.time()
-        info = mirrorWeights(context.object, axis, direction, maxGroups, normalize)
+        info = mirrorWeights(context.object, axis, direction, maxGroups, normalize, vertexGroups)
         duration = time.time() - start
 
         msg = strings.INFO_MIRROR_WEIGHTS_FINISHED
@@ -2250,8 +2334,8 @@ class SYMMETRYMAP_OT_symmetrizeMesh(bpy.types.Operator):
     """Operator class for making the mesh symmetrical.
     """
     bl_idname = "symmetrymap.symmetrize_mesh"
-    bl_label = "Symmetrize Mesh"
-    bl_description = "Make the mesh symmetrical by copying the point position from one side to the other"
+    bl_label = strings.SYMMETRIZE_LABEL
+    bl_description = strings.DESCR_SYMMETRIZE
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2283,8 +2367,8 @@ class SYMMETRYMAP_OT_flipMesh(bpy.types.Operator):
     """Operator class for flipping the mesh.
     """
     bl_idname = "symmetrymap.flip_mesh"
-    bl_label = "Flip Mesh"
-    bl_description = "Flip the mesh by exchanging the point positions between left and right"
+    bl_label = strings.FLIP_LABEL
+    bl_description = strings.DESCR_FLIP
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -2311,6 +2395,23 @@ class SYMMETRYMAP_OT_flipMesh(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SYMMETRYMAP_OT_setMetadata(bpy.types.Operator):
+    """Operator class for selecting mapped vertices.
+    """
+    bl_idname = "symmetrymap.set_metadata"
+    bl_label = strings.UPDATE_MAP_LABEL
+    bl_description = strings.DESCR_UPDATE_MAP
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        """Execute the operator.
+
+        :param context: The current context.
+        :type context: bpy.context
+        """
+        setMetadata(context.object)
+        return {'FINISHED'}
+
 # ----------------------------------------------------------------------
 # Panel
 # ----------------------------------------------------------------------
@@ -2318,7 +2419,7 @@ class SYMMETRYMAP_OT_flipMesh(bpy.types.Operator):
 class SYMMETRYMAP_PT_settings(bpy.types.Panel):
     """Panel class.
     """
-    bl_label = "Symmetry Map"
+    bl_label = strings.SYMMETRY_MAP_LABEL
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "data"
@@ -2342,17 +2443,29 @@ class SYMMETRYMAP_PT_settings(bpy.types.Panel):
         :param context: The current context.
         :type context: bpy.context
         """
-        sm = context.object.data.symmetry_map
-
-        info, icon, isValid = getMapInfo(context.object)
-
         layout = self.layout
 
         layout.use_property_split = True
         layout.use_property_decorate = False
 
+        # Convert the mapping information to meta data, introduced in
+        # 2.4.0.
+        # If a symmetry map exist but the meta property is missing the
+        # symmetry has been created in version 2.3.0 or earlier and
+        # needs to be converted.
+        if hasMapProperty(context.object) and not hasMetaProperty(context.object):
+            row = layout.row()
+            row.operator("symmetrymap.set_metadata", icon='FILE_REFRESH')
+            return
+
+        # Display the regular ui.
+
+        sm = context.object.data.symmetry_map
+
+        info, icon, isValid = getMapInfo(context.object)
+
         row = layout.row()
-        row.label(text="Mapping")
+        row.label(text=strings.MAPPING_LABEL)
 
         box = layout.box()
         col = box.column(align=True)
@@ -2375,18 +2488,23 @@ class SYMMETRYMAP_PT_settings(bpy.types.Panel):
         col.operator("symmetrymap.select_unmapped", icon='RESTRICT_SELECT_ON')
         col.operator("symmetrymap.select_sibling", icon='BACK')
         if prefs.getPreferences().extras and context.object.mode == 'EDIT':
-            col.label(text="Walk Siblings")
+            col.label(text=strings.WALK_SIBLINGS_LABEL)
             row = col.row()
-            row.operator("symmetrymap.select_previous_sibling", text="Previous", icon='TRIA_LEFT')
-            row.operator("symmetrymap.select_next_sibling", text="Next", icon='TRIA_RIGHT')
-            row.operator("symmetrymap.clear_sibling_index", text="Clear")
+            row.operator("symmetrymap.select_previous_sibling",
+                         text=strings.PREVIOUS_LABEL,
+                         icon='TRIA_LEFT')
+            row.operator("symmetrymap.select_next_sibling",
+                         text=strings.NEXT_LABEL,
+                         icon='TRIA_RIGHT')
+            row.operator("symmetrymap.clear_sibling_index",
+                         text=strings.CLEAR_LABEL)
         col.separator()
         col.operator("symmetrymap.delete_map", icon='TRASH')
         col.separator()
 
         if isValid:
             row = layout.row()
-            row.label(text="Mirroring")
+            row.label(text=strings.MIRRORING_LABEL)
 
             box = layout.box()
             col = box.column(align=True)
@@ -2394,6 +2512,7 @@ class SYMMETRYMAP_PT_settings(bpy.types.Panel):
             row.prop(sm, "direction", expand=True)
             col.prop(sm, "normalize")
             col.prop(sm, "maxGroups")
+            col.prop(sm, "vertexGroups")
             col.separator()
             col.operator("symmetrymap.mirror_weights", icon='MOD_MIRROR')
             col.separator()
@@ -2420,6 +2539,7 @@ classes = [SymmetryMap_Properties,
            SYMMETRYMAP_OT_mirrorWeights,
            SYMMETRYMAP_OT_symmetrizeMesh,
            SYMMETRYMAP_OT_flipMesh,
+           SYMMETRYMAP_OT_setMetadata,
            SYMMETRYMAP_PT_settings]
 
 
