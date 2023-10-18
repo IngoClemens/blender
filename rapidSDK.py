@@ -84,69 +84,72 @@ rapidSDK.execute()
 
 Changelog:
 
+0.11.0 - 2023-10-17
+       - Added compatibility with Blender 4.0.
+
 0.10.0 - 2023-04-23
-- Fixed that driving armature properties are not correctly respected
-    when updating a relationship.
+       - Fixed that driving armature properties are not correctly respected
+         when updating a relationship.
 
 0.9.0 - 2022-05-11
-- Added support for object modifiers.
-- Added a colored frame to clearly identify create or edit mode.
-- Improvements to object/bone selections in object mode.
-- Fixed that adding keys outside the defined range are created with
-    in-between curve handles.
-- Fixed that multiple recorded properties create the same number of
-    drivers per property.
-- Fixed that driver indices weren't correctly passed which leads to keys
-    not getting created.
+      - Added support for object modifiers.
+      - Added a colored frame to clearly identify create or edit mode.
+      - Improvements to object/bone selections in object mode.
+      - Fixed that adding keys outside the defined range are created with
+        in-between curve handles.
+      - Fixed that multiple recorded properties create the same number of
+        drivers per property.
+      - Fixed that driver indices weren't correctly passed which leads to keys
+        not getting created.
 
 0.8.1 - 2022-04-05
-- Fixed an issue with IDPropertyGroups.
+      - Fixed an issue with IDPropertyGroups.
 
 0.8.0 - 2022-04-05
-- Switched the stored objects to string representations because of a
-    bone related undo bug which invalidates the object data and leads to
-    a hard crash.
+      - Switched the stored objects to string representations because of a
+        bone related undo bug which invalidates the object data and leads to
+        a hard crash.
 
 0.7.0 - 2022-04-05
-- Improvement to the selection detection so that an object can be the
-    driver for a bone in object mode.
-- Fixed an error because custom string properties are not filtered.
-- Fixed that already driven shape keys are edited when creating new
-    drivers.
-- Fixed a typo regarding custom properties.
-- Fixed an issue where custom properties weren't able to be driven.
+      - Improvement to the selection detection so that an object can be the
+        driver for a bone in object mode.
+      - Fixed an error because custom string properties are not filtered.
+      - Fixed that already driven shape keys are edited when creating new
+        drivers.
+      - Fixed a typo regarding custom properties.
+      - Fixed an issue where custom properties weren't able to be driven.
 
 0.6.0 - 2022-03-31
-- Added an on-screen message which displays the names of the currently
-    affected objects in create mode.
-- The on-screen messages are now scaling correctly depending on the
-    pixel-size of the display.
-- Fixed that the driven object's properties are left muted when leaving
-    edit mode with nothing selected.
+      - Added an on-screen message which displays the names of the currently
+        affected objects in create mode.
+      - The on-screen messages are now scaling correctly depending on the
+        pixel-size of the display.
+      - Fixed that the driven object's properties are left muted when leaving
+        edit mode with nothing selected.
 
 0.5.1 - 2022-03-30
-- Fixed an issue where a wrong object/armature/bone selection combo
-    doesn't throw a warning.
-- Fixed that edit mode can be entered without any driven properties
-    present.
+      - Fixed an issue where a wrong object/armature/bone selection combo
+        doesn't throw a warning.
+      - Fixed that edit mode can be entered without any driven properties
+        present.
 
 0.5.0 - 2022-03-30
-- Added a separate preference setting for intermediate key handles.
-- Added a preference setting for choosing the position of the on-screen
-    message.
+      - Added a separate preference setting for intermediate key handles.
+      - Added a preference setting for choosing the position of the on-screen
+        message.
 
 0.4.0 - 2022-03-29
-- Added an on-screen message for create and edit mode.
-- Improved selection detection of hidden bones.
-- Possible bugfixes which can lead to random crashes (to be watched)
+      - Added an on-screen message for create and edit mode.
+      - Improved selection detection of hidden bones.
+      - Possible bugfixes which can lead to random crashes (to be watched)
 
 0.3.0 - 2022-03-29
-- Added shape keys on mesh and curve objects to be driven.
-- Added a menu item to the Object and Pose Animation submenu.
-- Added preferences for the extrapolation, tangent type and tolerance.
+      - Added shape keys on mesh and curve objects to be driven.
+      - Added a menu item to the Object and Pose Animation submenu.
+      - Added preferences for the extrapolation, tangent type and tolerance.
 
 0.2.0 - 2022-03-26
-- Redesign to allow multiple objects to be driven in creation mode.
+      - Redesign to allow multiple objects to be driven in creation mode.
 
 0.1.0 - 2022-03-24
 
@@ -155,7 +158,7 @@ Changelog:
 
 bl_info = {"name": "Rapid SDK",
            "author": "Ingo Clemens",
-           "version": (0, 10, 0),
+           "version": (0, 11, 0),
            "blender": (2, 93, 0),
            "category": "Animation",
            "location": "Main Menu > Object/Pose > Animation > Rapid SDK",
@@ -200,6 +203,12 @@ ANN_TOLERANCE = "The minimum difference a value needs to be captured as a driver
 ANN_MESSAGE_POSITION = "The position of the on-screen message when in create or edit mode"
 ANN_MESSAGE_COLOR = "Display color for the on-screen message when in create or edit mode (not gamma corrected)"
 ANN_BORDER_WIDTH = "The width of the colored frame when in create or edit mode."
+
+
+# Version specific vars.
+SHADER_TYPE = 'UNIFORM_COLOR'
+if bpy.app.version < (3, 4, 0):
+    SHADER_TYPE = '2D_UNIFORM_COLOR'
 
 
 def getViewSize():
@@ -265,7 +274,7 @@ class DrawInfo3D(object):
         # Draw the message in the center at the top or bottom of the
         # screen.
         blf.position(fontId, viewWidth / 2 - textWidth / 2, textPos, 0)
-        blf.size(fontId, int(fontSize), 72)
+        blf.size(fontId, int(fontSize))
         blf.color(fontId, color[0], color[1], color[2], 1.0)
         blf.draw(fontId, self.msg)
 
@@ -297,7 +306,7 @@ class DrawInfo3D(object):
                    (4, 7, 8), (4, 8, 9),
                    (7, 0, 10), (7, 10, 11))
 
-        shader = gpu.shader.from_builtin('2D_UNIFORM_COLOR')
+        shader = gpu.shader.from_builtin(SHADER_TYPE)
         batch = batch_for_shader(shader, 'TRIS', {"pos": vertices}, indices=indices)
         shader.bind()
         shader.uniform_float("color", (color[0], color[1], color[2], 1.0))
