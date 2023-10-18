@@ -122,7 +122,19 @@ def buildPanelClass(attributes):
 
 def register(area, name):
     """Register the tool panel.
+
+    :param area: The area string the panel should appear in.
+    :type area: str
+    :param name: The name of the panel.
+    :type name: str
     """
+    # Discard the mesh data properties location for the smooth panel
+    # which has been introduced in version 2.4 but doesn't work due to
+    # context restrictions.
+    # An invalid enum option results in the area being empty.
+    if not len(area):
+        area = "TOOLS"
+
     # Get the class attributes and set the name.
     attrs = const.PANEL_AREAS[area]
     attrs["bl_label"] = name

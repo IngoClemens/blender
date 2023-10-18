@@ -20,10 +20,9 @@ BRUSH_COLOR_LABEL = "ブラシの色"
 CLEAR_SELECTION_LABEL = "選択解除"
 CURRENT_MAX_GROUPS_LABEL = "現在の最大グループ"
 CURVE_LABEL = "カーブ"
-CURVE_NONE_LABEL = "なし"
 CURVE_LINEAR_LABEL = "線形"
 CURVE_NARROW_LABEL = "狭い"
-CURVE_NONE_LABEL
+CURVE_NONE_LABEL = "なし"
 DECREASE_VALUE_LABEL = "値を減少"
 DESELECT_LABEL = "非選択"
 EXTRAS_LABEL = "追加ツールを表示"
@@ -92,7 +91,7 @@ PIE_SAMPLES_DECREASE_LABEL = "オーバーサンプリング減少"
 PIE_SAMPLES_INCREASE_LABEL = "オーバーサンプリング増加"
 
 # Preferences
-LANGUAGE_LABEL = "言語"
+LANGUAGE_LABEL = "言語（再起動が必要）"
 PANEL_LOCATION_PROPERTIES_LABEL = "メッシュプロパティ"
 PANEL_LOCATION_TAB_LABEL = "サイドパネル > ウェイト平滑"
 PANEL_LOCATION_TOOL_LABEL = "サイドパネル > ツール"
@@ -262,6 +261,7 @@ ERROR_TRAVERSE_COUNT = "頂点をトラバースする間に面の数が異な�
 ERROR_PASS_COUNT_MISMATCH = "マッピングに失敗しました。パスの頂点数が異なります。頂点数："
 ERROR_VERTEX_COUNT_MISMATCH = "頂点数が一致しません"
 
+WARNING_ACTIVE_MODIFIERS = "頂点数に影響を与えるアクティブな修飾子がある場合、ウェイトをスムージングできません"
 WARNING_EDGE_NOT_CONNECTED = "対称性エッジはいかなる面にも接続されていません"
 WARNING_EDGE_NEEDS_TWO_FACES = "対称性エッジは2つの面に接続する必要があります"
 WARNING_NO_EDGE_SELECTION = "対称性マッピングのための有効なエッジ選択が見つかりませんでした"

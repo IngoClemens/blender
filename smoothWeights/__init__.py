@@ -19,12 +19,12 @@ Copyright (C) 2023, Ingo Clemens, brave rabbit, www.braverabbit.com
     If not, see <https://www.gnu.org/licenses/>.
 """
 
-from . import panel, pies, preferences, smoothWeights, symmetryMap
+from . import preferences, panel, pies, smoothWeights, symmetryMap
 
 
 bl_info = {"name": "Smooth Weights",
            "author": "Ingo Clemens, braverabbit.com",
-           "version": (2, 4, 0),
+           "version": (2, 5, 0),
            "blender": (3, 6, 0),
            "category": "Rigging",
            "location": "View3D > Object",

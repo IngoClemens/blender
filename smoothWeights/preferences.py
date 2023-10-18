@@ -15,10 +15,6 @@ LOCAL_PATH = os.path.dirname(__file__)
 CONFIG_PATH = os.path.join(LOCAL_PATH, const.CONFIG_NAME)
 
 
-# Get the current language.
-strings = language.getLanguage()
-
-
 # ----------------------------------------------------------------------
 # Configuration
 # ----------------------------------------------------------------------
@@ -89,11 +85,8 @@ def jsonWrite(filePath, data):
     return False
 
 
-def updateConfiguration(self, context):
-    """Property callback for updating the current configuration.
-
-    :param context: The current context.
-    :type context: bpy.context
+def updateConfig():
+    """Update the current configuration.
     """
     props = {"language": "language",
              "extras": "extras",
@@ -131,14 +124,12 @@ def updateConfiguration(self, context):
             "volume_key": "volume",
             "volumeRange_key": "volumeRange"}
 
-    const.PIE_AREAS
-
     prefs = getPreferences()
     config = {}
 
     # Get all regular properties.
     for prop in props:
-        data  = getattr(prefs, prop)
+        data = getattr(prefs, prop)
         # Convert the colors to a list.
         if isinstance(data, mathutils.Color):
             data = [i for i in data]
@@ -162,9 +153,18 @@ def updateConfiguration(self, context):
     writeConfig(config)
 
 
+config = readConfig()
+language.LANGUAGE = config["language"]
+
+
 # ----------------------------------------------------------------------
 # Preferences
 # ----------------------------------------------------------------------
+
+
+# Get the current language.
+strings = language.getLanguage()
+
 
 def getPreferences():
     """Return the preferences of the add-on.
@@ -176,16 +176,13 @@ def getPreferences():
     return prefs
 
 
-def updateLanguageCallback(self, context):
-    """Property callback for changing the active language.
+def updateConfiguration(self, context):
+    """Property callback for updating the current configuration.
 
     :param context: The current context.
     :type context: bpy.context
     """
-    updateConfiguration(self, context)
-    language.reloadDependencies()
-    # Reload the add-on.
-    bpy.ops.script.reload()
+    updateConfig()
 
 
 def updatePanelLocationCallback(self, context):
@@ -197,7 +194,7 @@ def updatePanelLocationCallback(self, context):
     :param context: The current context.
     :type context: bpy.context
     """
-    updateConfiguration(self, context)
+    updateConfig()
     updatePanelLocation()
 
 
@@ -223,6 +220,12 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
     keymap = config["keymap"]
     pieItems = config["smoothPie"]
 
+    # Discard the mesh data properties location for the smooth panel
+    # which has been introduced in version 2.4 but doesn't work due to
+    # context restrictions.
+    if config["panelLocation"] == "PROPERTIES":
+        config["panelLocation"] = "TOOLS"
+
     extras: bpy.props.BoolProperty(name=strings.EXTRAS_LABEL,
                                    description=strings.ANN_EXTRAS,
                                    default=config["extras"],
@@ -245,7 +248,7 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
                                      items=language.LANGUAGE_ITEMS,
                                      description=strings.ANN_LANGUAGE,
                                      default=config["language"],
-                                     update=updateLanguageCallback)
+                                     update=updateConfiguration)
     panel_location: bpy.props.EnumProperty(name=strings.PANEL_LOCATION_LABEL,
                                            items=const.PANEL_LOCATION_ITEMS,
                                            description=strings.ANN_PANEL_LOCATION,
@@ -375,31 +378,31 @@ class SMOOTHWEIGHTSPreferences(bpy.types.AddonPreferences):
 
     pie_north: bpy.props.EnumProperty(name=strings.PIE_NORTH_LABEL,
                                       items=const.PIE_ENUMS,
-                                      default=const.PIE_ITEMS[3],
+                                      default=const.PIE_ITEMS[5],
                                       update=updateConfiguration)
     pie_north_east: bpy.props.EnumProperty(name=strings.PIE_NORTH_EAST_LABEL,
                                       items=const.PIE_ENUMS,
-                                      default=const.PIE_ITEMS[5],
+                                      default=const.PIE_ITEMS[1],
                                       update=updateConfiguration)
     pie_east: bpy.props.EnumProperty(name=strings.PIE_EAST_LABEL,
                                       items=const.PIE_ENUMS,
-                                      default=const.PIE_ITEMS[1],
+                                      default=const.PIE_ITEMS[3],
                                       update=updateConfiguration)
     pie_south_east: bpy.props.EnumProperty(name=strings.PIE_SOUTH_EAST_LABEL,
                                       items=const.PIE_ENUMS,
-                                      default=const.PIE_ITEMS[7],
+                                      default=const.PIE_ITEMS[2],
                                       update=updateConfiguration)
     pie_south: bpy.props.EnumProperty(name=strings.PIE_SOUTH_LABEL,
                                       items=const.PIE_ENUMS,
-                                      default=const.PIE_ITEMS[2],
+                                      default=const.PIE_ITEMS[7],
                                       update=updateConfiguration)
     pie_south_west: bpy.props.EnumProperty(name=strings.PIE_SOUTH_WEST_LABEL,
                                       items=const.PIE_ENUMS,
-                                      default=const.PIE_ITEMS[6],
+                                      default=const.PIE_ITEMS[0],
                                       update=updateConfiguration)
     pie_west: bpy.props.EnumProperty(name=strings.PIE_WEST_LABEL,
                                       items=const.PIE_ENUMS,
-                                      default=const.PIE_ITEMS[0],
+                                      default=const.PIE_ITEMS[6],
                                       update=updateConfiguration)
     pie_north_west: bpy.props.EnumProperty(name=strings.PIE_NORTH_WEST_LABEL,
                                       items=const.PIE_ENUMS,
@@ -507,6 +510,13 @@ def register():
     """
     for cls in classes:
         bpy.utils.register_class(cls)
+
+    # Discard the mesh data properties location for the smooth panel
+    # which has been introduced in version 2.4 but doesn't work due to
+    # context restrictions.
+    if not len(getPreferences().panel_location):
+        getPreferences().panel_location = "TOOLS"
+        updateConfig()
 
 
 def unregister():

@@ -24,8 +24,7 @@ WALK_PROPERTY_NAME = "br_walk_sibling_index"
 # Preferences
 PANEL_LOCATIONS = ["TOOLS", "TAB", "PROPERTIES"]
 PANEL_LOCATION_ITEMS = (("TOOLS", strings.PANEL_LOCATION_TOOL_LABEL, ""),
-                        ("TAB", strings.PANEL_LOCATION_TAB_LABEL, ""),
-                        ("PROPERTIES", strings.PANEL_LOCATION_PROPERTIES_LABEL, ""))
+                        ("TAB", strings.PANEL_LOCATION_TAB_LABEL, ""))
 PANEL_AREAS = {"TOOLS": {"bl_label": "",
                          "bl_space_type": 'VIEW_3D',
                          "bl_region_type": 'UI',
@@ -33,11 +32,7 @@ PANEL_AREAS = {"TOOLS": {"bl_label": "",
                "TAB": {"bl_label": "",
                        "bl_space_type": 'VIEW_3D',
                        "bl_region_type": 'UI',
-                       "bl_category": ""},
-               "PROPERTIES": {"bl_label": "",
-                              "bl_space_type": 'PROPERTIES',
-                              "bl_region_type": 'WINDOW',
-                              "bl_context": "data"}}
+                       "bl_category": ""}}
 PIE_AREAS = ["pie_west", "pie_east", "pie_south", "pie_north",
              "pie_north_west", "pie_north_east", "pie_south_west", "pie_south_east"]
 PIE_ITEMS = ["IGNORE_BACKSIDE",

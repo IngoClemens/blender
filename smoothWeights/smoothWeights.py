@@ -19,6 +19,11 @@ import time
 # Get the current language.
 strings = language.getLanguage()
 
+# Version specific vars.
+SHADER_TYPE = 'UNIFORM_COLOR'
+if bpy.app.version < (3, 4, 0):
+    SHADER_TYPE = '3D_UNIFORM_COLOR'
+
 
 # ----------------------------------------------------------------------
 # Drawing
@@ -129,7 +134,7 @@ class DrawInfo3D(object):
         # Duplicate the first point to close the circle.
         circlePoints.append(circlePoints[0])
 
-        shader = gpu.shader.from_builtin('3D_UNIFORM_COLOR')
+        shader = gpu.shader.from_builtin(SHADER_TYPE)
         batch = batch_for_shader(shader, 'LINE_STRIP', {"pos": circlePoints})
         shader.bind()
         shader.uniform_float("color", (color[0], color[1], color[2], 1.0))
@@ -396,7 +401,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
     strength = const.STRENGTH
     useSelection = const.USE_SELECTION
     useSymmetry = const.USE_SYMMETRY
-    vertexGroups = 1
+    vertexGroups = "DEFORM"
     volume = const.VOLUME
     volumeRange = const.VOLUME_RANGE
 
@@ -460,12 +465,19 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         :param event: The current event.
         :type event: bpy.types.Event
         """
-        self.isModal = True
-        self.getKeymaps()
-
         if not context.object:
             self.report({'WARNING'}, strings.WARNING_NO_OBJECT)
             return self.cancel(context)
+
+        # Initialize the skin mesh.
+        self.Mesh = Mesh()
+        if not self.Mesh.setup(obj=context.object, allowModifiers=False):
+            self.Mesh.reset()
+            self.report({'WARNING'}, strings.WARNING_ACTIVE_MODIFIERS)
+            return {'FINISHED'}
+
+        self.isModal = True
+        self.getKeymaps()
 
         context.window.cursor_set("PAINT_CROSS")
         context.window_manager.modal_handler_add(self)
@@ -488,10 +500,6 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         self.vertexGroups = context.object.smooth_weights.vertexGroups
         self.volume = context.object.smooth_weights.volume
         self.volumeRange = context.object.smooth_weights.volumeRange
-
-        # Initialize the skin mesh.
-        self.Mesh = meshClass
-        self.Mesh.setup(context.object)
 
         # Transfer the current selection to the selection color.
         self.Mesh.setSelection(self.Mesh.selectedVertices)
@@ -519,7 +527,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         self.isModal = False
 
         # Reset the weights and selection.
-        if context.object:
+        if context.object and self.Mesh is not None:
             # Reset the weights.
             # Process only the weights which have been smoothed.
             self.Mesh.revertWeights()
@@ -537,13 +545,15 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         """
         self.isModal = False
 
-        # Remove the selection colors.
-        self.Mesh.deleteColorAttribute()
+        if self.Mesh is not None:
+            # Remove the selection colors.
+            self.Mesh.deleteColorAttribute()
 
-        # Reset the selection modes.
-        self.setSelectionMode(context, active=False)
+            # Reset the selection modes.
+            self.setSelectionMode(context, active=False)
 
-        self.Mesh.reset()
+            self.Mesh.reset()
+            self.Mesh = None
 
         self.isDragging = False
         context.workspace.status_text_set(None)
@@ -560,8 +570,10 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         :param event: The current event.
         :type event: bpy.types.Event
         """
-        select = context.object.smooth_weights.select
-        deselect = context.object.smooth_weights.deselect
+        smooth_weights = context.object.smooth_weights
+
+        select = smooth_weights.select
+        deselect = smooth_weights.deselect
 
         # --------------------------------------------------------------
         # Smooth and Selection
@@ -578,6 +590,13 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
                     bpy.ops.object.mode_set(mode='OBJECT')
                 # Make sure the color attribute is current.
                 self.Mesh.updateColorAttribute()
+
+                if smooth_weights.vertexGroups != self.vertexGroups:
+                    # Update the list with vertex group indices which
+                    # don't belong to the given vertex group type.
+                    self.Mesh.setUnaffectedGroupIndices()
+                    self.vertexGroups = smooth_weights.vertexGroups
+
                 # Update the keymaps.
                 self.getKeymaps()
                 # Init the undo list.
@@ -673,8 +692,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Affect selected
         if event.type == self.affectSelected_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.affectSelected
-            context.object.smooth_weights.affectSelected = value
+            value = not smooth_weights.affectSelected
+            smooth_weights.affectSelected = value
             self.affectSelected = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -682,8 +701,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Use selection
         if event.type == self.useSelection_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.useSelection
-            context.object.smooth_weights.useSelection = value
+            value = not smooth_weights.useSelection
+            smooth_weights.useSelection = value
             self.useSelection = value
             if value:
                 self.setSelectionMode(context, active=True)
@@ -696,7 +715,7 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         # Curve
         if event.type in ['ONE', 'TWO', 'THREE', 'FOUR'] and event.value == 'PRESS':
             values = {'ONE': 'NONE', 'TWO': 'LINEAR', 'THREE': 'SMOOTH', 'FOUR': 'NARROW'}
-            context.object.smooth_weights.curve = values[event.type]
+            smooth_weights.curve = values[event.type]
             self.curve = values[event.type]
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -704,8 +723,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Ignore backside
         if event.type == self.ignoreBackside_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.ignoreBackside
-            context.object.smooth_weights.ignoreBackside = value
+            value = not smooth_weights.ignoreBackside
+            smooth_weights.ignoreBackside = value
             self.ignoreBackside = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -713,8 +732,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Ignore lock
         if event.type == self.ignoreLock_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.ignoreLock
-            context.object.smooth_weights.ignoreLock = value
+            value = not smooth_weights.ignoreLock
+            smooth_weights.ignoreLock = value
             self.ignoreLock = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -728,8 +747,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Volume
         if event.type == self.volume_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.volume
-            context.object.smooth_weights.volume = value
+            value = not smooth_weights.volume
+            smooth_weights.volume = value
             self.volume = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -737,8 +756,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Use islands
         if event.type == self.islands_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.islands
-            context.object.smooth_weights.islands = value
+            value = not smooth_weights.islands
+            smooth_weights.islands = value
             self.islands = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -746,8 +765,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Normalize
         if event.type == self.normalize_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.normalize
-            context.object.smooth_weights.normalize = value
+            value = not smooth_weights.normalize
+            smooth_weights.normalize = value
             self.normalize = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -761,17 +780,17 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
                 self.setMaxGroups = False
 
         if event.type == self.value_up_key and event.value == 'PRESS' and self.setMaxGroups:
-            value = context.object.smooth_weights.maxGroups + 1
-            context.object.smooth_weights.maxGroups = value
+            value = smooth_weights.maxGroups + 1
+            smooth_weights.maxGroups = value
             self.maxGroups = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
 
         if event.type == self.value_down_key and event.value == 'PRESS' and self.setMaxGroups:
-            value = context.object.smooth_weights.maxGroups - 1
+            value = smooth_weights.maxGroups - 1
             value = value if value >= 0 else 0
-            context.object.smooth_weights.maxGroups = value
+            smooth_weights.maxGroups = value
             self.maxGroups = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -788,21 +807,19 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
                 self.setVertexGroups = False
 
         if event.type == self.value_up_key and event.value == 'PRESS' and self.setVertexGroups:
-            value = const.VERTEX_GROUPS_ITEMS.index(context.object.smooth_weights.vertexGroups) + 1
+            value = const.VERTEX_GROUPS_ITEMS.index(smooth_weights.vertexGroups) + 1
             value = value % 3
-            context.object.smooth_weights.vertexGroups = const.VERTEX_GROUPS_ITEMS[value]
+            smooth_weights.vertexGroups = const.VERTEX_GROUPS_ITEMS[value]
             self.vertexGroups = const.VERTEX_GROUPS_ITEMS[value]
-            self.Mesh.setUnaffectedGroupIndices()
             drawInfo3d.updateView()
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
 
         if event.type == self.value_down_key and event.value == 'PRESS' and self.setVertexGroups:
-            value = const.VERTEX_GROUPS_ITEMS.index(context.object.smooth_weights.vertexGroups) - 1
+            value = const.VERTEX_GROUPS_ITEMS.index(smooth_weights.vertexGroups) - 1
             value = value % 3
-            context.object.smooth_weights.vertexGroups = const.VERTEX_GROUPS_ITEMS[value]
+            smooth_weights.vertexGroups = const.VERTEX_GROUPS_ITEMS[value]
             self.vertexGroups = const.VERTEX_GROUPS_ITEMS[value]
-            self.Mesh.setUnaffectedGroupIndices()
             drawInfo3d.updateView()
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
@@ -812,8 +829,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Blend vertex groups
         if event.type == self.blend_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.blend
-            context.object.smooth_weights.blend = value
+            value = not smooth_weights.blend
+            smooth_weights.blend = value
             self.blend = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -827,18 +844,18 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
                 self.setOversampling = False
 
         if event.type == self.value_up_key and event.value == 'PRESS' and self.setOversampling:
-            value = context.object.smooth_weights.oversampling + 1
-            context.object.smooth_weights.oversampling = value
+            value = smooth_weights.oversampling + 1
+            smooth_weights.oversampling = value
             self.oversampling = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
 
         if event.type == self.value_down_key and event.value == 'PRESS' and self.setOversampling:
-            value = context.object.smooth_weights.oversampling - 1
+            value = smooth_weights.oversampling - 1
             if value < 1:
                 value = 1
-            context.object.smooth_weights.oversampling = value
+            smooth_weights.oversampling = value
             self.oversampling = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -860,16 +877,16 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
         # Selection
         if event.type == self.select_key and event.value == 'PRESS':
             bpy.ops.object.mode_set(mode='OBJECT')
-            context.object.smooth_weights.select = not context.object.smooth_weights.select
-            context.object.smooth_weights.deselect = False
+            smooth_weights.select = not smooth_weights.select
+            smooth_weights.deselect = False
             drawInfo3d.updateView()
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
 
         if event.type == self.deselect_key and event.value == 'PRESS':
             bpy.ops.object.mode_set(mode='OBJECT')
-            context.object.smooth_weights.deselect = not context.object.smooth_weights.deselect
-            context.object.smooth_weights.select = False
+            smooth_weights.deselect = not smooth_weights.deselect
+            smooth_weights.select = False
             drawInfo3d.updateView()
             context.area.tag_redraw()
             return {'RUNNING_MODAL'}
@@ -880,8 +897,8 @@ class SMOOTHWEIGHTS_OT_Paint(bpy.types.Operator):
 
         # Use symmetry
         if event.type == self.useSymmetry_key and event.value == 'PRESS':
-            value = not context.object.smooth_weights.useSymmetry
-            context.object.smooth_weights.useSymmetry = value
+            value = not smooth_weights.useSymmetry
+            smooth_weights.useSymmetry = value
             self.useSymmetry = value
             drawInfo3d.updateView()
             context.area.tag_redraw()
@@ -1341,8 +1358,8 @@ class SMOOTHWEIGHTS_OT_Flood(bpy.types.Operator):
             self.setSettings(context)
 
         # Initialize the skin mesh.
-        self.Mesh = meshClass
-        self.Mesh.setup(context.object)
+        self.Mesh = Mesh()
+        self.Mesh.setup(obj=context.object, allowModifiers=True)
 
         start = time.time()
         self.Mesh.floodSmooth(useSelection=self.useSelection,
@@ -1583,11 +1600,19 @@ class Mesh(object):
         self.kdLocal = None
         self.kdDeformed = None
 
-    def setup(self, obj):
+    def setup(self, obj, allowModifiers=True):
         """Prepare the mesh for smoothing.
 
         :param obj: The mesh object.
         :type obj: bpy.types.Object
+        :param allowModifiers: True, if topology-changing modifiers are
+                               allowed. For interactive paint mode this
+                               needs to be False.
+        :type allowModifiers: bool
+
+        :return: True, if the setup was successful. False, if the
+                 deformed points count doesn't match the base mesh.
+        :rtype: bool
         """
         # Set the object mode.
         # If the object is in edit mode the depsgraph evaluation will
@@ -1610,6 +1635,11 @@ class Mesh(object):
         # The tool settings.
         self.props = self.obj.smooth_weights
 
+        # Get the deformed positions.
+        self.getDeformedPointPositions(allowModifiers=allowModifiers)
+        if not allowModifiers and not len(self.pointsDeformed):
+            return False
+
         # Get the current selection.
         self.getCurrentSelection()
 
@@ -1617,9 +1647,6 @@ class Mesh(object):
         self.selectionColors = self.getColorAttribute()
         # Store the color identifiers.
         self.setColorIdentifier()
-
-        # Get the deformed positions.
-        self.getDeformedPointPositions()
 
         # Get the group indices which don't match the current filter
         # mode.
@@ -1632,6 +1659,8 @@ class Mesh(object):
 
         self.kdLocal = self.kdTree()
         self.kdDeformed = self.kdTree(local=False)
+
+        return True
 
     def reset(self):
         """Free the bmesh memory.
@@ -1663,8 +1692,22 @@ class Mesh(object):
             verts.append(edge.other_vert(vertex).index)
         return verts
 
-    def getDeformedPointPositions(self):
+    def getDeformedPointPositions(self, allowModifiers=True):
         """Get the deformed positions.
+
+        During mesh setup this is also used to determine if the vertex
+        count is different between the base mesh and the evaluated mesh
+        including modifiers.
+        If a modifier is active which affects the vertex count the brush
+        won't be able to find the correct indices in relation to the
+        base mesh.
+        In this case the list of deformed points will be empty to
+        indicate that topology related modifiers are active.
+
+        :param allowModifiers: True, if topology-changing modifiers are
+                               allowed. For interactive paint mode this
+                               needs to be False.
+        :type allowModifiers: bool
         """
         # Store the current mode.
         mode = self.obj.mode
@@ -1672,7 +1715,7 @@ class Mesh(object):
         # If the object is in edit mode the depsgraph evaluation will
         # fail and cause a crash.
         bpy.ops.object.mode_set(mode='OBJECT')
-        self.pointsDeformed = self.deformedPointPositions()
+        self.pointsDeformed = self.deformedPointPositions(allowModifiers=allowModifiers)
         # Reset the object's mode.
         bpy.ops.object.mode_set(mode=mode)
 
@@ -1698,16 +1741,31 @@ class Mesh(object):
                 indices.append(vert.index)
         return indices
 
-    def deformedPointPositions(self):
+    def deformedPointPositions(self, allowModifiers=True):
         """Return a list with the deformed point positions rather than
         the local coordinates, by evaluating the despgraph.
+
+        :param allowModifiers: True, if topology-changing modifiers are
+                               allowed. For interactive paint mode this
+                               needs to be False.
+        :type allowModifiers: bool
 
         :return: A list with the deformed point positions.
         :rtype: list(Vector)
         """
+        # Get the number of vertices for matching against the deformed
+        # points count.
+        vtxCount = self.numVertices()
+
         points = []
         depsgraph = bpy.context.evaluated_depsgraph_get()
         objEval = self.obj.evaluated_get(depsgraph)
+
+        # If the vertex count doesn't match return an empty list.
+        if not allowModifiers and vtxCount != len(objEval.data.vertices):
+            depsgraph.update()
+            return points
+
         for i, vert in enumerate(self.bm.verts):
             pos = self.mat @ objEval.data.vertices[i].co.copy()
             points.append(pos)
@@ -2272,7 +2330,6 @@ class Mesh(object):
             connectedGroups.add(groupId)
         # Add all group indices of all connected vertices.
         for c in range(numConnected):
-            validGroupsCount = 0
             for groupId in self.weightList[connected[c]]:
                 connectedGroups.add(groupId)
 
@@ -2281,7 +2338,7 @@ class Mesh(object):
                 if groupId == self.weightObj.numGroups:
                     continue
 
-                # When the filter mode 'OTHER' is active smoothing
+                # When the filter mode 'OTHER' is active, smoothing
                 # should be limited to non-deforming vertex groups only.
                 # Because in this case it's possible that connected
                 # vertices are not part of any non-deforming groups.
@@ -2292,8 +2349,8 @@ class Mesh(object):
                 # referencing:
                 # - If the connected vertex group is part of the group
                 #   indices which are included in the smoothing.
-                # - If the connected vertex group also influences the
-                #   current vertex.
+                # - If the connected vertex group is also influencing
+                #   the current vertex.
                 # If the number of participating vertex groups matches
                 # the number of groups the vertex is not assigned to
                 # exclude it from the smoothing process.
@@ -2302,30 +2359,29 @@ class Mesh(object):
                 if self.props.vertexGroups == "OTHER":
                     if groupId not in skipIndices:
                         includedCount += 1
-                        validGroupsCount += 1
                         if groupId not in self.weightList[index]:
                             unassignedCount += 1
 
             # When smoothing 'OTHER' vertex groups, vertices on the edge
             # of a vertex group may need to get blended.
             # The connected vertices outside the group may not have any
-            # group assignment or are assigned to deforming groups.
+            # group assignment or are not assigned to deforming groups.
             # In this case there are no groups affected by smoothing.
-            # In order to be able to blend values some other value needs
-            # to exist. This is accomplished by creating a virtual or
+            # To be able to blend values some other value needs to
+            # exist. This is accomplished by creating a virtual or
             # temporary group with an index matching the number of
             # groups. This extra group is used during the entire
             # smoothing process but ignored when setting any weight
             # values.
-            if self.props.blend and self.props.vertexGroups == "OTHER" and validGroupsCount == 0:
+            if self.props.blend and self.props.vertexGroups == "OTHER":
                 # Add the temporary group to the list of groups to be
                 # processed.
                 connectedGroups.add(self.weightObj.numGroups)
                 # If the temporary group isn't already included in the
                 # weight list of the connected vertex, add the group and
-                # set it's weight to 1.
+                # set it's weight to the remainder of the weight sum.
                 if not self.weightObj.numGroups in self.weightList[connected[c]]:
-                    self.weightList[connected[c]][self.weightObj.numGroups] = 1.0
+                    self.addOffBorderWeight(connected[c], skipIndices)
 
         if self.props.vertexGroups == "OTHER" and unassignedCount == includedCount:
             # Copy the original weights to the smoothed weights
@@ -2336,6 +2392,25 @@ class Mesh(object):
             if not self.props.islands and indexBound is not None:
                 smoothed[indexBound] = self.weightList[index]
             return
+
+        # When blending the border of non-deforming groups the weight
+        # list is missing the temporary group for correctly normalizing
+        # the weights before applying.
+        # As a result, the blending would snap back and start over for
+        # all weights that already have been smoothed during a
+        # previously executed stroke.
+        # To be able to continue smoothing the temporary group weight
+        # needs to be reconstructed from the existing weight values.
+        # This is only necessary for the first evaluation sample when
+        # the temporary group index is not yet included in the weight
+        # list.
+        # This means, that the temporary group has been included in the
+        # connected groups but is not yet contained in the weight list.
+        if (self.props.blend and
+                self.props.vertexGroups == "OTHER" and
+                self.weightObj.numGroups in connectedGroups and
+                self.weightObj.numGroups not in self.weightList[index]):
+            self.addOffBorderWeight(index, skipIndices)
 
         # --------------------------------------------------------------
         # Weight calculation
@@ -2519,6 +2594,24 @@ class Mesh(object):
             if orderMap[index] != -1:
                 return orderMap[index]
 
+    def addOffBorderWeight(self, index, skipIndices=[]):
+        """Add the weight value for the virtual vertex group based on
+        the existing weights.
+
+        The weight list for the given index will be mutated.
+
+        :param index: The index of the vertex.
+        :type index: int
+        :param skipIndices: The list of group indices which should not
+                            be considered.
+        :type skipIndices: list(int)
+        """
+        total = sum(value for key, value in self.weightList[index].items() if key not in skipIndices)
+
+        if self.props.normalize:
+            self.weightList[index][self.weightObj.numGroups] = 1.0 - total
+
+
     # ------------------------------------------------------------------
     # Selection
     # ------------------------------------------------------------------
@@ -2687,16 +2780,6 @@ class Mesh(object):
                 self.colorIndex = c
 
 
-# Pre-defined class instance necessary to make the pie operator for
-# vertex groups work.
-# When setting the vertex groups type from the keymap the change is
-# directly connected to the Mesh class instance. But when applying
-# changes through the pie menu the Mesh class instance is not involved.
-# Therefore, a general class instance is stablished which can be used by
-# the paint and flood operators as well as the pie menu operators.
-meshClass = Mesh()
-
-
 # ----------------------------------------------------------------------
 # Utilities
 # ----------------------------------------------------------------------
@@ -2737,16 +2820,6 @@ def getFalloffValue(value, curve):
 # ----------------------------------------------------------------------
 # Properties
 # ----------------------------------------------------------------------
-
-def updateVertexGroupsCallback(self, context):
-    """
-    """
-    Mesh = meshClass
-    # The class is in use if the object is set.
-    if Mesh.obj is not None:
-        # Update the list of affected groups.
-        meshClass.setUnaffectedGroupIndices()
-
 
 class SmoothWeights_Properties(bpy.types.PropertyGroup):
     """Property group class to make the properties globally available.
@@ -2803,8 +2876,7 @@ class SmoothWeights_Properties(bpy.types.PropertyGroup):
     vertexGroups: bpy.props.EnumProperty(name=strings.VERTEX_GROUPS_LABEL,
                                          items=const.VERTEX_GROUPS,
                                          default=1,
-                                         description=strings.ANN_VERTEX_GROUPS,
-                                         update=updateVertexGroupsCallback)
+                                         description=strings.ANN_VERTEX_GROUPS)
     volume: bpy.props.BoolProperty(name=strings.VOLUME_LABEL,
                                    default=const.VOLUME,
                                    description=strings.ANN_VOLUME)

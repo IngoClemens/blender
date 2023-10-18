@@ -377,3 +377,20 @@ def getUnaffectedGroupIndices(obj, vertexGroups="DEFORM"):
         # Filtering leaves only the indices which should not be
         # affected.
         return filterDeformGroupIndices(obj, deform=not deform)
+
+
+def hasActiveSubdiv(obj):
+    """Return, if the given object has a subdivision modifier which is
+    active in the viewport.
+
+    :param obj: The mesh object.
+    :type obj: bpy.types.Object
+
+    :return: True, if the object has an active subdivision modifier.
+    :rtype: bool
+    """
+    for mod in obj.modifiers:
+        if mod.type == 'SUBSURF':
+            if mod.show_viewport:
+                return True
+    return False

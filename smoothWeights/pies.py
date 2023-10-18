@@ -112,7 +112,7 @@ def addVertexGroups(context, pie, *args):
     row = col.row()
     row.label(text=strings.VERTEX_GROUPS_LABEL)
     row.operator(SMOOTHWEIGHTS_OT_pieDecreaseGroup.bl_idname, text="", icon='REMOVE')
-    row.label(text="  {}".format(sw.maxGroups))
+    row.label(text="   {}".format(sw.maxGroups))
     row.operator(SMOOTHWEIGHTS_OT_pieIncreaseGroup.bl_idname, text="", icon='ADD')
     row = col.row()
     row.prop(sw, "vertexGroups", expand=True)

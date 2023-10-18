@@ -1,3 +1,18 @@
+2.5.0 - 2023-10-17
+      - Added compatibility with Blender 4.0.
+      - Improved smoothing of non-deformer groups for strokes after
+        finishing the previous stroke.
+      - Added a notification for meshes which include modifiers
+        affecting the vertex count.
+      - Changed the default order of pie menu items.
+      - Removed the mesh properties panel location option because of
+        context restrictions. The obsolete option is reset to 'Tool'.
+        Please adjust the preference setting accordingly to avoid a
+        warning message because of invalid settings.
+      - Fixed a memory issue related to switching the affected vertex
+        group type.
+      - Language file fixes.
+
 2.4.0 - 2023-10-05
       - Added vertex group types to smooth either all, only deforming or
         only non-deforming vertex groups.
