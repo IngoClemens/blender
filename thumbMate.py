@@ -61,6 +61,10 @@ frame padding.
 
 Changelog:
 
+0.3.1 - 2023-10-18
+      - Fixed a context issue when rendering the selection collection
+        which is not already marked as an asset.
+
 0.3.0 - 2023-10-17
       - Added compatibility with Blender 4.0.
 
@@ -75,7 +79,7 @@ Changelog:
 
 bl_info = {"name": "Thumb Mate",
            "author": "Ingo Clemens",
-           "version": (0, 3, 0),
+           "version": (0, 3, 1),
            "blender": (3, 0, 0),
            "category": "Import-Export",
            "location": "Asset Browser",
@@ -582,12 +586,18 @@ def renderPreviews(objects, imagePath):
 
             setSelection([obj])
 
-            override['id'] = obj
-            thumbFile = ".".join((os.path.join(imagePath, obj.name), "png"))
-            if bpy.app.version < (4, 0, 0):
-                bpy.ops.ed.lib_id_load_custom_preview(override, filepath=thumbFile)
-            else:
-                bpy.ops.ed.lib_id_load_custom_preview(filepath=thumbFile)
+            try:
+                override['id'] = obj
+                thumbFile = ".".join((os.path.join(imagePath, obj.name), "png"))
+                if bpy.app.version < (4, 0, 0):
+                    bpy.ops.ed.lib_id_load_custom_preview(override, filepath=thumbFile)
+                else:
+                    bpy.ops.ed.lib_id_load_custom_preview(filepath=thumbFile)
+            except (Exception,):
+                # Restore the selection.
+                setSelection(sel)
+                return {'WARNING'}, ("The collection is marked as an asset " +
+                                     "but the preview needs to be created manually")
 
         # Restore the selection.
         setSelection(sel)
