@@ -3,16 +3,19 @@
 import bpy
 
 from . import common, node
-from ... import dev, var
+from ... import dev, language, preferences, var
 from ... core import driver
-from ... ui import preferences
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFRotationOutputNode(node.RBFNode):
     """Object rotation output node.
     """
     bl_idname = "RBFRotationOutputNode"
-    bl_label = "Rotation Output"
+    bl_label = strings.ROTATION_OUTPUT_LABEL
     bl_icon = 'ORIENTATION_GIMBAL'
 
     # ------------------------------------------------------------------
@@ -27,12 +30,12 @@ class RBFRotationOutputNode(node.RBFNode):
         """
         pass
 
-    w_axis : bpy.props.BoolProperty(name="W", default=False)
-    x_axis : bpy.props.BoolProperty(name="X", default=False)
-    y_axis : bpy.props.BoolProperty(name="Y", default=False)
-    z_axis : bpy.props.BoolProperty(name="Z", default=False)
+    w_axis : bpy.props.BoolProperty(name=strings.W_LABEL, default=False)
+    x_axis : bpy.props.BoolProperty(name=strings.X_LABEL, default=False)
+    y_axis : bpy.props.BoolProperty(name=strings.Y_LABEL, default=False)
+    z_axis : bpy.props.BoolProperty(name=strings.Z_LABEL, default=False)
 
-    rotationMode : bpy.props.EnumProperty(name="", items=var.ROTATION_MODE, default='EULER')
+    rotationMode : bpy.props.EnumProperty(name="", items=common.ROTATION_MODE, default='EULER')
 
     output : bpy.props.FloatVectorProperty(size=4, update=updateCallback)
     # The indices of the created drivers on the driven object.
@@ -45,7 +48,7 @@ class RBFRotationOutputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addInput("RBFPropertySocket", "Rotation")
+        self.addInput("RBFPropertySocket", strings.ROTATION_LABEL)
         
     def draw(self, context, layout):
         """Draw the content of the node.

@@ -3,7 +3,11 @@
 import math
 import mathutils
 
-from .. import dev
+from .. import dev, language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class Matrix(object):
@@ -294,7 +298,7 @@ class Matrix(object):
         # Make sure that the matrix is square.
         if self.rows != self.cols:
             dev.log("Matrix rows and columns do not match")
-            return [], "The number of poses between input and output is different"
+            return [], strings.WARNING_POSES_MISMATCH
 
         size = self.rows
 
@@ -325,8 +329,7 @@ class Matrix(object):
             # Check if the matrix is singular.
             if abs(self.mat[i][i]) < 0.0001:
                 dev.log("The matrix is singular")
-                return [], ("The pose at index {} has no unique values and " +
-                            "is similar to another pose").format(i)
+                return [], ("{}: {}").format(strings.WARNING_SIMILAR_POSE, i)
 
             # Perform the forward elimination.
             for j in range(i + 1, size):

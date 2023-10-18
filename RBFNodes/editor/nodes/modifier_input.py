@@ -3,13 +3,18 @@
 import bpy
 
 from . import common, node
+from ... import language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFModifierInputNode(node.RBFNode):
     """Object modifier input node.
     """
     bl_idname = "RBFModifierInputNode"
-    bl_label = "Modifier Input"
+    bl_label = strings.MODIFIER_INPUT_LABEL
     bl_icon = 'MODIFIER'
 
     # ------------------------------------------------------------------
@@ -62,7 +67,7 @@ class RBFModifierInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFPropertySocket", "Modifier")
+        self.addOutput("RBFPropertySocket", strings.MODIFIER_LABEL)
 
     def draw(self, context, layout):
         """Draw the content of the node.

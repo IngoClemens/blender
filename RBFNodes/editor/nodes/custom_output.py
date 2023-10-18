@@ -3,16 +3,19 @@
 import bpy
 
 from . import common, node
-from ... import dev
+from ... import dev, language, preferences
 from ... core import driver
-from ... ui import preferences
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFCustomOutputNode(node.RBFNode):
     """Custom property output node.
     """
     bl_idname = "RBFCustomOutputNode"
-    bl_label = "Custom Output"
+    bl_label = strings.CUSTOM_OUTPUT_LABEL
     bl_icon = 'EMPTY_SINGLE_ARROW'
 
     # ------------------------------------------------------------------
@@ -52,8 +55,8 @@ class RBFCustomOutputNode(node.RBFNode):
     # Properties
     # ------------------------------------------------------------------
 
-    modeItems = [('LIST', "Auto", ""),
-                 ('MANUAL', "Manual", "")]
+    modeItems = [('LIST', strings.AUTO_LABEL, ""),
+                 ('MANUAL', strings.MANUAL_LABEL, "")]
     mode : bpy.props.EnumProperty(items=modeItems)
     propertyName : bpy.props.StringProperty(name="", update=setLabelCallback)
     propertyEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
@@ -69,7 +72,7 @@ class RBFCustomOutputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addInput("RBFPropertySocket", "Custom")
+        self.addInput("RBFPropertySocket", strings.CUSTOM_LABEL)
 
     def draw(self, context, layout):
         """Draw the content of the node.

@@ -4,7 +4,11 @@ import bpy
 from bpy.app.handlers import persistent
 
 from . import nodeTree, rbf, utils
-from .. var import VERSION
+from .. import language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 @persistent
@@ -19,7 +23,7 @@ def refresh(none):
             if rbfNode.active and not rbfNode.mute:
                 result = rbf.getPoseWeights(rbfNode)
                 if result is not None:
-                    title = "Evaluation error"
+                    title = strings.ERROR_EVALUATION
                     if not bpy.app.background:
                         utils.displayMessage(title, result, 'ERROR')
                     else:
@@ -35,12 +39,12 @@ def verifyVersion(none):
         nodes = nodeTree.getRBFFromTree(tree)
         for rbfNode in nodes:
             if not utils.verifyVersion(rbfNode):
-                title = "RBF Nodes Warning"
-                message = ["The RBF node setup is not compatible with the current version.",
-                           "The installed version is {}".format(utils.versionString(VERSION)),
-                           "Please update the node tree with the following steps:",
-                           "1. Press 'Reset RBF' in the RBF editor's side panel.",
-                           "2. Press 'Activate RBF' in the same panel."]
+                title = strings.WARNING_TITLE
+                message = [strings.INFO_UPDATE_1,
+                           "{} {}".format(strings.INFO_UPDATE_2, utils.versionString(utils.VERSION)),
+                           "{}:".format(strings.INFO_UPDATE_3),
+                           strings.INFO_UPDATE_4,
+                           strings.INFO_UPDATE_5]
                 if not bpy.app.background:
                     utils.displayMessage(title, message, 'ERROR')
                 else:

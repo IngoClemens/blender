@@ -5,9 +5,10 @@
 # Global names
 # ----------------------------------------------------------------------
 NAME = "RBF Nodes"
-VERSION = (1, 0, 2)
+ID_NAME = "RBFNodes"
 NODE_TREE_TYPE = "RBFNodesNodeTree"
 CATEGORIES_ID = "RBFNODES_TREE_NODE_CATEGORIES"
+CONFIG_NAME = "config.json"
 
 # ----------------------------------------------------------------------
 # Preferences
@@ -15,6 +16,13 @@ CATEGORIES_ID = "RBFNODES_TREE_NODE_CATEGORIES"
 AUTO_LABEL = True
 DEVELOPER_MODE = False
 EXPOSE_DATA = False
+
+DEFAULT_CONFIG = {
+                    "autoLabel": True,
+                    "developerMode": False,
+                    "language": "ENGLISH",
+                    "logData": False
+                }
 
 # ----------------------------------------------------------------------
 # Socket colors
@@ -34,6 +42,8 @@ COLOR_CYAN = (0.404, 0.843, 0.935, 1.0)
 # ----------------------------------------------------------------------
 # Node positioning
 # ----------------------------------------------------------------------
+NODE_WIDTH = 155
+
 INPUT_OBJECT_OFFSET = (-300, 100)
 OUTPUT_OBJECT_OFFSET = (330, 100)
 FIRST_POSE_OFFSET = (-300, -300)
@@ -42,15 +52,13 @@ FIRST_NODE_OFFSET = (-330, -50)
 NODE_OFFSET = (0, -60)
 
 # ----------------------------------------------------------------------
-# Enum properties
+# Properties
 # ----------------------------------------------------------------------
 ROTATIONS = {'EULER': "rotation_euler",
              'QUATERNION': "rotation_quaternion",
              'AXIS_ANGLE': "rotation_axis_angle"}
 
-ROTATION_MODE = [('EULER', "Euler", "", "", 1),
-                 ('QUATERNION', "Quaternion", "", "", 2),
-                 ('AXIS_ANGLE', "Axis Angle", "", "", 3)]
+ARRAY_SIZE = 4
 
 # ----------------------------------------------------------------------
 # Matrix sizes

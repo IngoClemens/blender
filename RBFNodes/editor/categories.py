@@ -4,7 +4,11 @@ import bpy
 import nodeitems_utils
 from nodeitems_utils import NodeCategory, NodeItem
 
-from .. import var
+from .. import language, var
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFNodesNodeCategory(NodeCategory):
@@ -17,7 +21,7 @@ class RBFNodesNodeCategory(NodeCategory):
 
 # Define the categories.
 categories = [RBFNodesNodeCategory('INPUT',
-                                   "Input",
+                                   strings.INPUT_LABEL,
                                    items=[NodeItem("RBFObjectInputNode"),
                                           NodeItem("RBFLocationInputNode"),
                                           NodeItem("RBFRotationInputNode"),
@@ -28,7 +32,7 @@ categories = [RBFNodesNodeCategory('INPUT',
                                           NodeItem("RBFModifierInputNode"),
                                           NodeItem("RBFNodeInputNode")]),
               RBFNodesNodeCategory('OUTPUT',
-                                   "Output",
+                                   strings.OUTPUT_LABEL,
                                    items=[NodeItem("RBFObjectOutputNode"),
                                           NodeItem("RBFLocationOutputNode"),
                                           NodeItem("RBFRotationOutputNode"),
@@ -39,7 +43,7 @@ categories = [RBFNodesNodeCategory('INPUT',
                                           NodeItem("RBFModifierOutputNode"),
                                           NodeItem("RBFNodeOutputNode")]),
               RBFNodesNodeCategory('RBF',
-                                   "RBF",
+                                   strings.RBF_LABEL,
                                    items=[NodeItem("RBFSolverNode")])]
 
 

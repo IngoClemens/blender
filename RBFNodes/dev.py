@@ -5,7 +5,7 @@ import bpy
 import importlib
 import os
 
-from . ui import preferences
+from . import preferences
 
 
 def reload(name=""):

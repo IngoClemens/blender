@@ -3,11 +3,15 @@
 import bpy
 
 from . import driver, matrix, nodeTree, plugs, poses
-from .. import dev, var
+from .. import dev, language, var
 
 import json
 import math
 from mathutils import Quaternion
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 def initialize(context, refresh=False):
@@ -27,7 +31,7 @@ def initialize(context, refresh=False):
     """
     rbfNode = nodeTree.getRBFNode(context)
     if rbfNode is None:
-        return {'WARNING'}, "No RBF node exists in the node tree"
+        return {'WARNING'}, strings.WARNING_NO_RBF_NODE_IN_TREE
 
     # Check, if all nodes are set up correctly. This can easily be done
     # by getting the pose data, like when creating a pose.
@@ -75,7 +79,7 @@ def solveWeightMatrix(rbfNode):
     poseNodes = nodeTree.getPoseNodes(rbfNode)
     poseCount = len(poseNodes)
     if not poseCount:
-        return {'WARNING'}, "No poses defined"
+        return {'WARNING'}, strings.WARNING_NO_POSES
 
     # Create matrices for all driving and driven property values.
     inputMat = propertyDataToMatrix(poseNodes, isDriver=True)
@@ -103,10 +107,10 @@ def solveWeightMatrix(rbfNode):
     # The maximum size is defined by the 32 vector array properties of
     # the RBF node which only can store 32 float values per array.
     if inputMat_ext.rows * inputMat_ext.cols > var.MAX_SIZE:
-        return {'WARNING'}, "Maximum pose matrix size exceeded"
+        return {'WARNING'}, strings.WARNING_POSE_MATRIX_SIZE_EXCEEDED
 
     if outputMat.rows * outputMat.cols > var.MAX_SIZE:
-        return {'WARNING'}, "Maximum weight matrix size exceeded"
+        return {'WARNING'}, strings.WARNING_WEIGHT_MATRIX_SIZE_EXCEEDED
 
     dev.log("Driver (with normalization row):")
     dev.log(inputMat_ext)
@@ -166,7 +170,7 @@ def solveWeightMatrix(rbfNode):
             w.append(0)
         w, message = solveMat.solve(y, w)
         if message is not None:
-            return {'WARNING'}, "Decomposition error. {}".format(message)
+            return {'WARNING'}, "{}. {}".format(strings.ERROR_DECOMPOSITION, message)
 
         for j in range(poseCount):
             weightMat[j, i] = w[j]
@@ -377,8 +381,7 @@ def getPoseWeights(rbfNode):
 
     if outSize != len(outProps):
         rbfNode.active = False
-        return ["Number of pose and driven properties don't match.",
-                "Possible causes are Blender version differences."]
+        return strings.ERROR_PROPERTIES_MISMATCH
 
     quatBlockEnd = -1
     for i in range(outSize):
@@ -424,7 +427,7 @@ def update(context):
     """
     rbfNode = nodeTree.getRBFNode(context)
     if rbfNode is None:
-        return {'WARNING'}, "No RBF node exists in the node tree"
+        return {'WARNING'}, strings.WARNING_NO_RBF_NODE_IN_TREE
 
     # Update the pose values and re-enable all drivers.
     poses.updatePose()
@@ -451,7 +454,7 @@ def reset(context):
     """
     rbfNode = nodeTree.getRBFNode(context)
     if rbfNode is None:
-        return {'WARNING'}, "No RBF node exists in the node tree"
+        return {'WARNING'}, strings.WARNING_NO_RBF_NODE_IN_TREE
 
     rbfNode.reset()
     # Check, if the pose nodes need upgrading from an earlier version.

@@ -4,17 +4,21 @@ import bpy
 
 from . import node
 from ... core import matrix, plugs, rbf, utils
-from ... import dev, var
+from ... import dev, language, var
 
 import json
 import math
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFSolverNode(node.RBFNode):
     """RBF node.
     """
     bl_idname = "RBFSolverNode"
-    bl_label = "RBF"
+    bl_label = strings.RBF_LABEL
     bl_icon = 'POINTCLOUD_DATA'
 
     # ------------------------------------------------------------------
@@ -37,20 +41,30 @@ class RBFSolverNode(node.RBFNode):
     # Properties
     # ------------------------------------------------------------------
 
-    interpolation_items = [('LINEAR', "Linear", ""),
-                           ('GAUSSIAN_1', "Gaussian 1", ""),
-                           ('GAUSSIAN_2', "Gaussian 2", ""),
-                           ('THIN_PLATE', "Thin Plate", ""),
-                           ('MULTI_QUADRATIC', "Multi-Quadratic Biharmonic", ""),
-                           ('INVERSE_MULTI_QUADRATIC', "Inverse Multi-Quadratic Biharmonic", "")]
-    radius_items = [('MEAN', "Mean Distance", ""),
-                    ('VARIANCE', "Variance", ""),
-                    ('STANDARD_DEVIATION', "Standard Deviation", ""),
-                    ('CUSTOM', "Custom", "")]
-    mode : bpy.props.EnumProperty(name="Kernel", items=interpolation_items, default='GAUSSIAN_1', update=rbfMode)
-    radiusType : bpy.props.EnumProperty(name="Radius", items=radius_items, default='STANDARD_DEVIATION', update=rbfMode)
-    radius : bpy.props.FloatProperty(name="Radius", default=1.0, min=0, update=rbfMode)
-    negativeWeights : bpy.props.BoolProperty(name="Negative Weights", default=True)
+    interpolation_items = [('LINEAR', strings.LINEAR_LABEL, ""),
+                           ('GAUSSIAN_1', strings.GAUSS_1_LABEL, ""),
+                           ('GAUSSIAN_2', strings.GAUSS_2_LABEL, ""),
+                           ('THIN_PLATE', strings.THIN_PLATE_LABEL, ""),
+                           ('MULTI_QUADRATIC', strings.MULTI_QUADRATIC_LABEL, ""),
+                           ('INVERSE_MULTI_QUADRATIC', strings.MULTI_QUADRATIC_INVERSE_LABEL, "")]
+    radius_items = [('MEAN', strings.MEAN_DISTANCE_LABEL, ""),
+                    ('VARIANCE', strings.VARIANCE_LABEL, ""),
+                    ('STANDARD_DEVIATION', strings.DEVIATION_LABEL, ""),
+                    ('CUSTOM', strings.CUSTOM_LABEL, "")]
+    mode : bpy.props.EnumProperty(name=strings.KERNEL_LABEL,
+                                  items=interpolation_items,
+                                  default='GAUSSIAN_1',
+                                  update=rbfMode)
+    radiusType : bpy.props.EnumProperty(name=strings.RADIUS_LABEL,
+                                        items=radius_items,
+                                        default='STANDARD_DEVIATION',
+                                        update=rbfMode)
+    radius : bpy.props.FloatProperty(name=strings.RADIUS_LABEL,
+                                     default=1.0,
+                                     min=0,
+                                     update=rbfMode)
+    negativeWeights : bpy.props.BoolProperty(name=strings.NEGATIVE_WEIGHTS_LABEL,
+                                             default=True)
     active_value : bpy.props.BoolProperty(default=False)
 
     version : bpy.props.StringProperty()
@@ -148,11 +162,11 @@ class RBFSolverNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFObjectSocket", "Objects")
-        self.addOutput("RBFNodeSocket", "Nodes",)
-        self.addInput("RBFObjectSocket", "Objects", link_limit=0)
-        self.addInput("RBFNodeSocket", "Nodes", link_limit=0)
-        self.addInput("RBFPoseSocket", "Poses", link_limit=0)
+        self.addOutput("RBFObjectSocket", strings.OBJECTS_LABEL)
+        self.addOutput("RBFNodeSocket", strings.NODES_LABEL)
+        self.addInput("RBFObjectSocket", strings.OBJECTS_LABEL, link_limit=0)
+        self.addInput("RBFNodeSocket", strings.NODES_LABEL, link_limit=0)
+        self.addInput("RBFPoseSocket", strings.POSES_LABEL, link_limit=0)
         utils.setVersion(self)
         dev.log("Version: {}".format(utils.getVersion(self)))
 

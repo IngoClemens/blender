@@ -3,26 +3,30 @@
 import bpy
 
 from . import common, node
-from ... import var
+from ... import language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFRotationInputNode(node.RBFNode):
     """Object rotation input node.
     """
     bl_idname = "RBFRotationInputNode"
-    bl_label = "Rotation Input"
+    bl_label = strings.ROTATION_INPUT_LABEL
     bl_icon = 'ORIENTATION_GIMBAL'
 
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
 
-    w_axis : bpy.props.BoolProperty(name="W", default=False)
-    x_axis : bpy.props.BoolProperty(name="X", default=False)
-    y_axis : bpy.props.BoolProperty(name="Y", default=False)
-    z_axis : bpy.props.BoolProperty(name="Z", default=False)
+    w_axis : bpy.props.BoolProperty(name=strings.W_LABEL, default=False)
+    x_axis : bpy.props.BoolProperty(name=strings.X_LABEL, default=False)
+    y_axis : bpy.props.BoolProperty(name=strings.Y_LABEL, default=False)
+    z_axis : bpy.props.BoolProperty(name=strings.Z_LABEL, default=False)
 
-    rotationMode : bpy.props.EnumProperty(name="", items=var.ROTATION_MODE, default='EULER')
+    rotationMode : bpy.props.EnumProperty(name="", items=common.ROTATION_MODE, default='EULER')
 
     def init(self, context):
         """Initialize the node and add the sockets.
@@ -30,7 +34,7 @@ class RBFRotationInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFPropertySocket", "Rotation")
+        self.addOutput("RBFPropertySocket", strings.ROTATION_LABEL)
         
     def draw(self, context, layout):
         """Draw the content of the node.

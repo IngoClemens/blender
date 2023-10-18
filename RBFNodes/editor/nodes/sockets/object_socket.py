@@ -2,14 +2,22 @@
 
 import bpy
 
-from . socket import RBFSocket
-from .... import var
+if bpy.app.version < (4, 0, 0):
+    from . socket import RBFSocket_legacy3 as RBFSocket
+else:
+    from . socket import RBFSocket
+
+from .... import language, var
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFObjectSocket(bpy.types.NodeSocket, RBFSocket):
     """Object data socket"""
     bl_idname = "RBFObjectSocket"
-    bl_label = "RBF Object Socket"
+    bl_label = strings.OBJECT_SOCKET_LABEL
 
     color = var.COLOR_ORANGE
 

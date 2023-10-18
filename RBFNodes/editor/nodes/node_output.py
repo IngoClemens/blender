@@ -3,19 +3,19 @@
 import bpy
 
 from . import common, node
-from ... import dev
+from ... import dev, language, preferences, var
 from ... core import driver
-from ... ui import preferences
 
 
-ARRAY_SIZE = 4
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFNodeOutputNode(node.RBFNode):
     """Node tree output node.
     """
     bl_idname = "RBFNodeOutputNode"
-    bl_label = "Node Output"
+    bl_label = strings.NODE_OUTPUT_LABEL
     bl_icon = 'NODETREE'
 
     # ------------------------------------------------------------------
@@ -34,19 +34,19 @@ class RBFNodeOutputNode(node.RBFNode):
     # Properties
     # ------------------------------------------------------------------
 
-    parentItems = [('MATERIAL', "Material", ""),
-                   ('NODE_GROUP', "Node Group", "")]
+    parentItems = [('MATERIAL', strings.MATERIAL_LABEL, ""),
+                   ('NODE_GROUP', strings.NODE_GROUP_LABEL, "")]
     nodeParent : bpy.props.EnumProperty(name="", items=parentItems)
-    parentName : bpy.props.StringProperty(name="Parent")
-    nodeName : bpy.props.StringProperty(name="Node")
-    plugName : bpy.props.StringProperty(name="Plug")
+    parentName : bpy.props.StringProperty(name=strings.PARENT_LABEL)
+    nodeName : bpy.props.StringProperty(name=strings.NODE_LABEL)
+    plugName : bpy.props.StringProperty(name=strings.PLUG_LABEL)
     propertyEnum : bpy.props.EnumProperty(name="",
                                           items=common.nodeItemsCallback,
                                           update=common.setPropertyPlugName)
 
-    output : bpy.props.FloatVectorProperty(size=ARRAY_SIZE, update=updateCallback)
+    output : bpy.props.FloatVectorProperty(size=var.ARRAY_SIZE, update=updateCallback)
     # The indices of the created drivers on the driven object.
-    driverIndex : bpy.props.IntVectorProperty(size=ARRAY_SIZE, default=[-1]*ARRAY_SIZE)
+    driverIndex : bpy.props.IntVectorProperty(size=var.ARRAY_SIZE, default=[-1]*var.ARRAY_SIZE)
     isDriver : bpy.props.BoolProperty(default=False)
 
     propertyPlugs = {}
@@ -57,7 +57,7 @@ class RBFNodeOutputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addInput("RBFNodeSocket", "Node")
+        self.addInput("RBFNodeSocket", strings.NODE_LABEL)
 
     def draw(self, context, layout):
         """Draw the content of the node.
@@ -105,7 +105,7 @@ class RBFNodeOutputNode(node.RBFNode):
         """
         result = []
 
-        for i in range(ARRAY_SIZE):
+        for i in range(var.ARRAY_SIZE):
             if self.driverIndex[i] != -1:
                 result.append((self, i))
 
@@ -159,7 +159,7 @@ class RBFNodeOutputNode(node.RBFNode):
         :type rbfNode: bpy.types.Node
         """
         # Clear the driver indices.
-        self.driverIndex = [-1] * ARRAY_SIZE
+        self.driverIndex = [-1] * var.ARRAY_SIZE
         # Delete any existing driver.
         if rbfNode.active:
             self.deleteDriver()
@@ -206,7 +206,7 @@ class RBFNodeOutputNode(node.RBFNode):
                     drivenIndex += 1
 
         # Clear the driver indices.
-        self.driverIndex = [-1] * ARRAY_SIZE
+        self.driverIndex = [-1] * var.ARRAY_SIZE
 
     def enableDriver(self, obj, enable):
         """Enable or disable the driver FCurves for the given object.

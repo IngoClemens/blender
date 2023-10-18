@@ -3,13 +3,18 @@
 import bpy
 
 from . import common, node
+from ... import language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFLocationInputNode(node.RBFNode):
     """Object location input node.
     """
     bl_idname = "RBFLocationInputNode"
-    bl_label = "Location Input"
+    bl_label = strings.LOCATION_INPUT_LABEL
     bl_icon = 'ORIENTATION_LOCAL'
 
     # ------------------------------------------------------------------
@@ -26,7 +31,7 @@ class RBFLocationInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFPropertySocket", "Location")
+        self.addOutput("RBFPropertySocket", strings.LOCATION_LABEL)
         
     def draw(self, context, layout):
         """Draw the content of the node.

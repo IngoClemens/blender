@@ -3,13 +3,18 @@
 import bpy
 
 from . import common, node
+from ... import language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFShapeKeyInputNode(node.RBFNode):
     """Shape key input node.
     """
     bl_idname = "RBFShapeKeyInputNode"
-    bl_label = "Shape Key Input"
+    bl_label = strings.SHAPE_KEY_INPUT_LABEL
     bl_icon = 'SHAPEKEY_DATA'
 
     # ------------------------------------------------------------------
@@ -41,8 +46,8 @@ class RBFShapeKeyInputNode(node.RBFNode):
     # Properties
     # ------------------------------------------------------------------
 
-    modeItems = [('LIST', "Auto", ""),
-                 ('MANUAL', "Manual", "")]
+    modeItems = [('LIST', strings.AUTO_LABEL, ""),
+                 ('MANUAL', strings.MANUAL_LABEL, "")]
     mode : bpy.props.EnumProperty(items=modeItems)
     shapeName : bpy.props.StringProperty(name="", update=setLabelCallback)
     shapeNameEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
@@ -53,7 +58,7 @@ class RBFShapeKeyInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFPropertySocket", "Shape Key")
+        self.addOutput("RBFPropertySocket", strings.SHAPE_KEY_LABEL)
 
     def draw(self, context, layout):
         """Draw the content of the node.

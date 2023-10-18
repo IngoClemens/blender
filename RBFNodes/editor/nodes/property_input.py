@@ -3,13 +3,18 @@
 import bpy
 
 from . import common, node
+from ... import language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFPropertyInputNode(node.RBFNode):
     """Object property input node.
     """
     bl_idname = "RBFPropertyInputNode"
-    bl_label = "Property Input"
+    bl_label = strings.PROPERTY_INPUT_LABEL
     bl_icon = 'PROPERTIES'
 
     # ------------------------------------------------------------------
@@ -49,7 +54,7 @@ class RBFPropertyInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFPropertySocket", "Property")
+        self.addOutput("RBFPropertySocket", strings.PROPERTY_LABEL)
 
     def draw(self, context, layout):
         """Draw the content of the node.

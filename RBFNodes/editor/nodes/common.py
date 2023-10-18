@@ -3,8 +3,16 @@
 import bpy
 
 from ... core import plugs, properties, shapeKeys
-from ... import var
-from ... ui import preferences
+from ... import language, preferences, var
+
+
+# Get the current language.
+strings = language.getLanguage()
+
+
+ROTATION_MODE = [('EULER', strings.EULER_LABEL, "", "", 1),
+                 ('QUATERNION', strings.QUATERNION_LABEL, "", "", 2),
+                 ('AXIS_ANGLE', strings.AXIS_ANGLE_LABEL, "", "", 3)]
 
 
 # ----------------------------------------------------------------------
@@ -252,7 +260,7 @@ def propertyLabelCallback(node):
     :type node: bpy.types.Node
     """
     if preferences.getPreferences().autoLabel:
-        node.label = "Property: {}".format(node.propertyEnum)
+        node.label = "{}: {}".format(strings.PROPERTY_LABEL, node.propertyEnum)
 
 
 def listObjectProperties(node, source=True):
@@ -291,7 +299,7 @@ def propertyItemsCallback(node, source=True):
     :return: A list with tuple items for the enum property.
     :rtype: list(tuple(str))
     """
-    props = [('NONE', "––– Select –––", "")]
+    props = [('NONE', strings.SELECT_LABEL, "")]
 
     for prop in listObjectProperties(node, source):
         props.append((prop, prop, ""))
@@ -346,9 +354,9 @@ def customLabelCallback(node):
     """
     if preferences.getPreferences().autoLabel:
         if node.mode == 'LIST':
-            node.label = "Custom: {}".format(node.propertyEnum)
+            node.label = "{}: {}".format(strings.CUSTOM_LABEL, node.propertyEnum)
         else:
-            node.label = "Custom: {}".format(node.propertyName)
+            node.label = "{}: {}".format(strings.CUSTOM_LABEL, node.propertyName)
 
 
 def listCustomProperties(node, source=True):
@@ -387,7 +395,7 @@ def customItemsCallback(node, source=True):
     :return: A list with tuple items for the enum property.
     :rtype: list(tuple(str))
     """
-    props = [('NONE', "––– Select –––", "")]
+    props = [('NONE', strings.SELECT_LABEL, "")]
 
     for prop in listCustomProperties(node, source):
         props.append((prop, prop, ""))
@@ -450,9 +458,9 @@ def shapeKeyLabelCallback(node):
     """
     if preferences.getPreferences().autoLabel:
         if node.mode == 'LIST':
-            node.label = "Shape Key: {}".format(node.shapeNameEnum)
+            node.label = "{}: {}".format(strings.SHAPE_KEY_LABEL, node.shapeNameEnum)
         else:
-            node.label = "Shape Key: {}".format(node.shapeName)
+            node.label = "{}: {}".format(strings.SHAPE_KEY_LABEL, node.shapeName)
 
 
 def getObjectShapeKeys(node, source=True):
@@ -490,7 +498,7 @@ def shapeKeyItemsCallback(node, source=True):
     :return: A list with tuple items for the enum property.
     :rtype: list(tuple(str))
     """
-    props = [('NONE', "––– Select –––", "")]
+    props = [('NONE', strings.SELECT_LABEL, "")]
 
     for prop in getObjectShapeKeys(node, source):
         props.append((prop, prop, ""))
@@ -561,7 +569,7 @@ def modifierLabelCallback(node):
             modifier = node.modifierEnum
         if node.propertyEnum != 'NONE':
             prop = node.propertyEnum
-        node.label = "Modifier: {}".format(".".join((modifier, prop)))
+        node.label = "{}: {}".format(strings.MODIFIER_LABEL, ".".join((modifier, prop)))
 
 
 def listModifiers(node, source=True):
@@ -599,7 +607,7 @@ def modifierItemsCallback(node, source=True):
     :return: A list with tuple items for the enum property.
     :rtype: list(tuple(str))
     """
-    mods = [('NONE', "––– Select –––", "")]
+    mods = [('NONE', strings.SELECT_LABEL, "")]
 
     for mod in listModifiers(node, source):
         mods.append((mod, mod, ""))
@@ -643,7 +651,7 @@ def modifierPropertiesCallback(node, source=True):
     :return: A list with tuple items for the enum property.
     :rtype: list(tuple(str))
     """
-    props = [('NONE', "––– Select –––", "")]
+    props = [('NONE', strings.SELECT_LABEL, "")]
 
     for prop in listModifierProperties(node, source):
         props.append((prop, prop, ""))
@@ -728,7 +736,7 @@ def nodeItemsCallback(node, context):
     :return: A list with tuple items for the enum property.
     :rtype: list(tuple(str))
     """
-    props = [('NONE', "––– Select –––", "")]
+    props = [('NONE', strings.SELECT_LABEL, "")]
 
     for prop, plug in getTreeNodeProperties(node):
         props.append((prop, prop, ""))

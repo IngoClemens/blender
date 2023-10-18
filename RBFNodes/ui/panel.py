@@ -2,8 +2,7 @@
 
 import bpy
 
-from . import preferences
-from .. import var
+from .. import language, preferences, var
 from .. core import nodeTree, utils
 
 '''
@@ -12,6 +11,11 @@ from . icons import toolIcons
 icon_value=toolIcons.getIcon("tool_icon").icon_id
 '''
 
+
+# Get the current language.
+strings = language.getLanguage()
+
+
 # ----------------------------------------------------------------------
 # Panel
 # ----------------------------------------------------------------------
@@ -19,16 +23,16 @@ icon_value=toolIcons.getIcon("tool_icon").icon_id
 class RBF_Nodes_Properties(bpy.types.PropertyGroup):
     """Property group class to make the properties globally available.
     """
-    search_value : bpy.props.StringProperty(name="Search")
-    replace_value : bpy.props.StringProperty(name="Replace")
+    search_value : bpy.props.StringProperty(name=strings.SEARCH_LABEL)
+    replace_value : bpy.props.StringProperty(name=strings.REPLACE_LABEL)
 
 
 class RBFNODES_PT_RBF(bpy.types.Panel):
 
     bl_space_type = 'NODE_EDITOR'
     bl_region_type = 'UI'
-    bl_category = "RBF Nodes"
-    bl_label = "RBF"
+    bl_category = strings.CATEGORY_LABEL
+    bl_label = strings.RBF_LABEL
 
     @classmethod
     def poll(cls, context):
@@ -50,7 +54,7 @@ class RBFNODES_PT_RBF(bpy.types.Panel):
         node = nodeTree.getRBFNode(context)
         if node is None or utils.verifyVersion(node):
             box = self.layout.box()
-            box.label(text="Create")
+            box.label(text=strings.CREATE_LABEL)
             col = box.column(align=True)
             col.operator("rbfnodes.create_rbf", icon='FILE_NEW')
             col.separator(factor=1.5)
@@ -60,7 +64,7 @@ class RBFNODES_PT_RBF(bpy.types.Panel):
             col.operator("rbfnodes.create_node_output", icon='EXPORT')
 
             box = self.layout.box()
-            box.label(text="Activation")
+            box.label(text=strings.ACTIVATION_LABEL)
             col = box.column(align=True)
             col.operator("rbfnodes.activate_rbf", icon='QUIT')
             col.separator(factor=1.5)
@@ -68,13 +72,13 @@ class RBFNODES_PT_RBF(bpy.types.Panel):
 
             if preferences.getPreferences().developerMode:
                 box = self.layout.box()
-                box.label(text="Developer")
+                box.label(text=strings.DEVELOPER_LABEL_SHORT)
                 col = box.column(align=True)
                 col.operator("rbfnodes.dump_pose")
                 col.operator("rbfnodes.dump_rbf")
                 # col.separator(factor=1.5)
                 box = self.layout.box()
-                box.label(text="Edit Pose Data")
+                box.label(text=strings.EDIT_POSE_DATA_LABEL)
                 col = box.column(align=True)
                 col.prop(rbfNodesProps, "search_value")
                 col.prop(rbfNodesProps, "replace_value")
@@ -82,9 +86,9 @@ class RBFNODES_PT_RBF(bpy.types.Panel):
                 col.operator("rbfnodes.search_replace_pose_driven_data")
         else:
             box = self.layout.box()
-            box.label(text="Activation")
+            box.label(text=strings.ACTIVATION_LABEL)
             col = box.column(align=True)
-            col.label(text="Version mismatch.")
-            col.label(text="Reset the RBF to update.")
+            col.label(text=strings.INFO_VERSION_MISMATCH)
+            col.label(text=strings.INFO_RESET_TO_UPDATE)
             col.separator(factor=1.5)
             col.operator("rbfnodes.reset_rbf", icon='CANCEL')

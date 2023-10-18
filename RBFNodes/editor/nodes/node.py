@@ -8,7 +8,7 @@ from ... import var
 class RBFNode(bpy.types.Node):
     """Class, which all driver tree nodes inherit from.
     """
-    bl_width_default = 155
+    bl_width_default = var.NODE_WIDTH
 
     editable : bpy.props.BoolProperty(default=True)
 

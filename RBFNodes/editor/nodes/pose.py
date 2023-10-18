@@ -3,7 +3,12 @@
 import bpy
 
 from . import node
+from ... import language
 from ... core import poses, rbf, utils
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class SkipCallback(object):
@@ -20,7 +25,7 @@ class RBFPoseNode(node.RBFNode):
     """Pose node.
     """
     bl_idname = "RBFPoseNode"
-    bl_label = "Pose"
+    bl_label = strings.POSE_LABEL
     bl_icon = 'ARMATURE_DATA'
 
     # ------------------------------------------------------------------
@@ -60,10 +65,8 @@ class RBFPoseNode(node.RBFNode):
     # Properties
     # ------------------------------------------------------------------
 
-    ann = "Edit the selected pose. This disables any drivers on the RBF target for editing"
-
     edit_pose : bpy.props.BoolProperty(name="Edit",
-                                       description=ann,
+                                       description=strings.ANN_EDIT_POSE,
                                        update=toggleEditPose)
 
     poseIndex : bpy.props.IntProperty()
@@ -80,7 +83,7 @@ class RBFPoseNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFPoseSocket", "Pose")
+        self.addOutput("RBFPoseSocket", strings.POSE_LABEL)
         utils.setVersion(self)
 
     def draw(self, context, layout):

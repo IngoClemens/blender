@@ -3,15 +3,19 @@
 import bpy
 
 from . import common, node
+from ... import language, preferences
 from ... core import driver
-from ... ui import preferences
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFScaleOutputNode(node.RBFNode):
     """Object scale output node.
     """
     bl_idname = "RBFScaleOutputNode"
-    bl_label = "Scale Output"
+    bl_label = strings.SCALE_OUTPUT_LABEL
     bl_icon = 'FIXED_SIZE'
 
     # ------------------------------------------------------------------
@@ -26,9 +30,9 @@ class RBFScaleOutputNode(node.RBFNode):
         """
         pass
 
-    x_axis : bpy.props.BoolProperty(name="X", default=False)
-    y_axis : bpy.props.BoolProperty(name="Y", default=False)
-    z_axis : bpy.props.BoolProperty(name="Z", default=False)
+    x_axis : bpy.props.BoolProperty(name=strings.X_LABEL, default=False)
+    y_axis : bpy.props.BoolProperty(name=strings.Y_LABEL, default=False)
+    z_axis : bpy.props.BoolProperty(name=strings.Z_LABEL, default=False)
 
     output : bpy.props.FloatVectorProperty(update=updateCallback)
     # The indices of the created drivers on the driven object.
@@ -41,7 +45,7 @@ class RBFScaleOutputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addInput("RBFPropertySocket", "Scale")
+        self.addInput("RBFPropertySocket", strings.SCALE_LABEL)
         
     def draw(self, context, layout):
         """Draw the content of the node.

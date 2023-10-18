@@ -1,12 +1,17 @@
 # <pep8 compliant>
 
 import bpy
+from bpy_types import bpy_types
 
 from . import nodeTree, plugs, utils
-from .. import dev, var
+from .. import dev, language, var
 
 import json
 from mathutils import Quaternion
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class EditMode(object):
@@ -45,9 +50,9 @@ def createPose(context):
 
         # Check for valid data.
         if not driverData:
-            return {'WARNING'}, "No driver object or properties defined"
+            return {'WARNING'}, strings.WARNING_NO_DRIVER
         if not drivenData:
-            return {'WARNING'}, "No driven object or properties defined"
+            return {'WARNING'}, strings.WARNING_NO_DRIVEN
 
         dev.log("Driver Data:")
         dev.log(driverData)
@@ -95,13 +100,13 @@ def createPose(context):
         dev.log("Pose Size: Driver - {} | Driven - {}".format(node.driverSize, node.drivenSize))
 
         if (len(poseNodes) + 1) * node.driverSize > var.MAX_SIZE:
-            return {'WARNING'}, "Too many poses or input values"
+            return {'WARNING'}, strings.WARNING_INPUT_SIZE_EXCEEDED
 
         if len(poseNodes) * node.drivenSize > var.MAX_SIZE:
-            return {'WARNING'}, "Too many poses or output values"
+            return {'WARNING'}, strings.WARNING_OUTPUT_SIZE_EXCEEDED
 
     else:
-        return {'WARNING'}, "No RBF node to add pose to"
+        return {'WARNING'}, strings.WARNING_NO_RBF_NODE
 
 
 def poseDataSize(poseData):
@@ -137,10 +142,10 @@ def comparePoseSize(poseData, node, isDriver=True):
     newSize = poseDataSize(poseData)
     if isDriver:
         if node.driverSize != newSize:
-            return {'WARNING'}, "The number of driver values differs from existing poses"
+            return {'WARNING'}, strings.WARNING_DRIVER_MISMATCH
     else:
         if node.drivenSize != newSize:
-            return {'WARNING'}, "The number of driven values differs from existing poses"
+            return {'WARNING'}, strings.WARNING_DRIVEN_MISMATCH
 
 
 def getPoseDataDifference(newData, node):
@@ -210,9 +215,11 @@ def appendShapeKeyPoseData(poseData, nodes):
                         for prop in props:
                             drivenProps.append((prop[0], 0.0, None))
                         node.drivenData = json.dumps(drivenData)
-                        dev.log("Added new shape key to existing pose: {} ({})".format(node.label, node.name))
+                        dev.log("{}: {} ({})".format(strings.INFO_ADDED_SHAPE_KEY,
+                                                     node.label,
+                                                     node.name))
     else:
-        return {'WARNING'}, "The number of driven values differs from existing poses"
+        return {'WARNING'}, strings.WARNING_DRIVEN_MISMATCH
 
 
 def lastPoseIndex(nodes):
@@ -244,11 +251,18 @@ def recallPose(context, nodeName):
     :type context: bpy.context
     :param nodeName: The name of the pose node to get the pose from.
     :type nodeName: str
+
+    :return: None or a tuple with the error.
+    :rtype: None or tuple(str, str)
     """
     nodeGroup = nodeTree.getNodeTree(context)
     node = nodeGroup.nodes[nodeName]
-    recallPoseForObject(json.loads(node.driverData))
-    recallPoseForObject(json.loads(node.drivenData))
+    result = recallPoseForObject(json.loads(node.driverData))
+    if isinstance(result, tuple):
+        return result
+    result = recallPoseForObject(json.loads(node.drivenData))
+    if isinstance(result, tuple):
+        return result
 
 
 def getPoseInputData(rbfNode, editable=True):
@@ -279,9 +293,9 @@ def getPoseInputData(rbfNode, editable=True):
                 driver.append((obj, values))
             else:
                 if not obj:
-                    return {'WARNING'}, "No driving object selected"
+                    return {'WARNING'}, strings.WARNING_NO_DRIVER_OBJECT
                 else:
-                    return {'WARNING'}, "No driving properties defined"
+                    return {'WARNING'}, strings.WARNING_NO_DRIVER_PROPERTY
 
     return driver
 
@@ -314,9 +328,9 @@ def getPoseOutputData(rbfNode, editable=True):
                 driven.append((obj, values))
             else:
                 if not obj:
-                    return {'WARNING'}, "No driven object selected"
+                    return {'WARNING'}, strings.WARNING_NO_DRIVEN_OBJECT
                 else:
-                    return {'WARNING'}, "No driven properties defined"
+                    return {'WARNING'}, strings.WARNING_NO_DRIVEN_PROPERTY
 
     return driven
 
@@ -515,8 +529,9 @@ def recallPoseForObject(poseData, asString=False):
                      only build the command strings.
     :type asString: bool
 
-    :return: A list with command strings for recalling the pose.
-    :rtype: list(str)
+    :return: A list with command strings for recalling the pose or a
+             tuple with the error.
+    :rtype: list(str) or tuple(str, str)
     """
     transforms = ["location", "rotation_euler", "rotation_axis_angle", "scale"]
     rotations = ["rotation_quaternion", "swing"]
@@ -594,8 +609,13 @@ def recallPoseForObject(poseData, asString=False):
 
             # Node
             elif isNode:
-                lines.append(recallNode(prop, value, objString, propArray,
-                                        propArrayIndex, asString))
+                result = recallNode(prop, value, objString, propArray,
+                                    propArrayIndex, asString)
+                # Return the error in case of a property type mismatch.
+                if isinstance(result, tuple):
+                    return result
+
+                lines.append(result)
                 if propArray:
                     propArrayIndex += 1
 
@@ -820,8 +840,9 @@ def recallNode(prop, value, objString, propArray, propArrayIndex, asString):
                      only build the command strings.
     :type asString: bool
 
-    :return: The command string for recalling the pose.
-    :rtype: str
+    :return: The command string for recalling the pose or a tuple with
+             the error.
+    :rtype: str or tuple(str, str)
     """
     # In case of a node the complete path to the node is passed in the
     # object part and the property is the path of the socket.
@@ -833,9 +854,13 @@ def recallNode(prop, value, objString, propArray, propArrayIndex, asString):
     # Separate the socket from the value.
     plugItems = prop.split(".")
     # Make the complete path to the socket and object.
-    plug = eval(".".join([objString, plugItems[0]]))
+    plugString = ".".join([objString, plugItems[0]])
+    plug = eval(plugString)
     if propArray:
         if not asString:
+            if not isinstance(plug.default_value, bpy_types.bpy_prop_array):
+                return {'ERROR'}, ": ".join([strings.ERROR_WRONG_VALUE_TYPE, plugString])
+
             plug.default_value[propArrayIndex] = value
         return "{}.default_value[{}] = {}".format(".".join([objString,
                                                             plugItems[0]]),
@@ -843,6 +868,10 @@ def recallNode(prop, value, objString, propArray, propArrayIndex, asString):
                                                   round(value, 3))
     else:
         if not asString:
+            if (not isinstance(plug.default_value, float) and
+                    not isinstance(plug.default_value, int)):
+                return {'ERROR'}, ": ".join([strings.ERROR_WRONG_VALUE_TYPE, plugString])
+
             plug.default_value = value
         return "{}.default_value = {}".format(".".join([objString,
                                                         plugItems[0]]),
@@ -1008,16 +1037,16 @@ def replaceData(context, searchString="", replaceString="", driver=True):
     :type driver: bool
     """
     if not len(searchString):
-        return {'INFO'}, "No string to search for"
+        return {'INFO'}, strings.WARNING_NO_SEARCH_STRING
 
     rbfNode = nodeTree.getRBFNode(context)
     if rbfNode is None:
-        return {'WARNING'}, "No RBF node found in node tree"
+        return {'WARNING'}, strings.WARNING_NO_RBF_NODE_IN_TREE
 
     # Get the pose nodes of the current solver.
     poseNodes = nodeTree.getPoseNodes(rbfNode)
     if not len(poseNodes):
-        return {'WARNING'}, "No pose nodes found in node tree"
+        return {'WARNING'}, strings.WARNING_NO_POSE_NODES
 
     for node in poseNodes:
         if driver:
@@ -1033,4 +1062,4 @@ def replaceData(context, searchString="", replaceString="", driver=True):
         else:
             node.drivenData = data
 
-    return {'INFO'}, "Replaced {} occurrences in {} pose nodes".format(count, len(poseNodes))
+    return {'INFO'}, "{}: {}/{}".format(strings.INFO_REPLACE, count, len(poseNodes))

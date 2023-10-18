@@ -3,16 +3,19 @@
 import bpy
 
 from . import common, node
-from ... import dev
+from ... import dev, language, preferences
 from ... core import driver
-from ... ui import preferences
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFModifierOutputNode(node.RBFNode):
     """Object modifier output node.
     """
     bl_idname = "RBFModifierOutputNode"
-    bl_label = "Modifier Output"
+    bl_label = strings.MODIFIER_OUTPUT_LABEL
     bl_icon = 'MODIFIER'
 
     # ------------------------------------------------------------------
@@ -78,7 +81,7 @@ class RBFModifierOutputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addInput("RBFPropertySocket", "Modifier")
+        self.addInput("RBFPropertySocket", strings.MODIFIER_LABEL)
 
     def draw(self, context, layout):
         """Draw the content of the node.

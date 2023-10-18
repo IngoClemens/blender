@@ -3,7 +3,7 @@
 import bpy
 import bpy.utils.previews
 
-from . import operators, panel, preferences
+from . import operators, panel
 # from . icons import toolIcons
 
 
@@ -12,8 +12,7 @@ from . import operators, panel, preferences
 # ----------------------------------------------------------------------
 
 # Collect all classes in a list for easier access.
-classes = [preferences.RBFNODESPreferences,
-           operators.RBFNODES_OT_CreateRBF,
+classes = [operators.RBFNODES_OT_CreateRBF,
            operators.RBFNODES_OT_CreatePose,
            operators.RBFNODES_OT_CreateNodeInput,
            operators.RBFNODES_OT_CreateNodeOutput,

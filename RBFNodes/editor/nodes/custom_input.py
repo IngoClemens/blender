@@ -3,13 +3,18 @@
 import bpy
 
 from . import common, node
+from ... import language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFCustomInputNode(node.RBFNode):
     """Custom property input node.
     """
     bl_idname = "RBFCustomInputNode"
-    bl_label = "Custom Input"
+    bl_label = strings.CUSTOM_INPUT_LABEL
     bl_icon = 'EMPTY_SINGLE_ARROW'
 
     # ------------------------------------------------------------------
@@ -41,8 +46,8 @@ class RBFCustomInputNode(node.RBFNode):
     # Properties
     # ------------------------------------------------------------------
 
-    modeItems = [('LIST', "Auto", ""),
-                 ('MANUAL', "Manual", "")]
+    modeItems = [('LIST', strings.AUTO_LABEL, ""),
+                 ('MANUAL', strings.MANUAL_LABEL, "")]
     mode : bpy.props.EnumProperty(items=modeItems)
     propertyName : bpy.props.StringProperty(name="", update=setLabelCallback)
     propertyEnum : bpy.props.EnumProperty(name="", items=propItems, update=setLabelCallback)
@@ -53,7 +58,7 @@ class RBFCustomInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFPropertySocket", "Custom")
+        self.addOutput("RBFPropertySocket", strings.CUSTOM_LABEL)
 
     def draw(self, context, layout):
         """Draw the content of the node.

@@ -3,25 +3,30 @@
 import bpy
 
 from . import common, node
+from ... import language
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFNodeInputNode(node.RBFNode):
     """Node tree input node.
     """
     bl_idname = "RBFNodeInputNode"
-    bl_label = "Node Input"
+    bl_label = strings.NODE_INPUT_LABEL
     bl_icon = 'NODETREE'
 
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
 
-    parentItems = [('MATERIAL', "Material", ""),
-                   ('NODE_GROUP', "Node Group", "")]
+    parentItems = [('MATERIAL', strings.MATERIAL_LABEL, ""),
+                   ('NODE_GROUP', strings.NODE_GROUP_LABEL, "")]
     nodeParent : bpy.props.EnumProperty(name="", items=parentItems)
-    parentName : bpy.props.StringProperty(name="Parent")
-    nodeName : bpy.props.StringProperty(name="Node")
-    plugName : bpy.props.StringProperty(name="Plug")
+    parentName : bpy.props.StringProperty(name=strings.PARENT_LABEL)
+    nodeName : bpy.props.StringProperty(name=strings.NODE_LABEL)
+    plugName : bpy.props.StringProperty(name=strings.PLUG_LABEL)
     propertyEnum : bpy.props.EnumProperty(name="",
                                           items=common.nodeItemsCallback,
                                           update=common.setPropertyPlugName)
@@ -34,7 +39,7 @@ class RBFNodeInputNode(node.RBFNode):
         :param context: The current context.
         :type context: bpy.context
         """
-        self.addOutput("RBFNodeSocket", "Node")
+        self.addOutput("RBFNodeSocket", strings.NODE_LABEL)
 
     def draw(self, context, layout):
         """Draw the content of the node.

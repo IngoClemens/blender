@@ -3,9 +3,13 @@
 import bpy
 
 from . import plugs, utils
-from .. import var
+from .. import language, var
 
 from operator import itemgetter
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 def setNodeTree(context):
@@ -51,7 +55,7 @@ def createNodeTree(context):
     :param context: The current context.
     :type context: bpy.context
     """
-    bpy.ops.node.new_node_tree(type=var.NODE_TREE_TYPE, name="RBF Nodes")
+    bpy.ops.node.new_node_tree(type=var.NODE_TREE_TYPE, name=strings.CATEGORY_LABEL)
     # Switch the editor to display the new node tree.
     # Because creating a new node tree only displays the new name but
     # actually doesn't update the editor.

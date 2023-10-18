@@ -2,9 +2,10 @@
 
 import bpy
 
-from .. var import VERSION
-
 import json
+
+
+VERSION = None
 
 
 def verifyVersion(node):

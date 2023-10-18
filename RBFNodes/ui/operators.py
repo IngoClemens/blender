@@ -2,15 +2,20 @@
 
 import bpy
 
+from .. import language
 from .. core import dev, rbf, nodeTree, poses
+
+
+# Get the current language.
+strings = language.getLanguage()
 
 
 class RBFNODES_OT_CreateRBF(bpy.types.Operator):
     """Operator class for creating a new RBF node tree.
     """
     bl_idname = "rbfnodes.create_rbf"
-    bl_label = "Create New RBF Setup"
-    bl_description = "Create a new node tree with default nodes for a new RBF"
+    bl_label = strings.CREATE_RBF_LABEL
+    bl_description = strings.ANN_CREATE_RBF
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -31,8 +36,8 @@ class RBFNODES_OT_CreatePose(bpy.types.Operator):
     """Operator class for creating a new pose.
     """
     bl_idname = "rbfnodes.create_pose"
-    bl_label = "Add Pose"
-    bl_description = "Create a new pose for the current RBF or selected node graph"
+    bl_label = strings.ADD_POSE_LABEL
+    bl_description = strings.ANN_ADD_POSE
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -57,8 +62,8 @@ class RBFNODES_OT_CreateNodeInput(bpy.types.Operator):
     selection.
     """
     bl_idname = "rbfnodes.create_node_input"
-    bl_label = "Link Input Node"
-    bl_description = "Create a new input node from the current node graph selection"
+    bl_label = strings.CREATE_NODE_INPUT_LABEL
+    bl_description = strings.ANN_CREATE_NODE_INPUT
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -81,8 +86,8 @@ class RBFNODES_OT_CreateNodeOutput(bpy.types.Operator):
     selection.
     """
     bl_idname = "rbfnodes.create_node_output"
-    bl_label = "Link Output Node"
-    bl_description = "Create a new output node from the current node graph selection"
+    bl_label = strings.CREATE_NODE_OUTPUT_LABEL
+    bl_description = strings.ANN_CREATE_NODE_OUTPUT
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -104,8 +109,8 @@ class RBFNODES_OT_RecallPose(bpy.types.Operator):
     """Operator class for recalling a pose.
     """
     bl_idname = "rbfnodes.recall_pose"
-    bl_label = "Recall"
-    bl_description = "Set the properties of the RBF to match the selected pose"
+    bl_label = strings.RECALL_POSE_LABEL
+    bl_description = strings.ANN_RECALL_POSE
     bl_options = {'REGISTER', 'UNDO'}
 
     nodeName : bpy.props.StringProperty()
@@ -131,8 +136,8 @@ class RBFNODES_OT_ActivateRBF(bpy.types.Operator):
     """Operator class for activating the RBF solver.
     """
     bl_idname = "rbfnodes.activate_rbf"
-    bl_label = "Activate RBF"
-    bl_description = "Initialize the RBF"
+    bl_label = strings.ACTIVATE_RBF_LABEL
+    bl_description = strings.ANN_ACTIVATE_RBF
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -156,8 +161,8 @@ class RBFNODES_OT_ResetRBF(bpy.types.Operator):
     """Operator class for resetting the RBF solver.
     """
     bl_idname = "rbfnodes.reset_rbf"
-    bl_label = "Reset RBF"
-    bl_description = "Resets the RBF to it's default and removes all drivers"
+    bl_label = strings.RESET_RBF_LABEL
+    bl_description = strings.ANN_RESET_RBF
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -181,8 +186,8 @@ class RBFNODES_OT_DumpPose(bpy.types.Operator):
     """Operator class for printing the pose data to the command line.
     """
     bl_idname = "rbfnodes.dump_pose"
-    bl_label = "Dump Pose"
-    bl_description = "Write the pose values of the selected pose node to the command line"
+    bl_label = strings.DUMP_POSE_LABEL
+    bl_description = strings.ANN_DUMP_POSE
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -204,8 +209,8 @@ class RBFNODES_OT_DumpRBF(bpy.types.Operator):
     line.
     """
     bl_idname = "rbfnodes.dump_rbf"
-    bl_label = "Dump RBF"
-    bl_description = "Write the pose weight matrix to the command line"
+    bl_label = strings.DUMP_RBF_LABEL
+    bl_description = strings.ANN_DUMP_RBF
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -227,8 +232,8 @@ class RBFNODES_OT_SearchReplacePoseDriverData(bpy.types.Operator):
     replace.
     """
     bl_idname = "rbfnodes.search_replace_pose_driver_data"
-    bl_label = "Edit Driver"
-    bl_description = "Search and replace pose driver data of all poses."
+    bl_label = strings.EDIT_DRIVER_LABEL
+    bl_description = strings.ANN_EDIT_DRIVER
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
@@ -256,8 +261,8 @@ class RBFNODES_OT_SearchReplacePoseDrivenData(bpy.types.Operator):
     replace.
     """
     bl_idname = "rbfnodes.search_replace_pose_driven_data"
-    bl_label = "Edit Driven"
-    bl_description = "Search and replace pose driven data of all poses."
+    bl_label = strings.EDIT_DRIVEN_LABEL
+    bl_description = strings.ANN_EDIT_DRIVEN
     bl_options = {'REGISTER', 'UNDO'}
 
     # ------------------------------------------------------------------
