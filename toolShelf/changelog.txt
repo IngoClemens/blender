@@ -1,3 +1,8 @@
+0.15.0 - 2023-10-17
+       - Added compatibility with Blender 4.0.
+       - Added the language setting to the configuration.
+       - Fixed that the language selection isn't kept after restarting.
+
 0.14.0 - 2023-10-05
        - Abbreviate only non-english operator and property names.
 

@@ -6,6 +6,7 @@ import importlib
 
 
 NAME = "toolShelf"
+LANGUAGE = "ENGLISH"
 LANGUAGE_FILES = {"ENGLISH": "strings_en",
                   "FRENCH": "strings_fr",
                   "GERMAN": "strings_de",
@@ -30,15 +31,11 @@ def getLanguage():
     :return: The language module.
     :rtype: module
     """
-    addons = bpy.context.preferences.addons
-    if NAME in addons and hasattr(addons[NAME].preferences, "language"):
-        language = addons[NAME].preferences.language
+    language = LANGUAGE
+    if LANGUAGE not in LANGUAGE_FILES:
+        language = "ENGLISH"
 
-        if language in LANGUAGE_FILES:
-            modPath = "{}.locales.{}".format(NAME, LANGUAGE_FILES[language])
-            return importlib.import_module(modPath)
-
-    modPath = "{}.locales.{}".format(NAME, LANGUAGE_FILES["ENGLISH"])
+    modPath = "{}.locales.{}".format(NAME, LANGUAGE_FILES[language])
     return importlib.import_module(modPath)
 
 

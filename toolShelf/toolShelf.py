@@ -1,7 +1,7 @@
 # <pep8 compliant>
 
 from . import constants as const
-from . import language, preferences
+from . import config, language, preferences
 
 import bpy
 import bpy.utils.previews
@@ -25,13 +25,6 @@ strings = language.getLanguage()
 
 logger = logging.getLogger(__name__)
 
-
-LOCAL_PATH = os.path.dirname(__file__)
-CONFIG_PATH = os.path.join(LOCAL_PATH, const.CONFIG_NAME)
-ICONS_PATH = os.path.join(LOCAL_PATH, "icons")
-SCRIPTS_PATH = os.path.join(LOCAL_PATH, "scripts")
-BACKUP_PATH = os.path.join(LOCAL_PATH, "backup")
-BACKUP_COUNT = 5
 
 # The dictionary containing the panel and button data.
 CONFIG_DATA = {}
@@ -57,7 +50,7 @@ UPDATE_FIELDS = True
 
 # Add the current path to the system in case other scripts are placed
 # here.
-sys.path.append(SCRIPTS_PATH)
+sys.path.append(config.SCRIPTS_PATH)
 
 # Define the alphanumeric regex pattern for the operator class name and
 # idname.
@@ -90,204 +83,7 @@ def replaceColorSeparator(values):
 # ----------------------------------------------------------------------
 
 
-def createDir(dirPath):
-    """Create the given folder if it doesn't exist.
-
-    :param dirPath: The path of the folder to create.
-    :type dirPath: str
-
-    :return: The path of the folder.
-    :rtype: str
-    """
-    if not os.path.exists(dirPath):
-        try:
-            os.makedirs(dirPath)
-        except OSError as exception:
-            logger.error(exception)
-    return dirPath
-
-
-def configBase():
-    """Return the basic dictionary of the tool shelf configuration.
-
-    :return: The basic configuration dictionary.
-    :rtype: dict
-    """
-    return {
-                "name": "Tool Shelf",
-                "category": "Tool Shelf",
-                "label": strings.NAME_LABEL,
-                "region": "UI",
-                "space": "VIEW_3D",
-                "base": "view3d",
-                "groups": []
-            }
-
-
-def readConfig():
-    """Read the configuration file. If the file doesn't exist create the
-    basic configuration and return it.
-    Also return the default paths for icons, scripts and backup.
-
-    :return: The content of the configuration file.
-    :rtype: dict
-    """
-    for dirName in [ICONS_PATH, SCRIPTS_PATH, BACKUP_PATH]:
-        createDir(dirName)
-
-    if os.path.exists(CONFIG_PATH):
-        return jsonRead(CONFIG_PATH)
-    else:
-        config = configBase()
-        jsonWrite(CONFIG_PATH, config)
-        return config
-
-
-def jsonRead(filePath):
-    """Return the content of the given json file. Return an empty
-    dictionary if the file doesn't exist.
-
-    :param filePath: The file path of the file to read.
-    :type filePath: str
-
-    :return: The content of the json file.
-    :rtype: dict
-    """
-    content = {}
-
-    if os.path.exists(filePath):
-        try:
-            with open(filePath, "r") as fileObj:
-                return json.load(fileObj)
-        except OSError as exception:
-            logger.error(exception)
-    return content
-
-
-def jsonWrite(filePath, data):
-    """Export the given data to the given json file.
-
-    :param filePath: The file path of the file to write.
-    :type filePath: str
-    :param data: The data to write.
-    :type data: dict or list
-
-    :return: True, if writing was successful.
-    :rtype: bool
-    """
-    # Make the unicode encoding work with Python 2 and 3.
-    try:
-        toUnicode = unicode
-    except NameError:
-        toUnicode = str
-
-    try:
-        with io.open(filePath, "w", encoding="utf8") as fileObj:
-            writeString = json.dumps(addVersions(data), sort_keys=True, indent=4, ensure_ascii=False)
-            fileObj.write(toUnicode(writeString))
-        return True
-    except OSError as exception:
-        logger.error(exception)
-    return False
-
-
-def addVersions(data):
-    """Add the current tool and blender versions to the configuration.
-
-    :param data: The configuration data.
-    :type data: dict
-
-    :return: The configuration data.
-    :rtype: dict
-    """
-    version = [mod.bl_info["version"] for mod in addon_utils.modules() if mod.__name__ == const.NAME]
-    if len(version):
-        data["version"] = ".".join(str(i) for i in version[0])
-    data["blenderVersion"] = bpy.app.version_string
-    return data
-
-
-def backupConfig(data):
-    """Backup the given configuration.
-
-    :param data: The configuration dictionary to back up.
-    :type data: dict
-    """
-    backupFileName = "config_{}.json".format(nextBackupIndex())
-    backupFilePath = os.path.join(BACKUP_PATH, backupFileName)
-    jsonWrite(backupFilePath, data)
-
-
-def nextBackupIndex():
-    """Return the next index for the configuration backup. If the folder
-    doesn't exist, create it.
-    Get the index of the last file and compare it to the number of
-    backup files.
-
-    :return: The next index for the backup configuration.
-    :rtype: int
-    """
-    fileList = os.listdir(createDir(BACKUP_PATH))
-    if not len(fileList) or not fileList[-1].endswith(".json"):
-        return 1
-
-    lastIndex = int(fileList[-1].split(".")[0].split("_")[-1])
-    newIndex = (lastIndex+1) % BACKUP_COUNT
-
-    return newIndex
-
-
-def updateConfig(data):
-    """Update older configurations with mandatory settings.
-
-    :param data: The configuration data.
-    :type data: dict
-
-    :return: The updated configuration data.
-    :rtype: dict
-    """
-    # Cancel if no groups have been defined.
-    if "groups" not in data:
-        return data
-
-    config = dict(data)
-
-    updateItems = [("iconOnly", False)]
-
-    update = False
-    for i in range(len(config["groups"])):
-        group = config["groups"][i]
-        for j in range(len(group["commands"])):
-            command = group["commands"][j]
-            if "set" in command:
-                for k in range(len(command["commands"])):
-                    setCommand = command["commands"][k]
-                    for item in updateItems:
-                        if item[0] not in setCommand:
-                            config["groups"][i]["commands"][j]["commands"][k][item[0]] = item[1]
-                            update = True
-                    # Copy the properties to the set commands.
-                    if "valueName" in command and "valueName" not in setCommand:
-                        config["groups"][i]["commands"][j]["commands"][k]["valueName"] = command["valueName"]
-                        config["groups"][i]["commands"][j]["commands"][k]["value"] = command["value"]
-                        update = True
-
-            else:
-                for item in updateItems:
-                    if item[0] not in command:
-                        config["groups"][i]["commands"][j][item[0]] = item[1]
-                        update = True
-
-    if update:
-        # Backup the current configuration.
-        backupConfig(data)
-        # Save the configuration.
-        jsonWrite(CONFIG_PATH, config)
-
-    return config
-
-
-CONFIG_DATA = updateConfig(readConfig())
+CONFIG_DATA = config.updateConfig(config.readConfig())
 
 
 # ----------------------------------------------------------------------
@@ -1058,7 +854,7 @@ def registerIcons(icons, filePath):
     return pcoll
 
 
-ICON_COLLECTION["icons"] = registerIcons(ICONS, ICONS_PATH)
+ICON_COLLECTION["icons"] = registerIcons(ICONS, config.ICONS_PATH)
 
 
 # ----------------------------------------------------------------------
@@ -1214,7 +1010,7 @@ def importFileChanged(self, context):
     :type context: bpy.context
     """
     tool_shelf = context.window_manager.tool_shelf
-    CONFIG_DATA_IMPORT.config = jsonRead(tool_shelf.file_value)
+    CONFIG_DATA_IMPORT.config = config.jsonRead(tool_shelf.file_value)
     if not len(CONFIG_DATA_IMPORT.config):
         tool_shelf.import_value = 'NONE'
 
@@ -1331,7 +1127,7 @@ def importItems(self, context):
     # mid-action while an item in the list is selected an error gets
     # reported that the last list selection cannot be found anymore.
     # Therefore, it's best to keep the list updated.
-    CONFIG_DATA_IMPORT.config = jsonRead(tool_shelf.file_value)
+    CONFIG_DATA_IMPORT.config = config.jsonRead(tool_shelf.file_value)
 
     # Cancel if no groups have been defined.
     if "groups" not in CONFIG_DATA_IMPORT.config:
@@ -2014,7 +1810,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                         return {'CANCELLED'}
 
                 # Backup the current configuration.
-                backupConfig(CONFIG_DATA)
+                config.backupConfig(CONFIG_DATA)
 
                 # Add a new group to the configuration and save it.
                 group = {"name": self.name_value,
@@ -2033,7 +1829,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                         CONFIG_DATA["groups"].append(group)
 
                 # Save the configuration.
-                jsonWrite(CONFIG_PATH, CONFIG_DATA)
+                config.jsonWrite(config.CONFIG_PATH, CONFIG_DATA)
 
             # ----------------------------------------------------------
             # Add or edit a new button or group.
@@ -2054,7 +1850,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                         return {'CANCELLED'}
 
                     # Backup the current configuration.
-                    backupConfig(CONFIG_DATA)
+                    config.backupConfig(CONFIG_DATA)
 
                     # Rename the group.
                     groupIndex = getGroupIndex(CONFIG_DATA, self.group_value)
@@ -2077,8 +1873,8 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                     # Check, if the image exists in the icons folder.
                     for image in self.image_value.rstrip(";").split(";"):
                         if (not image.startswith("'") and image.split(".")[-1] == "png" and
-                                not os.path.exists(os.path.join(ICONS_PATH, image))):
-                            msg = strings.WARNING_IMAGE_MISSING + "{}".format(os.path.join(ICONS_PATH, image))
+                                not os.path.exists(os.path.join(config.ICONS_PATH, image))):
+                            msg = strings.WARNING_IMAGE_MISSING + "{}".format(os.path.join(config.ICONS_PATH, image))
                             self.report({'WARNING'}, msg)
                             return {'CANCELLED'}
 
@@ -2116,7 +1912,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                             return {'CANCELLED'}
 
                     # Backup the current configuration.
-                    backupConfig(CONFIG_DATA)
+                    config.backupConfig(CONFIG_DATA)
 
                     # Add a new command to the configuration and save
                     # it.
@@ -2238,7 +2034,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                             CONFIG_DATA["groups"][groupIndex]["commands"][toolIndex] = cmd
 
                 # Save the configuration.
-                jsonWrite(CONFIG_PATH, CONFIG_DATA)
+                config.jsonWrite(config.CONFIG_PATH, CONFIG_DATA)
 
             # Reload the panel.
             preferences.reload()
@@ -2268,7 +2064,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                 return {'CANCELLED'}
 
             # Backup the current configuration.
-            backupConfig(CONFIG_DATA)
+            config.backupConfig(CONFIG_DATA)
 
             # ----------------------------------------------------------
             # Delete the selected group.
@@ -2297,7 +2093,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                     return {'CANCELLED'}
 
             # Save the configuration.
-            jsonWrite(CONFIG_PATH, CONFIG_DATA)
+            config.jsonWrite(config.CONFIG_PATH, CONFIG_DATA)
 
             # Reload the panel.
             preferences.reload()
@@ -2307,10 +2103,10 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
         # --------------------------------------------------------------
         elif mode == 'REORDER':
             # Backup the current configuration.
-            backupConfig(CONFIG_DATA_BACKUP)
+            config.backupConfig(CONFIG_DATA_BACKUP)
 
             # Save the configuration.
-            jsonWrite(CONFIG_PATH, CONFIG_DATA)
+            config.jsonWrite(config.CONFIG_PATH, CONFIG_DATA)
 
             # Reload the panel.
             preferences.reload()
@@ -2377,13 +2173,13 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                     return {'CANCELLED'}
 
                 # Backup the current configuration.
-                backupConfig(CONFIG_DATA_BACKUP)
+                config.backupConfig(CONFIG_DATA_BACKUP)
 
                 groupIndex = getGroupIndex(CONFIG_DATA_IMPORT.config, groupName)
                 CONFIG_DATA["groups"].append(CONFIG_DATA_IMPORT.config["groups"][groupIndex])
 
                 # Save the configuration.
-                jsonWrite(CONFIG_PATH, CONFIG_DATA)
+                config.jsonWrite(config.CONFIG_PATH, CONFIG_DATA)
 
                 context.window_manager.tool_shelf.import_value = 'NONE'
 
@@ -2409,7 +2205,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                     return {'CANCELLED'}
 
                 # Backup the current configuration.
-                backupConfig(CONFIG_DATA_BACKUP)
+                config.backupConfig(CONFIG_DATA_BACKUP)
 
                 # Get the group and tool name from the selected element.
                 importGroupIndex = getGroupIndex(CONFIG_DATA_IMPORT.config, groupName)
@@ -2417,7 +2213,7 @@ class TOOLSHELF_OT_Editor(bpy.types.Operator):
                 CONFIG_DATA["groups"][groupIndex]["commands"].append(CONFIG_DATA_IMPORT.config["groups"][importGroupIndex]["commands"][importToolIndex])
 
                 # Save the configuration.
-                jsonWrite(CONFIG_PATH, CONFIG_DATA)
+                config.jsonWrite(config.CONFIG_PATH, CONFIG_DATA)
 
                 context.window_manager.tool_shelf.group_value = 'NONE'
                 context.window_manager.tool_shelf.import_value = 'NONE'

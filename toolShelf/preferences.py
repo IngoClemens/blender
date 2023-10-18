@@ -1,9 +1,14 @@
 # <pep8 compliant>
 
 from . import constants as const
-from . import language
+from . import config, language
 
 import bpy
+
+
+data = config.readConfig()
+if "language" in data:
+    language.LANGUAGE = data["language"]
 
 
 # Get the current language.
@@ -30,7 +35,13 @@ def updateLanguageCallback(self, context):
     :param context: The current context.
     :type context: bpy.context
     """
-    reload()
+    # Save the new language setting to the configuration.
+    data = config.readConfig()
+    data["language"] = getPreferences().language
+    config.backupConfig(data)
+    config.jsonWrite(config.CONFIG_PATH, data)
+
+    # language.reloadDependencies()
 
 
 def reload():
@@ -39,7 +50,6 @@ def reload():
     Also used for updating the panel when adding, editing or removing
     groups or tools.
     """
-    language.reloadDependencies()
     # Reload the add-on.
     bpy.ops.script.reload()
 

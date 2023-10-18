@@ -7,7 +7,7 @@
 NAME_LABEL = "Tool Shelf"
 
 # Preferences
-LANGUAGE_LABEL = "Idioma"
+LANGUAGE_LABEL = "Idioma (Requer reinício)"
 
 ADD_GROUP_LABEL = "Adicionar Grupo"
 ADD_TOOL_LABEL = "Adicionar Ferramenta"
