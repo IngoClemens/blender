@@ -61,6 +61,9 @@ frame padding.
 
 Changelog:
 
+0.3.0 - 2023-10-17
+      - Added compatibility with Blender 4.0.
+
 0.2.0 - 2022-11-03
       - Added support for creating collection asset previews.
 
@@ -72,7 +75,7 @@ Changelog:
 
 bl_info = {"name": "Thumb Mate",
            "author": "Ingo Clemens",
-           "version": (0, 2, 0),
+           "version": (0, 3, 0),
            "blender": (3, 0, 0),
            "category": "Import-Export",
            "location": "Asset Browser",
@@ -164,6 +167,24 @@ def currentSelection():
         if col is not None:
             # Filter only mesh objects.
             return collectionMeshes(col)
+
+
+def setSelection(objects):
+    """Select the given list of objects.
+
+    :param objects: The list of objects to select.
+    :type objects: list(bpy.types.Object or bpy.types.Collection)
+    """
+    for obj in objects:
+        if isinstance(obj, bpy.types.Object):
+            obj.select_set(True)
+            bpy.context.view_layer.objects.active = obj
+        elif isinstance(obj, bpy.types.Collection):
+            # Deselect all collection meshes.
+            for mesh in collectionMeshes(obj):
+                mesh.select_set(False)
+        else:
+            pass
 
 
 def activeCollection():
@@ -553,13 +574,23 @@ def renderPreviews(objects, imagePath):
             return ({'ERROR'}, ("An error occurred while trying to access the context " +
                                 "for loading the custom preview"))
 
+        sel = currentSelection()
+
         for obj in objects:
             if not obj.asset_data:
                 obj.asset_mark()
 
+            setSelection([obj])
+
             override['id'] = obj
             thumbFile = ".".join((os.path.join(imagePath, obj.name), "png"))
-            bpy.ops.ed.lib_id_load_custom_preview(override, filepath=thumbFile)
+            if bpy.app.version < (4, 0, 0):
+                bpy.ops.ed.lib_id_load_custom_preview(override, filepath=thumbFile)
+            else:
+                bpy.ops.ed.lib_id_load_custom_preview(filepath=thumbFile)
+
+        # Restore the selection.
+        setSelection(sel)
 
 
 def setupRender():
@@ -637,16 +668,7 @@ def createAssetPreview(objects):
             return renderError
 
         # Restore the selection.
-        for obj in objects:
-            if isinstance(obj, bpy.types.Object):
-                obj.select_set(True)
-                bpy.context.view_layer.objects.active = obj
-            elif isinstance(obj, bpy.types.Collection):
-                # Deselect all collection meshes.
-                for mesh in collectionMeshes(obj):
-                    mesh.select_set(False)
-            else:
-                pass
+        setSelection(objects)
 
 
 def setObjectRenderable(obj, state):
@@ -654,7 +676,7 @@ def setObjectRenderable(obj, state):
     state is True, the object gets also selected.
 
     :param obj: The object to set the renderable state for.
-    :type obj: boy.types.Object
+    :type obj: bpy.types.Object
     :param state: True, if the object should be set to renderable.
     :type state: bool
     """
