@@ -5,6 +5,8 @@ from . import config, language
 
 import bpy
 
+import importlib
+
 
 data = config.readConfig()
 if "language" in data:
@@ -50,8 +52,23 @@ def reload():
     Also used for updating the panel when adding, editing or removing
     groups or tools.
     """
+    reloadDependencies()
     # Reload the add-on.
     bpy.ops.script.reload()
+
+
+def reloadDependencies():
+    """Reload the main module to update the panels.
+    """
+    mods = ["toolShelf"]
+    for mod in mods:
+        moduleName = ".".join([const.NAME, mod])
+        try:
+            module = __import__(moduleName, fromlist=[""])
+            importlib.reload(module)
+
+        except (Exception, ):
+            pass
 
 
 class TOOLSHELFPreferences(bpy.types.AddonPreferences):

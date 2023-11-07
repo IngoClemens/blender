@@ -37,17 +37,3 @@ def getLanguage():
 
     modPath = "{}.locales.{}".format(NAME, LANGUAGE_FILES[language])
     return importlib.import_module(modPath)
-
-
-def reloadDependencies():
-    """Reload the modules which are affected by a language change.
-    """
-    mods = ["toolShelf", "preferences"]
-    for mod in mods:
-        moduleName = ".".join([NAME, mod])
-        try:
-            module = __import__(moduleName, fromlist=[""])
-            importlib.reload(module)
-
-        except (Exception, ):
-            pass
