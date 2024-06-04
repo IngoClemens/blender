@@ -92,7 +92,8 @@ def updateConfiguration(self, context):
     props = {"autoLabel": "autoLabel",
              "developerMode": "developerMode",
              "language": "language",
-             "logData": "logData"}
+             "logData": "logData",
+             "propertyCount": "propertyCount"}
 
     prefs = getPreferences()
     config = {}
@@ -162,6 +163,11 @@ class RBFNODESPreferences(bpy.types.AddonPreferences):
     logData : bpy.props.BoolProperty(name=strings.LOG_DATA_LABEL,
                                      description=strings.ANN_LOG_DATA,
                                      default=var.EXPOSE_DATA)
+    propertyCount : bpy.props.IntProperty(name=strings.MAX_PROPERTIES_LABEL,
+                                          description=strings.ANN_MAX_PROPERTIES,
+                                          default=var.NUM_ARRAYS * var.MAX_LEN,
+                                          min=1,
+                                          update=updateLanguageCallback)
 
     def draw(self, context):
         """Draw the panel and it's properties.
@@ -175,6 +181,7 @@ class RBFNODESPreferences(bpy.types.AddonPreferences):
         col.prop(self, "language")
         col.separator()
         col.prop(self, "autoLabel")
+        col.prop(self, "propertyCount")
         col.separator(factor=1.5)
         col.prop(self, "developerMode")
         if self.developerMode:

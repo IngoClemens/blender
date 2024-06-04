@@ -27,7 +27,7 @@ from . core import handler, utils
 
 bl_info = {"name": "RBF Nodes",
            "author": "Ingo Clemens",
-           "version": (1, 1, 0),
+           "version": (1, 2, 0),
            "blender": (3, 1, 0),
            "category": "Animation",
            "location": "Editors > RBF Nodes Editor",

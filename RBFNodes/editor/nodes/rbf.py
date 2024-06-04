@@ -4,7 +4,7 @@ import bpy
 
 from . import node
 from ... core import matrix, plugs, rbf, utils
-from ... import dev, language, var
+from ... import dev, language, preferences, var
 
 import json
 import math
@@ -74,6 +74,16 @@ class RBFSolverNode(node.RBFNode):
     meanDistance : bpy.props.FloatProperty(default=1.0)
     variance : bpy.props.FloatProperty(default=1.0)
 
+
+
+    dataCount = utils.getArrayCount()
+
+    for i in range(dataCount):
+        exec("poseMatrix{} : bpy.props.FloatVectorProperty(size=32)".format(i))
+    for i in range(dataCount):
+        exec("weightMatrix{}: bpy.props.FloatVectorProperty(size=32)".format(i))
+
+    '''
     poseMatrix0 : bpy.props.FloatVectorProperty(size=32)
     poseMatrix1 : bpy.props.FloatVectorProperty(size=32)
     poseMatrix2 : bpy.props.FloatVectorProperty(size=32)
@@ -106,6 +116,7 @@ class RBFSolverNode(node.RBFNode):
     poseMatrix29 : bpy.props.FloatVectorProperty(size=32)
     poseMatrix30 : bpy.props.FloatVectorProperty(size=32)
     poseMatrix31 : bpy.props.FloatVectorProperty(size=32)
+    '''
     # Add additional floatVectorProperties here if the default capacity
     # is not efficient.
     # Important:
@@ -115,6 +126,7 @@ class RBFSolverNode(node.RBFNode):
     poseMatrixRows : bpy.props.IntProperty()
     poseMatrixColumns : bpy.props.IntProperty()
 
+    '''
     weightMatrix0 : bpy.props.FloatVectorProperty(size=32)
     weightMatrix1 : bpy.props.FloatVectorProperty(size=32)
     weightMatrix2 : bpy.props.FloatVectorProperty(size=32)
@@ -147,6 +159,7 @@ class RBFSolverNode(node.RBFNode):
     weightMatrix29 : bpy.props.FloatVectorProperty(size=32)
     weightMatrix30 : bpy.props.FloatVectorProperty(size=32)
     weightMatrix31 : bpy.props.FloatVectorProperty(size=32)
+    '''
     # Add additional floatVectorProperties here if the default capacity
     # is not efficient.
     # Important:
@@ -250,7 +263,7 @@ class RBFSolverNode(node.RBFNode):
         dev.log("Reset state")
 
         values = [0] * var.MAX_LEN
-        for i in range(var.NUM_ARRAYS):
+        for i in range(utils.getArrayCount()):
             self.setFloatVector(i, values, "poseMatrix")
             self.setFloatVector(i, values, "weightMatrix")
         dev.log("Reset matrices")
@@ -419,3 +432,21 @@ class RBFSolverNode(node.RBFNode):
         :type name: str
         """
         return getattr(self, "{}{}".format(name, index))
+
+
+def addPropertyArrays():
+    """
+    """
+    dataCount = utils.getArrayCount()
+
+    poseMatrix = {"poseMatrix{}".format(i): bpy.props.FloatVectorProperty(size=32) for i in range(dataCount)}
+    weightMatrix = {"weightMatrix{}".format(i): bpy.props.FloatVectorProperty(size=32) for i in range(dataCount)}
+
+    for prop, value in poseMatrix.items():
+        setattr(RBFSolverNode, prop, value)
+
+    for prop, value in weightMatrix.items():
+        setattr(RBFSolverNode, prop, value)
+
+
+# addPropertyArrays()

@@ -15,6 +15,7 @@ AUTO_LABEL_LABEL = "自动标签化属性节点"
 DEVELOPER_LABEL = "开发者模式"
 LANGUAGE_LABEL = "语言（需要重新启动）"
 LOG_DATA_LABEL = "记录 RBF 数据"
+MAX_PROPERTIES_LABEL = "最大属性"
 
 # Operators
 ACTIVATE_RBF_LABEL = "激活 RBF"
@@ -113,6 +114,7 @@ ANN_AUTO_LABEL = "根据属性名称自动设置属性和形状键节点的标�
 ANN_DEVELOPER = "显示开发者功能"
 ANN_LANGUAGE = "属性和消息的语言"
 ANN_LOG_DATA = "将 RBF 数据记录到命令输出中"
+ANN_MAX_PROPERTIES = "定义可以用作驱动或被驱动的属性数量。"
 
 # Operators
 ANN_ACTIVATE_RBF = "初始化 RBF"

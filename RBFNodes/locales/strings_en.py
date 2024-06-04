@@ -15,6 +15,7 @@ AUTO_LABEL_LABEL = "Auto Label Property Nodes"
 DEVELOPER_LABEL = "Developer Mode"
 LANGUAGE_LABEL = "Language (Requires Restart)"
 LOG_DATA_LABEL = "Log RBF Data"
+MAX_PROPERTIES_LABEL = "Maximum Properties"
 
 # Operators
 ACTIVATE_RBF_LABEL = "Activate RBF"
@@ -113,6 +114,7 @@ ANN_AUTO_LABEL = "Set the label for property and shape key nodes based on the pr
 ANN_DEVELOPER = "Show developer extras"
 ANN_LANGUAGE = "The language for properties and messages"
 ANN_LOG_DATA = "Write the RBF data to the command output"
+ANN_MAX_PROPERTIES = "Defines the number of properties which can be used as drivers or being driven"
 
 # Operators
 ANN_ACTIVATE_RBF = "Initialize the RBF"

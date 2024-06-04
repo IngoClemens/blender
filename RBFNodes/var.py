@@ -73,4 +73,4 @@ MAX_LEN = 32
 NUM_ARRAYS = 32
 # The maximum number of values which can be stored by concatenating the
 # floatVectorProperties.
-MAX_SIZE = MAX_LEN * NUM_ARRAYS
+# MAX_SIZE = MAX_LEN * NUM_ARRAYS

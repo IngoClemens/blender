@@ -15,6 +15,7 @@ AUTO_LABEL_LABEL = "속성 노드 자동 레이블링"
 DEVELOPER_LABEL = "개발자 모드"
 LANGUAGE_LABEL = "언어 (재시작 필요)"
 LOG_DATA_LABEL = "RBF 데이터 로깅"
+MAX_PROPERTIES_LABEL = "최대 속성"
 
 # Operators
 ACTIVATE_RBF_LABEL = "RBF 활성화"
@@ -113,6 +114,7 @@ ANN_AUTO_LABEL = "속성 및 쉐이프 키 노드에 속성 이름을 기반으�
 ANN_DEVELOPER = "개발자 기능을 표시합니다"
 ANN_LANGUAGE = "속성 및 메시지에 대한 언어를 설정합니다"
 ANN_LOG_DATA = "RBF 데이터를 명령 출력에 기록합니다"
+ANN_MAX_PROPERTIES = "드라이버로 사용되거나 구동될 수 있는 속성의 수를 정의합니다."
 
 # Operators
 ANN_ACTIVATE_RBF = "RBF 초기화"

@@ -15,6 +15,7 @@ AUTO_LABEL_LABEL = "プロパティノードを自動ラベル設定"
 DEVELOPER_LABEL = "開発者モード"
 LANGUAGE_LABEL = "言語（再起動が必要）"
 LOG_DATA_LABEL = "RBFデータを記録"
+MAX_PROPERTIES_LABEL = "最大プロパティ"
 
 # Operators
 ACTIVATE_RBF_LABEL = "RBFをアクティブ化"
@@ -113,6 +114,7 @@ ANN_AUTO_LABEL = "プロパティとシェイプキーノードのラベルを�
 ANN_DEVELOPER = "開発者用の拡張機能を表示"
 ANN_LANGUAGE = "プロパティとメッセージの言語"
 ANN_LOG_DATA = "RBFデータをコマンド出力に書き込む"
+ANN_MAX_PROPERTIES = "ドライバーとして使用できるプロパティの数または駆動されるプロパティの数を定義します。"
 
 # Operators
 ANN_ACTIVATE_RBF = "RBFの初期化"

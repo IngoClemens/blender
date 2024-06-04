@@ -15,6 +15,7 @@ AUTO_LABEL_LABEL = "Étiqueter Automatiquement les Nœuds de Propriété"
 DEVELOPER_LABEL = "Mode Développeur"
 LANGUAGE_LABEL = "Langue (Nécessite un redémarrage)"
 LOG_DATA_LABEL = "Journaliser les Données RBF"
+MAX_PROPERTIES_LABEL = "Propriétés Maximales"
 
 # Operators
 ACTIVATE_RBF_LABEL = "Activer RBF"
@@ -113,6 +114,7 @@ ANN_AUTO_LABEL = "Définir l'étiquette des nœuds de propriété et des clés d
 ANN_DEVELOPER = "Afficher les fonctionnalités de développement"
 ANN_LANGUAGE = "La langue pour les propriétés et les messages"
 ANN_LOG_DATA = "Écrire les données RBF dans la sortie de commande"
+ANN_MAX_PROPERTIES = "Définit le nombre de propriétés qui peuvent être utilisées comme pilotes ou être pilotées"
 
 # Operators
 ANN_ACTIVATE_RBF = "Initialiser le RBF"

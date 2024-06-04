@@ -99,10 +99,12 @@ def createPose(context):
         node.drivenSize = poseDataSize(drivenData)
         dev.log("Pose Size: Driver - {} | Driven - {}".format(node.driverSize, node.drivenSize))
 
-        if (len(poseNodes) + 1) * node.driverSize > var.MAX_SIZE:
+        maxSize = utils.getMaxSize()
+
+        if (len(poseNodes) + 1) * node.driverSize > maxSize:
             return {'WARNING'}, strings.WARNING_INPUT_SIZE_EXCEEDED
 
-        if len(poseNodes) * node.drivenSize > var.MAX_SIZE:
+        if len(poseNodes) * node.drivenSize > maxSize:
             return {'WARNING'}, strings.WARNING_OUTPUT_SIZE_EXCEEDED
 
     else:

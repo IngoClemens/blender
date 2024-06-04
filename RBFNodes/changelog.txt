@@ -1,3 +1,7 @@
+1.2.0 - 2024-06-04
+      - Added a preference setting to set the number of properties which
+        can be used as drivers or being driven.
+
 1.1.0 - 2023-10-17
       - Added compatibility with Blender 4.0.
       - Added a language selector with 8 languages.

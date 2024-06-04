@@ -2,7 +2,10 @@
 
 import bpy
 
+from .. import preferences, var
+
 import json
+import math
 
 
 VERSION = None
@@ -83,3 +86,23 @@ def displayMessage(title="", message="", icon='INFO'):
             self.layout.label(text=line)
 
     bpy.context.window_manager.popup_menu(draw, title=title, icon=icon)
+
+
+def getMaxSize():
+    """Return the maximum number of values.
+
+    :return: The maximum number of values for poses and weights.
+    :rtype: int
+    """
+    return preferences.getPreferences().propertyCount * var.MAX_LEN
+
+
+def getArrayCount():
+    """
+    """
+    config = preferences.readConfig()
+
+    if "propertyCount" in config:
+        return math.ceil(config["propertyCount"] / var.MAX_LEN)
+    else:
+        return var.NUM_ARRAYS

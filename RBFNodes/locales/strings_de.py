@@ -15,6 +15,7 @@ AUTO_LABEL_LABEL = "Automatische Beschriftung von Eigenschaftsknoten"
 DEVELOPER_LABEL = "Entwicklermodus"
 LANGUAGE_LABEL = "Sprache (Erfordert Neustart)"
 LOG_DATA_LABEL = "RBF-Daten protokollieren"
+MAX_PROPERTIES_LABEL = "Maximale Anzahl Eigenschaften"
 
 # Operators
 ACTIVATE_RBF_LABEL = "RBF aktivieren"
@@ -113,6 +114,7 @@ ANN_AUTO_LABEL = "Die Beschriftung für Eigenschafts- und Formtastenknoten autom
 ANN_DEVELOPER = "Entwicklerextras anzeigen"
 ANN_LANGUAGE = "Die Sprache für Eigenschaften und Meldungen"
 ANN_LOG_DATA = "RBF-Daten in die Befehlsausgabe schreiben"
+ANN_MAX_PROPERTIES = "Definiert die Anzahl der Eigenschaften, die als Treiber verwendet werden können oder angetrieben werden"
 
 # Operators
 ANN_ACTIVATE_RBF = "Initialisieren der RBF"

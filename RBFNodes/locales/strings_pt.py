@@ -15,6 +15,7 @@ AUTO_LABEL_LABEL = "Rotular Automaticamente Nós de Propriedade"
 DEVELOPER_LABEL = "Modo Desenvolvedor"
 LANGUAGE_LABEL = "Idioma (Requer reinício)"
 LOG_DATA_LABEL = "Registrar Dados do RBF"
+MAX_PROPERTIES_LABEL = "Propriedades Máximas"
 
 # Operators
 ACTIVATE_RBF_LABEL = "Ativar RBF"
@@ -113,6 +114,7 @@ ANN_AUTO_LABEL = "Defina automaticamente as etiquetas dos nós de propriedade e 
 ANN_DEVELOPER = "Exibir recursos de desenvolvimento"
 ANN_LANGUAGE = "O idioma para as propriedades e mensagens"
 ANN_LOG_DATA = "Escrever os dados RBF na saída de comando"
+ANN_MAX_PROPERTIES = "Define o número de propriedades que podem ser usadas como motoras ou movidas"
 
 # Operators
 ANN_ACTIVATE_RBF = "Inicializar o RBF"
