@@ -1,6 +1,7 @@
 # <pep8 compliant>
 
 import bpy
+from mathutils import Matrix, Quaternion
 
 from ... core import plugs, properties, shapeKeys
 from ... import language, preferences, var
@@ -160,6 +161,53 @@ def drawRotationProperties(node, layout):
         row.prop(node, "z_axis")
 
 
+def getCombinedLocalRotations(obj):
+    """
+    Calculates and returns the Object or Pose Bone's locally applied transforms -
+    be it directly by user, or animation, or indirectly by constraints.
+    Ignores parent transforms.
+    
+    :param obj: A blender Object or Pose Bone.
+    :type obj: bpy.types.Object or bpy.types.PoseBone
+    
+    :return: A quaternion with the rotation of the Object or Pose Bone,
+    excluding parent transforms, including transforms applied by constraints,
+    in the Object or Pose Bone's local coordinates.
+    :rtype: mathutils.Quaternion
+    
+    """
+    combined_local_rotations_quat = Quaternion()
+    if isinstance(obj, bpy.types.PoseBone):
+        pbone = obj
+        pbone_parent_matrix_channel:Matrix = Matrix.Identity(4)
+        if pbone.parent:
+            pbone_parent_matrix_channel = pbone.parent.matrix_channel
+        
+        pbone_parent_matrix_channel_in_world_coordinates_relative_to_pbone = \
+            pbone_parent_matrix_channel.to_quaternion() @ \
+            pbone.bone.matrix_local.to_quaternion()
+        
+        # convert source bone coordinates to world coordinates (for the matrix_channel)
+        pbone_matrix_channel_in_world_coordinates = \
+            pbone.matrix_channel.to_quaternion() @ \
+            pbone.bone.matrix_local.to_quaternion()
+        
+        # calculate the rotation, which, apparently contradictingly, will now result in a rotation
+        # in *local* pose bone coordinates.
+        combined_local_rotations_quat = \
+            pbone_parent_matrix_channel_in_world_coordinates_relative_to_pbone.\
+            rotation_difference(
+                pbone_matrix_channel_in_world_coordinates
+            )
+        
+    else:   # code for regular Objects, use other kinds of matrices
+        combined_local_rotations_quat = \
+            obj.matrix_parent_inverse.to_quaternion().inverted() @ \
+            obj.matrix_local.to_quaternion()
+        
+    return combined_local_rotations_quat
+
+
 def getRotationProperties(node, obj):
     """Return the selected rotation properties and their values for the
     given object.
@@ -183,9 +231,14 @@ def getRotationProperties(node, obj):
     :rtype: list(tuple(str, float, float or None))
     """
     result = []
-
+    
     if node.rotationMode == 'EULER':
-        rotation = obj.rotation_euler
+        if node.include_external_rotations:
+            rotation_quat = getCombinedLocalRotations(obj)
+            rotation = rotation_quat.to_euler(obj.rotation_euler.order)
+        else:
+            rotation = obj.rotation_euler
+            
         mode = var.ROTATIONS[node.rotationMode]
         if node.x_axis:
             result.append(("{}[{}]".format(mode, 0), rotation[0], None))
@@ -194,15 +247,24 @@ def getRotationProperties(node, obj):
         if node.z_axis:
             result.append(("{}[{}]".format(mode, 2), rotation[2], None))
     elif node.rotationMode == 'AXIS_ANGLE':
-        rotation = obj.rotation_axis_angle
+        if node.include_external_rotations:
+            rotation_quat = getCombinedLocalRotations(obj)
+            rotation = rotation_quat.to_axis_angle()
+        else:
+            rotation = obj.rotation_axis_angle
         mode = var.ROTATIONS[node.rotationMode]
         for i in range(4):
             result.append(("{}[{}]".format(mode, i), rotation[i], None))
     else:
-        rotation = obj.rotation_quaternion
+        
+        if node.include_external_rotations:
+            rotation = getCombinedLocalRotations(obj)
+        else:
+            rotation = obj.rotation_quaternion
+        
         mode = var.ROTATIONS['QUATERNION']
         values = list(rotation.to_exponential_map()) + [0.0]
-
+        
         for i in range(len(values)):
             # For quaternions store every channel individually.
             # Since quaternions are converted to an exponential map,

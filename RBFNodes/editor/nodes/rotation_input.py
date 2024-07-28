@@ -27,6 +27,9 @@ class RBFRotationInputNode(node.RBFNode):
     z_axis : bpy.props.BoolProperty(name=strings.Z_LABEL, default=False)
 
     rotationMode : bpy.props.EnumProperty(name="", items=common.ROTATION_MODE, default='EULER')
+    
+    include_external_rotations : bpy.props.BoolProperty(name=strings.INCLUDE_EXTERNAL_ROTATIONS_LABEL,
+                                             default=False)
 
     def init(self, context):
         """Initialize the node and add the sockets.
@@ -45,6 +48,7 @@ class RBFRotationInputNode(node.RBFNode):
         :type layout: bpy.types.UILayout
         """
         common.drawRotationProperties(self, layout)
+        layout.prop(self, "include_external_rotations")
 
     def draw_buttons_ext(self, context, layout):
         """Draw node buttons in the sidebar.
