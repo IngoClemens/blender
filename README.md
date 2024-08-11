@@ -1,41 +1,9 @@
-# Add-ons for Blender
+Changes to the "RBF Nodes" addon.
 
-This is a free add-on collection for Blender which will be extended over time as production calls for the creation of new tools.
+Adds a checkbox to 'Rotation Input' nodes that allows the User to access the combined (implied) rotations for a pose bone, instead of previously only having access to  explicitly set (by the user) 'rotation_euler' or 'rotation_quaternion' pose bone properties, which ignore external rotations. This allows the user access to rotations to the bone caused by Constraints or other external sources, while also combining them to explicitly set 'rotation_*' properties.
 
-Feel free to download and use any available.
+This is useful, for example, when using a rotation as the RBF driver input, and taking the rotation applied by an IK constraint to a humerus bone in that IK chain, to assist in rigging a character's shoulder mesh shapekeys or helper bone transforms.
 
-## PickWalk
-Navigate through a hierarchy of objects or bones of an armature or walk over vertices and points of meshes and curves in edit mode.
-It basically copies the default pickwalking behaviour of Maya with additional selection extension and opposite side switching.
-
-[Documentation](https://github.com/IngoClemens/blender/wiki/PickWalk)
-
-## Place Reflection
-Perform a reflection-based placement of lights (or any other object) on a mesh by simply dragging the mouse over the mesh.
-
-[Documentation](https://github.com/IngoClemens/blender/wiki/Place-Reflection)
-
-## Rapid SDK
-One-button tool to quickly set up driving relationships between one or more properties, aimed to simplify the steps needed to adjust relative ranges or even non-linear behavior.
-
-[Documentation](https://github.com/IngoClemens/blender/wiki/Rapid-SDK)
-
-## RBF Nodes
-Node-based RBF solver for driving multiple properties with multiple driver values.
-
-[Documentation](https://github.com/IngoClemens/blender/wiki/RBF-Nodes)
-
-## Smooth Weights
-Advanced tool for smoothing mesh weights by averaging neighbouring weights.
-
-[Documentation](https://github.com/IngoClemens/blender/wiki/Smooth-Weights)
-
-## Thumb Mate
-Create customizable thumbnail previews for object assets in the asset browser.
-
-[Documentation](https://github.com/IngoClemens/blender/wiki/Thumb-Mate)
-
-## Tool Shelf
-Save scripts as buttons and organize them in groups for easy access.
-
-[Documentation](https://github.com/IngoClemens/blender/wiki/Tool-Shelf)
+Changed the 'rotation_input' node to have a new checkbox that allows the user to use the accumulated rotations to a bone
+Edited the 'common' file to include functions that perform the math matrix transforms to accesss these relevant rotations.
+Created new variable in 'strings' file: 'INCLUDE_EXTERNAL_ROTATIONS_LABEL', and introduced locale translations for that variable in english, portuguese and spanish.
