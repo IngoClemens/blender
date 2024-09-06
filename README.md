@@ -1,8 +1,8 @@
 # Add-ons for Blender
 
-This is a free add-on collection for Blender which will be extended over time as production calls for the creation of new tools.
+This is an add-on collection for Blender which will be extended over time as production calls for the creation of new tools.
 
-Feel free to download and use any available.
+***If you find the add-ons useful we would appreciate if you would consider supporting us for continued development via [Gumroad](https://braverabbit.gumroad.com)***
 
 ## PickWalk
 Navigate through a hierarchy of objects or bones of an armature or walk over vertices and points of meshes and curves in edit mode.
