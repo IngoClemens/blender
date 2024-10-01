@@ -24,7 +24,7 @@ from . import preferences, panel, pies, smoothWeights, symmetryMap
 
 bl_info = {"name": "Smooth Weights",
            "author": "Ingo Clemens, braverabbit.com",
-           "version": (2, 5, 0),
+           "version": (2, 5, 1),
            "blender": (3, 6, 0),
            "category": "Rigging",
            "location": "View3D > Object",

@@ -256,6 +256,7 @@ WARNING_NO_OBJECT = "No se ha seleccionado ningún objeto para suavizar"
 
 # Symmetry Map
 ERROR_NON_MANIFOLD = "La malla tiene geometría no manifold"
+ERROR_NO_DEFORMATION = "No hay capa de deformación activa presente"
 ERROR_NO_POINTS_FOUND = "No hay selección o no se encontraron puntos simétricos"
 ERROR_TRAVERSE_COUNT = "Diferencia en la cantidad de caras mientras se recorren los vértices: "
 ERROR_PASS_COUNT_MISMATCH = "Error en el mapeo. Las pasadas tienen una cantidad diferente de vértices. Vértices: "

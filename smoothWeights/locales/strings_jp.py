@@ -256,6 +256,7 @@ WARNING_NO_OBJECT = "平滑化するオブジェクトが選択されていま�
 
 # Symmetry Map
 ERROR_NON_MANIFOLD = "メッシュに非マニフォールドジオメトリがあります"
+ERROR_NO_DEFORMATION = "有効な変形レイヤーが存在しません"
 ERROR_NO_POINTS_FOUND = "選択がありませんまたは対称なポイントが見つかりませんでした"
 ERROR_TRAVERSE_COUNT = "頂点をトラバースする間に面の数が異なります："
 ERROR_PASS_COUNT_MISMATCH = "マッピングに失敗しました。パスの頂点数が異なります。頂点数："

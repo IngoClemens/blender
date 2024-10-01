@@ -256,6 +256,7 @@ WARNING_NO_OBJECT = "Aucun objet sélectionné pour le lissage"
 
 # Symmetry Map
 ERROR_NON_MANIFOLD = "Le maillage a une géométrie non manifold"
+ERROR_NO_DEFORMATION = "Aucune couche de déformation active présente"
 ERROR_NO_POINTS_FOUND = "Aucune sélection ou aucun point de symétrie trouvé"
 ERROR_TRAVERSE_COUNT = "Différence dans le nombre de faces lors de la traversée des sommets : "
 ERROR_PASS_COUNT_MISMATCH = "Erreur dans la cartographie. Les passes ont un nombre différent de sommets. Sommets : "

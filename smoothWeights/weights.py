@@ -163,6 +163,9 @@ class Weights(object):
 
         # Get the current deform layer.
         layer = bm.verts.layers.deform.active
+        if layer is None:
+            bm.free()
+            return
 
         # Get the weights for each vertex and convert the groupId/weight
         # tuple to a dictionary.

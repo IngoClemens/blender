@@ -256,6 +256,7 @@ WARNING_NO_OBJECT = "Kein Objekt ausgewählt zum Glätten"
 
 # Symmetry Map
 ERROR_NON_MANIFOLD = "Das Gitter hat nicht-manifold-Geometrie"
+ERROR_NO_DEFORMATION = "Keine aktive Deformationsebene vorhanden"
 ERROR_NO_POINTS_FOUND = "Keine Auswahl oder keine symmetrischen Punkte gefunden"
 ERROR_TRAVERSE_COUNT = "Unterschied in der Anzahl der Flächen beim Durchqueren der Punkte: "
 ERROR_PASS_COUNT_MISMATCH = "Fehler beim Mapping. Die Durchgänge haben unterschiedliche Anzahlen von Punkten. Punkte: "

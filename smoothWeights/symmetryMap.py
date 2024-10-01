@@ -1878,6 +1878,9 @@ def mirrorWeights(obj, axis, direction, maxGroups=5, normalize=True, vertexGroup
 
     # Get the weights for all indices.
     weightMap = weightObj.weightsForVertexIndices(verts)
+    if weightMap is None:
+        return strings.ERROR_NO_DEFORMATION
+
     # Get the weight values from the target side.
     weightMapMirror = weightObj.weightsForVertexIndices(oppositeVerts)
 
@@ -1943,9 +1946,24 @@ def symmetrizeMesh(obj, axis, direction):
 
     # Get the vertices to mirror. Either from the current selection or
     # from one side of the mesh.
-    verts = getSourceVertices(obj, axisIndex, directionIndex)
+    verts, oppositeVerts = getSourceVertices(obj, axisIndex, directionIndex)
 
     orderMap = obj.data[const.MAP_PROPERTY_NAME]
+
+    # Get the vertices to mirror. Either from the current selection or
+    # from one side of the mesh.
+    if obj.mode == 'EDIT':
+        # Direction and tolerance arguments don't matter because in edit
+        # mode these are not required.
+        verts, oppositeVerts = getSourceVertices(obj, axisIndex, 1)
+        bm = bmesh.from_edit_mesh(obj.data)
+        vertData = bm.verts
+    else:
+        verts = set()
+        for index in orderMap:
+            if orderMap[index] != -1 and orderMap[index] not in verts:
+                verts.add(index)
+        vertData = obj.data.vertices
 
     for index in verts:
         # For the center vertices set the position to zero.
@@ -1955,13 +1973,17 @@ def symmetrizeMesh(obj, axis, direction):
         if orderMap[index] != -1:
             oppositeIndex = orderMap[index]
 
-            pos = obj.data.vertices[index].co.copy()
+            pos = vertData[index].co.copy()
             if splitPos:
                 pos[axisIndex] = 0
             else:
                 pos[axisIndex] *= -1
 
-            obj.data.vertices[oppositeIndex].co = pos
+            vertData[oppositeIndex].co = pos
+
+    if obj.mode == 'EDIT':
+        bm.free()
+        bmesh.update_edit_mesh(obj.data)
 
 
 def flipMesh(obj, axis):
@@ -1982,12 +2004,15 @@ def flipMesh(obj, axis):
     if obj.mode == 'EDIT':
         # Direction and tolerance arguments don't matter because in edit
         # mode these are not required.
-        verts = getSourceVertices(obj, axisIndex, 1)
+        verts, oppositeVerts = getSourceVertices(obj, axisIndex, 1)
+        bm = bmesh.from_edit_mesh(obj.data)
+        vertData = bm.verts
     else:
         verts = set()
         for index in orderMap:
             if orderMap[index] != -1 and orderMap[index] not in verts:
                 verts.add(index)
+        vertData = obj.data.vertices
 
     for index in verts:
         # For the center vertices only one position needs to be flipped.
@@ -1997,15 +2022,19 @@ def flipMesh(obj, axis):
         if orderMap[index] != -1:
             oppositeIndex = orderMap[index]
 
-            pos1 = obj.data.vertices[index].co.copy()
-            pos2 = obj.data.vertices[oppositeIndex].co.copy()
+            pos1 = vertData[index].co.copy()
+            pos2 = vertData[oppositeIndex].co.copy()
 
             pos1[axisIndex] *= -1
             pos2[axisIndex] *= -1
 
-            obj.data.vertices[index].co = pos2
+            vertData[index].co = pos2
             if not splitPos:
-                obj.data.vertices[oppositeIndex].co = pos1
+                vertData[oppositeIndex].co = pos1
+
+    if obj.mode == 'EDIT':
+        bm.free()
+        bmesh.update_edit_mesh(obj.data)
 
 
 # ----------------------------------------------------------------------

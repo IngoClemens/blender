@@ -257,6 +257,7 @@ WARNING_NO_OBJECT = "No object selected to smooth"
 
 # Symmetry Map
 ERROR_NON_MANIFOLD = "The mesh has non-manifold geometry"
+ERROR_NO_DEFORMATION = "No active deform layer present"
 ERROR_NO_POINTS_FOUND = "No selection or no symmetrical points found"
 ERROR_TRAVERSE_COUNT = "Face count is different while traversing vertices: "
 ERROR_PASS_COUNT_MISMATCH = "Mapping failed. The passes have a different vertex count. Vertices: "

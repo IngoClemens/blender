@@ -256,6 +256,7 @@ WARNING_NO_OBJECT = "Nenhum objeto selecionado para suavização"
 
 # Symmetry Map
 ERROR_NON_MANIFOLD = "A malha possui geometria não-manifold"
+ERROR_NO_DEFORMATION = "Nenhuma camada de deformação ativa presente"
 ERROR_NO_POINTS_FOUND = "Nenhum ponto de seleção ou simetria encontrado"
 ERROR_TRAVERSE_COUNT = "Diferença na contagem de faces ao atravessar pontos: "
 ERROR_PASS_COUNT_MISMATCH = "Erro de Mapeamento. As passagens têm números diferentes de pontos. Pontos: "

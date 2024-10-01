@@ -256,6 +256,7 @@ WARNING_NO_OBJECT = "没有选择要平滑的对象"
 
 # Symmetry Map
 ERROR_NON_MANIFOLD = "网格具有非流形几何"
+ERROR_NO_DEFORMATION = "没有活动的变形层"
 ERROR_NO_POINTS_FOUND = "未找到选择或对称性点"
 ERROR_TRAVERSE_COUNT = "穿越点时面数的差异："
 ERROR_PASS_COUNT_MISMATCH = "映射错误。不同的通道具有不同数量的点。点数："

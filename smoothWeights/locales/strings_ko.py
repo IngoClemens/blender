@@ -256,6 +256,7 @@ WARNING_NO_OBJECT = "스무딩할 객체가 선택되지 않았습니다."
 
 # Symmetry Map
 ERROR_NON_MANIFOLD = "메시가 비매니폴드 지오메트리를 가짐"
+ERROR_NO_DEFORMATION = "활성 변형 레이어가 없습니다"
 ERROR_NO_POINTS_FOUND = "선택한 포인트 또는 대칭이 발견되지 않음"
 ERROR_TRAVERSE_COUNT = "포인트 트래버스시 다른 면 수 차이: "
 ERROR_PASS_COUNT_MISMATCH = "매핑 오류. 패스에 포인트 수가 다릅니다. 포인트: "

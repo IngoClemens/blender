@@ -1486,6 +1486,8 @@ def limitGroups(obj, maxGroups=1, normalize=True, vertexGroups="DEFORM"):
 
     # Get the weights for all indices.
     weightMap = weightObj.weightsForVertexIndices(list(verts))
+    if weightMap is None:
+        return strings.ERROR_NO_DEFORMATION
 
     # Get the group indices which don't match the current filter mode.
     skipGroupIds = utils.getUnaffectedGroupIndices(obj, vertexGroups=vertexGroups)
@@ -1653,6 +1655,8 @@ class Mesh(object):
         self.setUnaffectedGroupIndices()
 
         self.weightList = self.allVertexWeights()
+        if self.weightList is None:
+            return False
 
         # The list storing if a vertex has been smoothed.
         self.cancelIndices = set()
@@ -1827,6 +1831,8 @@ class Mesh(object):
         indices = [i for i in range(self.numVertices())]
         maxGroups = [self.currentMaxGroups]
         weightMap = self.weightObj.weightsForVertexIndices(indices, maxGroups, self.skipGroupIds)
+        if weightMap is None:
+            return
 
         # Update the current max number of vertex groups.
         self.updateMaxGroups(maxGroups[0])
