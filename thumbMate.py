@@ -61,6 +61,10 @@ frame padding.
 
 Changelog:
 
+0.3.2 - 2024-11-13
+      - Fixed an issue with the updated Eevee render engine name in
+        Blender 4.2
+
 0.3.1 - 2023-10-18
       - Fixed a context issue when rendering the selection collection
         which is not already marked as an asset.
@@ -79,7 +83,7 @@ Changelog:
 
 bl_info = {"name": "Thumb Mate",
            "author": "Ingo Clemens",
-           "version": (0, 3, 1),
+           "version": (0, 3, 2),
            "blender": (3, 0, 0),
            "category": "Import-Export",
            "location": "Asset Browser",
@@ -326,6 +330,17 @@ def deleteOutputPath(filePath):
         shutil.rmtree(filePath)
 
 
+def setEevee():
+    """Set the render engine to Eevee.
+    """
+    for engine in ["BLENDER_EEVEE_NEXT", "BLENDER_EEVEE"]:
+        try:
+            bpy.context.scene.render.engine = engine
+            return
+        except (Exception, ):
+            pass
+
+
 def setRenderSettings(filePath):
     """Store the previous render settings and define the settings for
     rendering the previews.
@@ -348,7 +363,7 @@ def setRenderSettings(filePath):
     cache.values["aspectY"] = bpy.context.scene.render.pixel_aspect_y
 
     # Define the necessary render settings.
-    bpy.context.scene.render.engine = 'BLENDER_EEVEE'
+    setEevee()
     bpy.context.scene.render.film_transparent = True
 
     bpy.context.scene.render.filepath = filePath
