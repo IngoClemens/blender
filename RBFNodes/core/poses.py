@@ -1,7 +1,11 @@
 # <pep8 compliant>
 
 import bpy
-from bpy_types import bpy_types
+
+if bpy.app.version < (4, 3, 0):
+    from bpy_types import bpy_types as _types
+else:
+    from bpy_types import _types
 
 from . import nodeTree, plugs, utils
 from .. import dev, language, var
@@ -860,7 +864,7 @@ def recallNode(prop, value, objString, propArray, propArrayIndex, asString):
     plug = eval(plugString)
     if propArray:
         if not asString:
-            if not isinstance(plug.default_value, bpy_types.bpy_prop_array):
+            if not isinstance(plug.default_value, _types.bpy_prop_array):
                 return {'ERROR'}, ": ".join([strings.ERROR_WRONG_VALUE_TYPE, plugString])
 
             plug.default_value[propArrayIndex] = value
