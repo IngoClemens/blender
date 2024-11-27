@@ -61,6 +61,10 @@ frame padding.
 
 Changelog:
 
+0.3.3 - 2024-11-27
+      - Unregistering the default metadata class when registering the
+        add-on for a cleaner startup.
+
 0.3.2 - 2024-11-13
       - Fixed an issue with the updated Eevee render engine name in
         Blender 4.2
@@ -83,7 +87,7 @@ Changelog:
 
 bl_info = {"name": "Thumb Mate",
            "author": "Ingo Clemens",
-           "version": (0, 3, 2),
+           "version": (0, 3, 3),
            "blender": (3, 0, 0),
            "category": "Import-Export",
            "location": "Asset Browser",
@@ -984,6 +988,10 @@ classes = [THUMBMATE_OT_renderPreview,
 def register():
     """Register the add-on.
     """
+    # Unregister the original metadata class.
+    from bl_ui.space_filebrowser import ASSETBROWSER_PT_metadata_preview
+    bpy.utils.unregister_class(ASSETBROWSER_PT_metadata_preview)
+
     for cls in classes:
         bpy.utils.register_class(cls)
 
