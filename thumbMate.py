@@ -61,6 +61,9 @@ frame padding.
 
 Changelog:
 
+0.4.0 - 2024-11-28
+      - Added rendering of preview images for geometry node assets.
+
 0.3.3 - 2024-11-27
       - Unregistering the default metadata class when registering the
         add-on for a cleaner startup.
@@ -87,7 +90,7 @@ Changelog:
 
 bl_info = {"name": "Thumb Mate",
            "author": "Ingo Clemens",
-           "version": (0, 3, 3),
+           "version": (0, 4, 0),
            "blender": (3, 0, 0),
            "category": "Import-Export",
            "location": "Asset Browser",
@@ -456,6 +459,7 @@ def createCamera():
     cache.values["viewCamera"] = view3d.camera if view3d.camera else None
     # Set the render camera for the view.
     view3d.camera = cam
+    bpy.context.scene.camera = cam
 
 
 def cleanupCamera():
@@ -532,7 +536,7 @@ def cleanupWorld():
 # Thumbnail creation
 # ----------------------------------------------------------------------
 
-def renderPreviews(objects, imagePath):
+def renderPreviews(objects, imagePath, setAsset=False):
     """Create the preview images for the given objects.
 
     :param objects: The list of objects or collections to create
@@ -540,6 +544,9 @@ def renderPreviews(objects, imagePath):
     :type objects: list(bpy.types.Object) or list(bpy.types.Collection)
     :param imagePath: The render output path.
     :type imagePath: str
+    :param setAsset: True, if the given objects shoould be marked as an
+                     asset.
+    :type setAsset: bool
 
     :return: None or an error message
     :rtype: None or tuple(dict(), str)
@@ -600,7 +607,7 @@ def renderPreviews(objects, imagePath):
         sel = currentSelection()
 
         for obj in objects:
-            if not obj.asset_data:
+            if not obj.asset_data and setAsset:
                 obj.asset_mark()
 
             setSelection([obj])
@@ -666,13 +673,16 @@ def cleanup(filePath):
     deleteOutputPath(filePath)
 
 
-def createAssetPreview(objects):
+def createAssetPreview(objects, setAsset=False):
     """Create asset preview images for the current selection or the
     currently active collection.
 
     :param objects: The object or list of objects to process.
     :type objects: bpy.types.Object or bpy.types.Collection or
                    list(bpy.types.Object)
+    :param setAsset: True, if the given objects shoould be marked as an
+                     asset.
+    :type setAsset: bool
     """
     if not type(objects) is list:
         objects = [objects]
@@ -690,7 +700,7 @@ def createAssetPreview(objects):
         if type(result) is tuple:
             return result
 
-        renderError = renderPreviews(objects, result)
+        renderError = renderPreviews(objects, result, setAsset=setAsset)
         cleanup(result)
 
         if renderError:
@@ -738,7 +748,7 @@ class THUMBMATE_OT_renderPreview(bpy.types.Operator):
         :type context: bpy.context
         """
         objects = currentSelection()
-        result = createAssetPreview(objects)
+        result = createAssetPreview(objects, setAsset=True)
         if result:
             self.report(result[0], result[1])
             return {'CANCELLED'}
@@ -763,7 +773,7 @@ class THUMBMATE_OT_renderCollectionPreview(bpy.types.Operator):
         """
         collection = activeCollection()
         if collection is not None:
-            result = createAssetPreview(collection)
+            result = createAssetPreview(collection, setAsset=True)
             if result:
                 self.report(result[0], result[1])
                 return {'CANCELLED'}
@@ -785,9 +795,19 @@ class THUMBMATE_OT_updatePreview(AssetBrowserMetadataOperator, bpy.types.Operato
         # Only render the image if the asset is a mesh.
         if (isinstance(active_asset.id_data, bpy.types.Collection) or
                 active_asset.id_data.type == 'MESH'):
-            result = createAssetPreview(active_asset.id_data)
+            result = createAssetPreview(active_asset.id_data, setAsset=False)
             if result:
                 self.report(result[0], result[1])
+                return {'CANCELLED'}
+        elif active_asset.id_data.type == 'GEOMETRY':
+            objects = currentSelection()
+            if len(objects):
+                result = createAssetPreview(objects, setAsset=False)
+                if result:
+                    self.report(result[0], result[1])
+                    return {'CANCELLED'}
+            else:
+                self.report({'ERROR'}, "Select an object to be used for rendering a preview image")
                 return {'CANCELLED'}
 
         return {'FINISHED'}
@@ -984,13 +1004,15 @@ classes = [THUMBMATE_OT_renderPreview,
            metadataPanelOverride(),
            THUMBMATEPreferences]
 
+override = [bl_ui.space_filebrowser.ASSETBROWSER_PT_metadata_preview]
+
 
 def register():
     """Register the add-on.
     """
-    # Unregister the original metadata class.
-    from bl_ui.space_filebrowser import ASSETBROWSER_PT_metadata_preview
-    bpy.utils.unregister_class(ASSETBROWSER_PT_metadata_preview)
+    # Unregister the default classes for overriding.
+    for cls in override:
+        bpy.utils.unregister_class(cls)
 
     for cls in classes:
         bpy.utils.register_class(cls)
@@ -1005,8 +1027,9 @@ def unregister():
     for cls in classes:
         bpy.utils.unregister_class(cls)
 
-    # Restore the original metadata class.
-    bpy.utils.register_class(metadataPanelOverride(restore=True))
+    # Restore the original classes.
+    for cls in override:
+        bpy.utils.register_class(cls)
 
     # Remove the menu items.
     bpy.types.ASSETBROWSER_MT_editor_menus.remove(menu_item)
